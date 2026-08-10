@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type StatusFilter = "all" | "awaiting" | "signed" | "archived";
 type CategoryFilter = "all" | "doors" | "windows" | "trim" | "millwork";
+const categoryLabel: Record<CategoryFilter, string> = { all: "All", doors: "Doors", windows: "Windows", trim: "Trim", millwork: "Misc." };
 
 export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -150,14 +151,14 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-center bg-card border-2 border-border rounded-md overflow-hidden p-1 shadow-sm overflow-x-auto">
-              {["all", "doors", "windows", "trim", "millwork"].map(cat => (
+              {(["all", "doors", "windows", "trim", "millwork"] as CategoryFilter[]).map(cat => (
                 <Button 
                   key={cat}
                   variant={categoryFilter === cat ? "default" : "ghost"} 
                   size="sm" 
-                  className={`rounded ${categoryFilter === cat ? "" : "hover:bg-accent/50"} h-8 px-4 capitalize`}
-                  onClick={() => setCategoryFilter(cat as CategoryFilter)}
-                >{cat}</Button>
+                  className={`rounded ${categoryFilter === cat ? "" : "hover:bg-accent/50"} h-8 px-4`}
+                  onClick={() => setCategoryFilter(cat)}
+                >{categoryLabel[cat]}</Button>
               ))}
             </div>
 
@@ -185,7 +186,7 @@ export default function DashboardPage() {
                 <FileText className="w-12 h-12 text-muted-foreground/50 mb-4" />
                 <h3 className="text-lg font-bold text-foreground mb-2">No quotes found</h3>
                 <p className="text-muted-foreground mb-6">
-                  {debouncedSearch || statusFilter !== "all" || categoryFilter !== "all" || userFilter !== "all" ? "Try adjusting your filters." : "Press the big green button to start your first one."}
+                  {debouncedSearch || statusFilter !== "all" || categoryFilter !== "all" || userFilter !== "all" ? "Try adjusting your filters." : "Press the green button to start your first one."}
                 </p>
                 {(!debouncedSearch && statusFilter === "all" && categoryFilter === "all" && userFilter === "all") && (
                   <Button asChild>
