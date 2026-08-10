@@ -1,0 +1,82 @@
+[
+  {
+    "id": "6641547d-6e26-4f09-b513-1e42c6387b66",
+    "position": 1,
+    "filepath": "src/pages/slides/TitleSlide.tsx",
+    "title": "Quote Revision Tracker",
+    "description": "Title slide introducing the Quote Revision Tracker for the Kuiken Brothers millwork sales team.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "e26754e1-2b9c-47d5-8242-f5fc7a407404",
+    "position": 2,
+    "filepath": "src/pages/slides/TheProblem.tsx",
+    "title": "The problem",
+    "description": "Why quote changes and sign-offs were hard to track before the app.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "6c7dd154-1be9-4cc7-836a-f561c864ad55",
+    "position": 3,
+    "filepath": "src/pages/slides/WhatWeBuilt.tsx",
+    "title": "What we built",
+    "description": "Overview of the web app: shared quote log, automatic edit history, electronic signatures.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "82901f4e-8469-4bd7-9afe-e001373f51cb",
+    "position": 4,
+    "filepath": "src/pages/slides/BisTrackTracking.tsx",
+    "title": "Quote tracking, the BisTrack way",
+    "description": "BisTrack quote numbers, job details, millwork specs, and the dashboard.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "85e6f9d1-2457-44f6-bdbf-e6bf07b877da",
+    "position": 5,
+    "filepath": "src/pages/slides/RevisionLog.tsx",
+    "title": "A revision log you can stand behind",
+    "description": "Timestamped, automatic, printable revision history.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "1dbd5acb-7394-47c1-90e4-21df4a1842fb",
+    "position": 6,
+    "filepath": "src/pages/slides/CustomerSignoff.tsx",
+    "title": "Customer signoff, built in",
+    "description": "Branded signoff document, e-signatures, and the signature integrity rule.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "26ebe762-678d-4dc8-82b9-b4be5f946d6b",
+    "position": 7,
+    "filepath": "src/pages/slides/LockedDown.tsx",
+    "title": "Locked down to our team",
+    "description": "Company-email sign-in, admin approval, team management, secure attachments.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "63526ebb-87e6-4e2b-b8c7-c9a97347cde0",
+    "position": 8,
+    "filepath": "src/pages/slides/QualityReliability.tsx",
+    "title": "Quality and reliability",
+    "description": "Automated end-to-end tests, security scan, clean production start.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "d3351b90-6c84-409a-98d5-1a564dc633af",
+    "position": 9,
+    "filepath": "src/pages/slides/WhatsNext.tsx",
+    "title": "What's next",
+    "description": "Shared-link customer signing, publishing for the team, feedback and iteration.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "af682595-e9a9-477a-8331-f4f6e4a0fa8e",
+    "position": 10,
+    "filepath": "src/pages/slides/BottomLine.tsx",
+    "title": "The bottom line",
+    "description": "Closing summary: documented changes, current-version signoffs, fewer disputes.",
+    "speakerNotes": ""
+  }
+]

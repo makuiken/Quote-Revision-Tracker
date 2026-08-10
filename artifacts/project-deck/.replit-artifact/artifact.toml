@@ -1,0 +1,28 @@
+kind = "slides"
+previewPath = "/project-deck/"
+title = "Quote Tracker Leadership Deck"
+description = "A 10-slide leadership presentation about the Kuiken Brothers Quote Revision Tracker: the problem it solves, what was built, security and quality, and next steps."
+version = "1.0.0"
+id = "artifacts/project-deck"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/project-deck/" ]
+localPort = 24787
+
+[services.development]
+run = "pnpm --filter @workspace/project-deck run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/project-deck", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/project-deck/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24787"
+BASE_PATH = "/project-deck/"
