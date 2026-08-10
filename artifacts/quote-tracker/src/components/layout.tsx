@@ -29,7 +29,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         ) : dbUser?.status === "rejected" ? (
           <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4 text-center">
-            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-16 mb-8 w-auto" />
+            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-24 mb-8 w-auto" />
             <h1 className="text-3xl font-serif font-bold text-primary mb-2">Company Email Required</h1>
             <p className="text-muted-foreground font-medium max-w-md mb-8">
               This tool is only available to Kuiken Brothers team members. Please sign in with your @kuikenbrothers.com email address.
@@ -41,7 +41,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         ) : dbUser?.status === "pending" ? (
           <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4 text-center">
-            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-12 mb-8" />
+            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-24 mb-8 w-auto" />
             <Clock className="w-16 h-16 text-secondary mb-4" />
             <h1 className="text-3xl font-serif font-bold text-primary mb-2">Account Awaiting Approval</h1>
             <p className="text-muted-foreground font-medium max-w-md mb-8">
@@ -57,7 +57,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <div className="sticky top-0 z-10 shadow-sm">
             <header className="bg-card border-b-2 border-border px-4 py-3 flex items-center justify-between">
               <Link href="/quotes" className="flex items-center gap-3 no-underline outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
-                <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-10 w-auto" />
+                <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-14 w-auto" />
                 <span className="font-serif font-bold text-2xl text-primary hidden sm:inline-block">Quote Tracker</span>
               </Link>
               

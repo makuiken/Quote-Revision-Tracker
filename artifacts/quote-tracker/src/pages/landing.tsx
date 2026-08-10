@@ -11,7 +11,7 @@ export default function LandingPage() {
         style={{ backgroundImage: "repeating-linear-gradient(45deg, #244234 0, #244234 2px, transparent 2px, transparent 12px)" }}
       ></div>
       <header className="px-6 py-6 flex items-center justify-between relative z-10 max-w-7xl mx-auto w-full">
-        <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-10" />
+        <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-16 w-auto" />
       </header>
       <main className="flex-1 flex flex-col items-center justify-center text-center px-4 relative z-10">
         <div className="max-w-3xl space-y-8">
