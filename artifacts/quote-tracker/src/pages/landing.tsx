@@ -21,7 +21,7 @@ export default function LandingPage() {
           <h1 className="text-5xl md:text-7xl font-serif font-bold text-primary leading-tight">
             Quote Revision Tracker
           </h1>
-          <p className="text-lg md:text-xl text-muted-foreground font-medium max-w-2xl mx-auto leading-relaxed">A dependable logbook for the architectural millwork sales team. Track quote revisions, log updates, and generate signoff documents.</p>
+          <p className="text-lg md:text-xl text-muted-foreground font-medium max-w-2xl mx-auto leading-relaxed">A quote logbook for the architectural millwork sales team. Track quote revisions, log updates, and generate signoff documents.</p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
             <Button asChild size="lg" className="w-full sm:w-auto text-lg px-12 h-14 rounded-md">
