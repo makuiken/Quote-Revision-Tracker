@@ -1,45 +1,15 @@
-# [Project name]
+# Kuiken Brothers Quote Tracker
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+## Overview
+Internal tool for the Kuiken Brothers millwork sales team. Logs customer quote requests (doors, windows, trim, general millwork), tracks a timestamped revision log per quote, prints the revision log, and generates a printable customer signoff document with typed/drawn in-app signature capture plus a blank line for paper signing. No pricing, statuses, emailing, or attachments.
 
-## Run & Operate
-
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
-
-## Stack
-
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
-
-## Where things live
-
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
+## Architecture
+- pnpm monorepo; artifacts: `quote-tracker` (React + Vite web app, previewPath `/`), `api-server` (Express 5).
+- API contract in `lib/api-spec/openapi.yaml`; codegen produces React Query hooks (`lib/api-client-react`) and Zod schemas (`lib/api-zod`). Note: the codegen script rewrites the generated zod import to `zod/v4` (orval emits v4 syntax like `zod.int()`).
+- Database: Replit PostgreSQL via Drizzle; schema in `lib/db/src/schema/quotes.ts` (quotes, revisions, signoffs; specs stored as jsonb).
+- Auth: Replit-managed Clerk (whitelabel). Server uses Clerk proxy middleware + `clerkMiddleware` in `app.ts`; all `/api` routes except `/healthz` require auth. Revision authors are resolved from the Clerk user automatically.
+- Integrity rule: any edit to a quote (PATCH) deletes its existing customer signoff, since the signed document no longer matches the current specs. No CORS middleware — the app is same-origin behind the shared proxy.
 
 ## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Team is non-technical: keep UI extremely simple, plain language, big targets.
+- Printed documents branded "Kuiken Brothers".

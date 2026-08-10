@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Quote Revision Tracker"
+description = "A quote revision tracker and signoff form generator for the Kuiken Brothers millwork team. Log customer quote requests for doors, windows, trim, and general millwork; track timestamped revisions; print a full revision log; and generate a printable customer signoff document with signature capture."
+version = "1.0.0"
+id = "artifacts/quote-tracker"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25255
+
+[services.development]
+run = "pnpm --filter @workspace/quote-tracker run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/quote-tracker", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/quote-tracker/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25255"
+BASE_PATH = "/"

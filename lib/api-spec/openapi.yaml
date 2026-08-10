@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Quote Revision Tracker API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: quotes
+    description: Quote operations
+  - name: revisions
+    description: Revision log operations
+  - name: signoff
+    description: Signoff document operations
+  - name: dashboard
+    description: Dashboard summaries
 paths:
   /healthz:
     get:
@@ -24,6 +32,283 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /me:
+    get:
+      operationId: getCurrentUser
+      tags: [quotes]
+      summary: Get the signed-in user's profile
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /quotes:
+    get:
+      operationId: listQuotes
+      tags: [quotes]
+      summary: List quotes, newest first
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Match against quote number or customer name
+      responses:
+        "200":
+          description: Quotes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Quote"
+    post:
+      operationId: createQuote
+      tags: [quotes]
+      summary: Create a quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}:
+    get:
+      operationId: getQuote
+      tags: [quotes]
+      summary: Get a quote with its revisions and signoff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Quote detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateQuote
+      tags: [quotes]
+      summary: Update a quote's info and specs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteQuote
+      tags: [quotes]
+      summary: Delete a quote and its history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/revisions:
+    get:
+      operationId: listRevisions
+      tags: [revisions]
+      summary: List a quote's revision log entries, oldest first
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Revision entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Revision"
+    post:
+      operationId: createRevision
+      tags: [revisions]
+      summary: Add a revision log entry (author and timestamp are automatic)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevisionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Revision"
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/signoff:
+    get:
+      operationId: getSignoff
+      tags: [signoff]
+      summary: Get the signoff record for a quote (if signed)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Signoff record or null
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/Signoff"
+                  - type: "null"
+    put:
+      operationId: saveSignoff
+      tags: [signoff]
+      summary: Save (or replace) the customer signoff for a quote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignoffInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Signoff"
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: clearSignoff
+      tags: [signoff]
+      summary: Remove the signoff from a quote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Cleared
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Counts of quotes, updates, and signed quotes
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /activity/recent:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Most recent revision entries across all quotes
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recent activity entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEntry"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +318,183 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    CurrentUser:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: ["string", "null"]
+      required: [id, name]
+    WindowSpec:
+      type: object
+      properties:
+        brand: { type: ["string", "null"] }
+        series: { type: ["string", "null"] }
+        exteriorColor: { type: ["string", "null"] }
+        interiorColor: { type: ["string", "null"] }
+        jambDepth: { type: ["string", "null"] }
+        dividedLites: { type: ["string", "null"] }
+        hardwareFinish: { type: ["string", "null"] }
+        screenColor: { type: ["string", "null"] }
+    DoorSpec:
+      type: object
+      properties:
+        brand: { type: ["string", "null"] }
+        seriesStyle: { type: ["string", "null"] }
+        materialSpecies: { type: ["string", "null"] }
+        exteriorColor: { type: ["string", "null"] }
+        interiorFinish: { type: ["string", "null"] }
+        jambDepth: { type: ["string", "null"] }
+        hardwareFinish: { type: ["string", "null"] }
+        glassLiteOptions: { type: ["string", "null"] }
+    QuoteSpecs:
+      type: object
+      properties:
+        window:
+          anyOf:
+            - $ref: "#/components/schemas/WindowSpec"
+            - type: "null"
+        door:
+          anyOf:
+            - $ref: "#/components/schemas/DoorSpec"
+            - type: "null"
+        trimDescription: { type: ["string", "null"] }
+        millworkDescription: { type: ["string", "null"] }
+    Quote:
+      type: object
+      properties:
+        id: { type: integer }
+        quoteNumber: { type: string }
+        customerName: { type: string }
+        categories:
+          type: array
+          items:
+            type: string
+            enum: [doors, windows, trim, millwork]
+        specs:
+          $ref: "#/components/schemas/QuoteSpecs"
+        notes: { type: ["string", "null"] }
+        createdByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        revisionCount: { type: integer }
+        lastActivityAt: { type: ["string", "null"], format: date-time }
+        signed: { type: boolean }
+      required:
+        - id
+        - quoteNumber
+        - customerName
+        - categories
+        - specs
+        - createdByName
+        - createdAt
+        - updatedAt
+        - revisionCount
+        - signed
+    QuoteDetail:
+      type: object
+      properties:
+        quote:
+          $ref: "#/components/schemas/Quote"
+        revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Revision"
+        signoff:
+          anyOf:
+            - $ref: "#/components/schemas/Signoff"
+            - type: "null"
+      required: [quote, revisions]
+    QuoteInput:
+      type: object
+      properties:
+        quoteNumber: { type: string, minLength: 1 }
+        customerName: { type: string, minLength: 1 }
+        categories:
+          type: array
+          items:
+            type: string
+            enum: [doors, windows, trim, millwork]
+          minItems: 1
+        specs:
+          $ref: "#/components/schemas/QuoteSpecs"
+        notes: { type: ["string", "null"] }
+      required: [quoteNumber, customerName, categories]
+    QuoteUpdate:
+      type: object
+      properties:
+        quoteNumber: { type: string, minLength: 1 }
+        customerName: { type: string, minLength: 1 }
+        categories:
+          type: array
+          items:
+            type: string
+            enum: [doors, windows, trim, millwork]
+          minItems: 1
+        specs:
+          $ref: "#/components/schemas/QuoteSpecs"
+        notes: { type: ["string", "null"] }
+    Revision:
+      type: object
+      properties:
+        id: { type: integer }
+        quoteId: { type: integer }
+        authorName: { type: string }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, quoteId, authorName, note, createdAt]
+    RevisionInput:
+      type: object
+      properties:
+        note: { type: string, minLength: 1 }
+      required: [note]
+    Signoff:
+      type: object
+      properties:
+        id: { type: integer }
+        quoteId: { type: integer }
+        customerName: { type: string }
+        signatureType:
+          type: string
+          enum: [typed, drawn]
+        signatureData: { type: string }
+        signedAt: { type: string, format: date-time }
+      required: [id, quoteId, customerName, signatureType, signatureData, signedAt]
+    SignoffInput:
+      type: object
+      properties:
+        customerName: { type: string, minLength: 1 }
+        signatureType:
+          type: string
+          enum: [typed, drawn]
+        signatureData: { type: string, minLength: 1 }
+      required: [customerName, signatureType, signatureData]
+    DashboardSummary:
+      type: object
+      properties:
+        totalQuotes: { type: integer }
+        totalRevisions: { type: integer }
+        signedQuotes: { type: integer }
+        quotesAwaitingSignoff: { type: integer }
+      required: [totalQuotes, totalRevisions, signedQuotes, quotesAwaitingSignoff]
+    ActivityEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        quoteId: { type: integer }
+        quoteNumber: { type: string }
+        customerName: { type: string }
+        authorName: { type: string }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, quoteId, quoteNumber, customerName, authorName, note, createdAt]

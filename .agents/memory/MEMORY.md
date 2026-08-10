@@ -1,0 +1,1 @@
+- [Orval zod v4 syntax](orval-zod-v4.md) — orval emits `zod.int()` but imports classic zod v3; codegen script rewrites the import to `zod/v4`.
