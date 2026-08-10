@@ -42,13 +42,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         ) : (
           <div className="min-h-[100dvh] flex flex-col bg-background">
-            <header className="sticky top-0 z-10 bg-card border-b-2 border-border px-4 py-3 flex items-center justify-between shadow-sm">
+            <div className="sticky top-0 z-10 shadow-sm">
+            <header className="bg-card border-b-2 border-border px-4 py-3 flex items-center justify-between">
               <Link href="/quotes" className="flex items-center gap-3 no-underline outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
-                <img src={`${basePath}/logo.svg`} alt="Kuiken Brothers" className="h-10" />
+                <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-10 w-auto" />
                 <span className="font-serif font-bold text-2xl text-primary hidden sm:inline-block">Quote Tracker</span>
               </Link>
               
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 md:gap-6">
                 <nav className="hidden md:flex items-center gap-6 mr-4 border-r-2 border-border pr-6">
                   <Link href="/quotes" className={`flex items-center gap-2 font-bold transition-colors ${location === "/quotes" ? "text-primary" : "text-foreground hover:text-primary"}`}>
                     <Home className="w-5 h-5" />
@@ -66,8 +67,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   )}
                 </nav>
                 
-                <div className="flex items-center gap-4">
-                  <div className="flex flex-col items-end">
+                <div className="flex items-center gap-2 sm:gap-4">
+                  <div className="hidden sm:flex flex-col items-end">
                     <span className="text-sm font-bold text-foreground leading-tight">
                       {user?.firstName} {user?.lastName}
                     </span>
@@ -86,7 +87,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
             </header>
-            
+
+            <nav className="md:hidden bg-card border-b-2 border-border px-4 py-2 flex items-center gap-2 overflow-x-auto">
+              <Link href="/quotes" className={`flex items-center gap-2 text-sm font-bold whitespace-nowrap px-3 py-2 rounded-md transition-colors ${location === "/quotes" ? "bg-primary/10 text-primary" : "text-foreground hover:text-primary"}`}>
+                <Home className="w-4 h-4" />
+                Dashboard
+              </Link>
+              <Link href="/quotes/new" className={`flex items-center gap-2 text-sm font-bold whitespace-nowrap px-3 py-2 rounded-md transition-colors ${location === "/quotes/new" ? "bg-primary/10 text-primary" : "text-foreground hover:text-primary"}`}>
+                <FileText className="w-4 h-4" />
+                New Quote
+              </Link>
+              {dbUser?.role === "admin" && (
+                <Link href="/team" className={`flex items-center gap-2 text-sm font-bold whitespace-nowrap px-3 py-2 rounded-md transition-colors ${location === "/team" ? "bg-primary/10 text-primary" : "text-foreground hover:text-primary"}`}>
+                  <Users className="w-4 h-4" />
+                  Team
+                </Link>
+              )}
+            </nav>
+            </div>
+
             <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-6 md:p-8 flex flex-col">
               {children}
             </main>

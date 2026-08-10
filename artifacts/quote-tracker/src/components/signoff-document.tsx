@@ -142,7 +142,7 @@ export function SignoffDocument({
   return (
     <div className="bg-white p-8 sm:p-12 shadow-lg print:shadow-none print:p-0 border border-gray-200 print:border-none">
       <div className="flex items-center justify-between border-b-4 border-black pb-6 mb-8">
-        <img src={`${basePath}/logo.svg`} alt="Kuiken Brothers" className="h-12" style={{ filter: 'grayscale(100%)' }} />
+        <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-12" style={{ filter: 'grayscale(100%)' }} />
         <div className="text-right">
           <h1 className="text-2xl font-serif font-bold text-black uppercase tracking-widest">Signoff Document</h1>
           <p className="text-sm font-bold text-gray-600 mt-1">Generated: {format(new Date(), "MMM d, yyyy")}</p>

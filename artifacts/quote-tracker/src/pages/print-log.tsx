@@ -42,7 +42,7 @@ export default function PrintLogPage() {
         {/* Printable Document */}
         <div className="space-y-8">
           <div className="flex items-center justify-between border-b-4 border-black pb-6">
-            <img src={`${basePath}/logo.svg`} alt="Kuiken Brothers" className="h-12" style={{ filter: 'grayscale(100%)' }} />
+            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-12" style={{ filter: 'grayscale(100%)' }} />
             <div className="text-right">
               <h1 className="text-3xl font-serif font-bold text-black uppercase tracking-widest">Revision Log</h1>
               <p className="text-lg font-bold text-gray-600 mt-1">{format(new Date(), "MMMM d, yyyy")}</p>

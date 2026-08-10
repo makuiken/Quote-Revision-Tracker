@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type StatusFilter = "all" | "awaiting" | "signed";
 type CategoryFilter = "all" | "doors" | "windows" | "trim" | "millwork";
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [userFilter, setUserFilter] = useState<string>("all");
 
   const searchTimerRef = useRef<number | null>(null);
 
@@ -41,9 +43,13 @@ export default function DashboardPage() {
     if (statusFilter === "signed" && !q.signed) return false;
     
     if (categoryFilter !== "all" && !q.categories.includes(categoryFilter as any)) return false;
-    
+
+    if (userFilter !== "all" && q.createdByName !== userFilter) return false;
+
     return true;
   });
+
+  const userNames = Array.from(new Set(quotes?.map(q => q.createdByName) ?? [])).sort();
 
   return (
     <Shell>
@@ -109,6 +115,19 @@ export default function DashboardPage() {
                 >{cat}</Button>
               ))}
             </div>
+
+            <Select value={userFilter} onValueChange={setUserFilter}>
+              <SelectTrigger aria-label="Filter quotes by user" className="w-full sm:w-[200px] bg-card border-2 border-border shadow-sm font-medium">
+                <User aria-hidden="true" className="w-4 h-4 text-muted-foreground shrink-0" />
+                <SelectValue placeholder="All users" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All users</SelectItem>
+                {userNames.map(name => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <Card className="overflow-hidden">
@@ -119,9 +138,9 @@ export default function DashboardPage() {
                 <FileText className="w-12 h-12 text-muted-foreground/50 mb-4" />
                 <h3 className="text-lg font-bold text-foreground mb-2">No quotes found</h3>
                 <p className="text-muted-foreground mb-6">
-                  {debouncedSearch || statusFilter !== "all" || categoryFilter !== "all" ? "Try adjusting your filters." : "Press the big green button to start your first one."}
+                  {debouncedSearch || statusFilter !== "all" || categoryFilter !== "all" || userFilter !== "all" ? "Try adjusting your filters." : "Press the big green button to start your first one."}
                 </p>
-                {(!debouncedSearch && statusFilter === "all" && categoryFilter === "all") && (
+                {(!debouncedSearch && statusFilter === "all" && categoryFilter === "all" && userFilter === "all") && (
                   <Button asChild>
                     <Link href="/quotes/new">Create Quote</Link>
                   </Button>
