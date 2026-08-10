@@ -38,6 +38,16 @@ export const GetCurrentUserResponse = zod.object({
 
 
 /**
+ * @summary List approved team members (for filtering)
+ */
+export const ListTeamMembersResponseItem = zod.object({
+  "id": zod.int(),
+  "name": zod.string()
+})
+export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem)
+
+
+/**
  * @summary List quotes, newest first
  */
 export const ListQuotesQueryParams = zod.object({

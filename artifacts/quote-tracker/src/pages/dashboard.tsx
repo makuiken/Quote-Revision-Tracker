@@ -5,6 +5,7 @@ import { Search, Plus, FileText, ArrowRight, User } from "lucide-react";
 import { 
   useListQuotes, 
   useGetRecentActivity,
+  useListTeamMembers,
 } from "@workspace/api-client-react";
 import { Shell } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export default function DashboardPage() {
 
   const { data: quotes, isLoading: isLoadingQuotes } = useListQuotes({ search: debouncedSearch || undefined });
   const { data: activity } = useGetRecentActivity({ limit: 5 });
+  const { data: teamMembers } = useListTeamMembers();
 
   const filteredQuotes = quotes?.filter(q => {
     if (statusFilter === "awaiting" && q.signed) return false;
@@ -49,7 +51,7 @@ export default function DashboardPage() {
     return true;
   });
 
-  const userNames = Array.from(new Set(quotes?.map(q => q.createdByName) ?? [])).sort();
+  const userNames = teamMembers?.map(m => m.name) ?? [];
 
   return (
     <Shell>

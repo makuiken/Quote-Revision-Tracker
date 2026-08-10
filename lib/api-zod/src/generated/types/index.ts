@@ -37,6 +37,7 @@ export * from './signoff';
 export * from './signoffInput';
 export * from './signoffInputSignatureType';
 export * from './signoffSignatureType';
+export * from './teamMember';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
 export * from './userRoleInput';

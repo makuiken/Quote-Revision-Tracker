@@ -111,6 +111,11 @@ export interface AppUser {
   createdAt: string;
 }
 
+export interface TeamMember {
+  id: number;
+  name: string;
+}
+
 export type UserRoleInputRole = typeof UserRoleInputRole[keyof typeof UserRoleInputRole];
 
 

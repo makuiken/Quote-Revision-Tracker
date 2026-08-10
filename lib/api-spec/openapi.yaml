@@ -68,6 +68,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /users:
+    get:
+      operationId: listTeamMembers
+      tags: [quotes]
+      summary: List approved team members (for filtering)
+      responses:
+        "200":
+          description: Team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMember"
   /quotes:
     get:
       operationId: listQuotes
@@ -767,6 +781,12 @@ components:
           enum: [pending, approved]
         createdAt: { type: string, format: date-time }
       required: [id, name, role, status, createdAt]
+    TeamMember:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+      required: [id, name]
     UserRoleInput:
       type: object
       properties:

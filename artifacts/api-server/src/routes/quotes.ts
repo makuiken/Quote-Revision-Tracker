@@ -7,9 +7,11 @@ import {
   revisionsTable,
   signoffsTable,
   attachmentsTable,
+  usersTable,
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
+  ListTeamMembersResponse,
   GetShareInfoResponse,
   ListQuotesQueryParams,
   ListQuotesResponse,
@@ -70,6 +72,15 @@ router.get("/me", async (req: AuthedRequest, res): Promise<void> => {
 });
 
 router.use(requireApproved);
+
+router.get("/users", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({ id: usersTable.id, name: usersTable.name })
+    .from(usersTable)
+    .where(eq(usersTable.status, "approved"))
+    .orderBy(usersTable.name);
+  res.json(ListTeamMembersResponse.parse(rows));
+});
 
 type QuoteRow = typeof quotesTable.$inferSelect;
 
