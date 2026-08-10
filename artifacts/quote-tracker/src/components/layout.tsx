@@ -41,7 +41,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         ) : dbUser?.status === "pending" ? (
           <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4 text-center">
-            <img src={`${basePath}/logo.svg`} alt="Kuiken Brothers" className="h-12 mb-8" />
+            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-12 mb-8" />
             <Clock className="w-16 h-16 text-secondary mb-4" />
             <h1 className="text-3xl font-serif font-bold text-primary mb-2">Account Awaiting Approval</h1>
             <p className="text-muted-foreground font-medium max-w-md mb-8">
