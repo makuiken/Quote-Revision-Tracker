@@ -84,6 +84,22 @@ export const signoffsTable = pgTable("signoffs", {
     .defaultNow(),
 });
 
+export const attachmentsTable = pgTable("attachments", {
+  id: serial("id").primaryKey(),
+  quoteId: integer("quote_id")
+    .notNull()
+    .references(() => quotesTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  objectPath: text("object_path").notNull(),
+  contentType: text("content_type"),
+  size: integer("size"),
+  uploadedById: text("uploaded_by_id").notNull(),
+  uploadedByName: text("uploaded_by_name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const insertQuoteSchema = createInsertSchema(quotesTable).omit({
   id: true,
   createdAt: true,
@@ -93,3 +109,4 @@ export type InsertQuote = z.infer<typeof insertQuoteSchema>;
 export type Quote = typeof quotesTable.$inferSelect;
 export type Revision = typeof revisionsTable.$inferSelect;
 export type Signoff = typeof signoffsTable.$inferSelect;
+export type Attachment = typeof attachmentsTable.$inferSelect;

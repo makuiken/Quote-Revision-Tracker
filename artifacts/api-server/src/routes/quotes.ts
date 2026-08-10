@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { Router, type IRouter, type Response } from "express";
-import { desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   db,
   quotesTable,
   revisionsTable,
   signoffsTable,
+  attachmentsTable,
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
@@ -32,6 +33,12 @@ import {
   SaveSignoffBody,
   SaveSignoffResponse,
   ClearSignoffParams,
+  ListAttachmentsParams,
+  ListAttachmentsResponse,
+  CreateAttachmentParams,
+  CreateAttachmentBody,
+  CreateAttachmentResponse,
+  DeleteAttachmentParams,
   GetDashboardSummaryResponse,
   GetRecentActivityQueryParams,
   GetRecentActivityResponse,
@@ -332,6 +339,87 @@ router.post(
       .returning();
 
     res.status(201).json(CreateRevisionResponse.parse(revision));
+  },
+);
+
+router.get("/quotes/:id/attachments", async (req, res): Promise<void> => {
+  const params = ListAttachmentsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const quote = await loadQuote(params.data.id, res);
+  if (!quote) return;
+
+  const attachments = await db
+    .select()
+    .from(attachmentsTable)
+    .where(eq(attachmentsTable.quoteId, quote.id))
+    .orderBy(desc(attachmentsTable.createdAt));
+
+  res.json(ListAttachmentsResponse.parse(attachments));
+});
+
+router.post(
+  "/quotes/:id/attachments",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = CreateAttachmentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const parsed = CreateAttachmentBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    const quote = await loadQuote(params.data.id, res);
+    if (!quote) return;
+
+    const profile = await getUserProfile(req.userId!);
+    const [attachment] = await db
+      .insert(attachmentsTable)
+      .values({
+        quoteId: quote.id,
+        name: parsed.data.name,
+        objectPath: parsed.data.objectPath,
+        contentType: parsed.data.contentType ?? null,
+        size: parsed.data.size ?? null,
+        uploadedById: req.userId!,
+        uploadedByName: profile.name,
+      })
+      .returning();
+
+    res.status(201).json(CreateAttachmentResponse.parse(attachment));
+  },
+);
+
+router.delete(
+  "/quotes/:id/attachments/:attachmentId",
+  async (req, res): Promise<void> => {
+    const params = DeleteAttachmentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const [attachment] = await db
+      .delete(attachmentsTable)
+      .where(
+        and(
+          eq(attachmentsTable.id, params.data.attachmentId),
+          eq(attachmentsTable.quoteId, params.data.id),
+        ),
+      )
+      .returning();
+
+    if (!attachment) {
+      res.status(404).json({ error: "Attachment not found" });
+      return;
+    }
+    res.sendStatus(204);
   },
 );
 

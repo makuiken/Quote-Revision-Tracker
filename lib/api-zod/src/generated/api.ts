@@ -541,3 +541,114 @@ export const GetRecentActivityResponseItem = zod.object({
 export const GetRecentActivityResponse = zod.array(GetRecentActivityResponseItem)
 
 
+/**
+ * @summary Request a presigned URL for file upload
+ */
+
+
+
+
+
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string().min(1),
+  "size": zod.int().min(1),
+  "contentType": zod.string().min(1)
+})
+
+
+
+
+
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.url(),
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string().min(1),
+  "size": zod.int().min(1),
+  "contentType": zod.string().min(1)
+}).optional()
+})
+
+
+/**
+ * @summary Serve a public asset from PUBLIC_OBJECT_SEARCH_PATHS
+ */
+export const GetPublicObjectParams = zod.object({
+  "filePath": zod.coerce.string()
+})
+
+export const GetPublicObjectResponse = zod.unknown()
+
+
+/**
+ * @summary Serve an object entity from PRIVATE_OBJECT_DIR
+ */
+export const GetStorageObjectParams = zod.object({
+  "objectPath": zod.coerce.string()
+})
+
+export const GetStorageObjectResponse = zod.unknown()
+
+
+/**
+ * @summary List attachments for a quote
+ */
+export const ListAttachmentsParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ListAttachmentsResponseItem = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "name": zod.string(),
+  "objectPath": zod.string(),
+  "contentType": zod.string().nullish(),
+  "size": zod.int().nullish(),
+  "uploadedByName": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListAttachmentsResponse = zod.array(ListAttachmentsResponseItem)
+
+
+/**
+ * @summary Record an uploaded attachment on a quote
+ */
+export const CreateAttachmentParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+
+export const CreateAttachmentBody = zod.object({
+  "name": zod.string().min(1),
+  "objectPath": zod.string().min(1),
+  "contentType": zod.string().nullish(),
+  "size": zod.int().nullish()
+})
+
+export const CreateAttachmentResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "name": zod.string(),
+  "objectPath": zod.string(),
+  "contentType": zod.string().nullish(),
+  "size": zod.int().nullish(),
+  "uploadedByName": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete an attachment
+ */
+export const DeleteAttachmentParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "attachmentId": zod.coerce.number().int()
+})
+
+export const DeleteAttachmentResponse = zod.void()
+
+

@@ -7,6 +7,8 @@
  */
 
 export * from './activityEntry';
+export * from './attachment';
+export * from './attachmentInput';
 export * from './currentUser';
 export * from './dashboardSummary';
 export * from './doorSpec';
@@ -30,4 +32,6 @@ export * from './signoff';
 export * from './signoffInput';
 export * from './signoffInputSignatureType';
 export * from './signoffSignatureType';
+export * from './uploadUrlRequest';
+export * from './uploadUrlResponse';
 export * from './windowSpec';

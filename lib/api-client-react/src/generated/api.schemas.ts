@@ -5,6 +5,45 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+export interface UploadUrlRequest {
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 1 */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+}
+
+export interface UploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+  metadata?: UploadUrlRequest;
+}
+
+export interface Attachment {
+  id: number;
+  quoteId: number;
+  name: string;
+  objectPath: string;
+  /** @nullable */
+  contentType?: string | null;
+  /** @nullable */
+  size?: number | null;
+  uploadedByName: string;
+  createdAt: string;
+}
+
+export interface AttachmentInput {
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 1 */
+  objectPath: string;
+  /** @nullable */
+  contentType?: string | null;
+  /** @nullable */
+  size?: number | null;
+}
+
 export interface HealthStatus {
   status: string;
 }

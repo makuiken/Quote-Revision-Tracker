@@ -1,19 +1,24 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation, useParams, Link } from "wouter";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit } from "lucide-react";
+import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText } from "lucide-react";
 import { 
   useGetQuote, 
   getGetQuoteQueryKey, 
   useCreateRevision,
   useUpdateQuote,
   getListQuotesQueryKey,
-  getGetDashboardSummaryQueryKey
+  getGetDashboardSummaryQueryKey,
+  useListAttachments,
+  getListAttachmentsQueryKey,
+  useCreateAttachment,
+  useDeleteAttachment
 } from "@workspace/api-client-react";
+import { useUpload } from "@workspace/object-storage-web";
 import { Shell } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +62,156 @@ const quoteSchema = z.object({
 });
 
 type QuoteFormValues = z.infer<typeof quoteSchema>;
+
+function formatFileSize(bytes: number | null | undefined) {
+  if (!bytes) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentsCard({ quoteId }: { quoteId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: attachments = [], isLoading } = useListAttachments(quoteId, {
+    query: { enabled: !!quoteId, queryKey: getListAttachmentsQueryKey(quoteId) },
+  });
+  const createAttachment = useCreateAttachment();
+  const deleteAttachment = useDeleteAttachment();
+
+  const { uploadFile, isUploading, progress } = useUpload({
+    onError: (err) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      const result = await uploadFile(file);
+      if (!result) continue;
+      createAttachment.mutate(
+        {
+          id: quoteId,
+          data: {
+            name: file.name,
+            objectPath: result.objectPath,
+            contentType: file.type || null,
+            size: file.size,
+          },
+        },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListAttachmentsQueryKey(quoteId) });
+            toast({ title: "File attached", description: `${file.name} was added to this quote.` });
+          },
+          onError: () => {
+            toast({ title: "Error", description: `Failed to save ${file.name}.`, variant: "destructive" });
+          },
+        },
+      );
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleDelete = (attachmentId: number, name: string) => {
+    deleteAttachment.mutate(
+      { id: quoteId, attachmentId },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListAttachmentsQueryKey(quoteId) });
+          toast({ title: "Attachment removed", description: `${name} was removed.` });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to remove attachment.", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2">
+          <Paperclip className="w-5 h-5" />
+          Attachments
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-4">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          accept="image/*,.pdf,.dwg,.dxf,.doc,.docx,.xls,.xlsx"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+        <Button
+          variant="outline"
+          className="w-full"
+          disabled={isUploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Upload className="w-4 h-4 mr-2" />
+          {isUploading ? `Uploading... ${progress}%` : "Upload Drawings or Photos"}
+        </Button>
+
+        {isLoading ? (
+          <p className="text-center text-sm text-muted-foreground font-medium py-2">Loading attachments...</p>
+        ) : attachments.length === 0 ? (
+          <p className="text-center text-sm text-muted-foreground font-medium py-2">
+            No files attached yet. Add shop drawings, sketches, or job-site photos.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {attachments.map((att) => {
+              const isImage = att.contentType?.startsWith("image/");
+              const sizeLabel = formatFileSize(att.size);
+              return (
+                <li
+                  key={att.id}
+                  className="flex items-center gap-3 p-3 border-2 border-border rounded-lg bg-card"
+                >
+                  {isImage ? (
+                    <FileImage className="w-5 h-5 text-primary shrink-0" />
+                  ) : (
+                    <FileText className="w-5 h-5 text-primary shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm text-foreground truncate" title={att.name}>{att.name}</p>
+                    <p className="text-xs text-muted-foreground font-medium">
+                      {att.uploadedByName} · {format(new Date(att.createdAt), "MMM d, yyyy")}
+                      {sizeLabel ? ` · ${sizeLabel}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0" title="Download">
+                      <a href={`/api/storage${att.objectPath}`} download={att.name} target="_blank" rel="noreferrer">
+                        <Download className="w-4 h-4" />
+                      </a>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      title="Remove"
+                      disabled={deleteAttachment.isPending}
+                      onClick={() => handleDelete(att.id, att.name)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const CATEGORIES = [
   { id: "doors", label: "Doors" },
@@ -469,6 +624,8 @@ export default function QuoteDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          <AttachmentsCard quoteId={quoteId} />
 
           <Card>
             <CardHeader className="pb-4">
