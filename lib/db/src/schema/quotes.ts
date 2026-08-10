@@ -45,6 +45,7 @@ export const quotesTable = pgTable("quotes", {
   categories: text("categories").array().notNull(),
   specs: jsonb("specs").$type<QuoteSpecs>().notNull().default({}),
   notes: text("notes"),
+  shareToken: text("share_token").unique(),
   createdById: text("created_by_id").notNull(),
   createdByName: text("created_by_name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })

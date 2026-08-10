@@ -18,6 +18,14 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Get the app's publicly reachable origin for building share links
+ */
+export const GetShareInfoResponse = zod.object({
+  "publicOrigin": zod.string()
+})
+
+
+/**
  * @summary Get the signed-in user's profile
  */
 export const GetCurrentUserResponse = zod.object({
@@ -399,6 +407,108 @@ export const ClearSignoffParams = zod.object({
 })
 
 export const ClearSignoffResponse = zod.void()
+
+
+/**
+ * @summary Create (or return the existing) public share token for a quote
+ */
+export const CreateShareLinkParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const CreateShareLinkResponse = zod.object({
+  "token": zod.string()
+})
+
+
+/**
+ * @summary Publicly view a quote's signoff document via share token (no login)
+ */
+export const GetPublicSignoffParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicSignoffResponse = zod.object({
+  "quote": zod.object({
+  "id": zod.int(),
+  "quoteNumber": zod.string(),
+  "customerName": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "specs": zod.object({
+  "window": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "series": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorColor": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "dividedLites": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "screenColor": zod.string().nullish()
+}),zod.null()]).optional(),
+  "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "trimDescription": zod.string().nullish(),
+  "millworkDescription": zod.string().nullish()
+}),
+  "notes": zod.string().nullish(),
+  "createdByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "revisionCount": zod.int(),
+  "lastActivityAt": zod.coerce.date().nullish(),
+  "signed": zod.boolean()
+}),
+  "revisions": zod.array(zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "authorName": zod.string(),
+  "note": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "signoff": zod.union([zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "customerName": zod.string(),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signedAt": zod.coerce.date()
+}),zod.null()]).optional()
+})
+
+
+/**
+ * @summary Publicly save the customer signoff via share token (no login)
+ */
+export const SavePublicSignoffParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+
+
+
+
+export const SavePublicSignoffBody = zod.object({
+  "customerName": zod.string().min(1),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string().min(1)
+})
+
+export const SavePublicSignoffResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "customerName": zod.string(),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signedAt": zod.coerce.date()
+})
 
 
 /**

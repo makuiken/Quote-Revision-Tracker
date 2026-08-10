@@ -32,6 +32,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /share-info:
+    get:
+      operationId: getShareInfo
+      tags: [quotes]
+      summary: Get the app's publicly reachable origin for building share links
+      responses:
+        "200":
+          description: Public share info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareInfo"
   /me:
     get:
       operationId: getCurrentUser
@@ -277,6 +289,83 @@ paths:
       responses:
         "204":
           description: Cleared
+  /quotes/{id}/share-link:
+    post:
+      operationId: createShareLink
+      tags: [signoff]
+      summary: Create (or return the existing) public share token for a quote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Share token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareLink"
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /public/signoff/{token}:
+    get:
+      operationId: getPublicSignoff
+      tags: [signoff]
+      summary: Publicly view a quote's signoff document via share token (no login)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Quote detail for signing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteDetail"
+        "404":
+          description: Invalid or revoked link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: savePublicSignoff
+      tags: [signoff]
+      summary: Publicly save the customer signoff via share token (no login)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignoffInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Signoff"
+        "404":
+          description: Invalid or revoked link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /dashboard/summary:
     get:
       operationId: getDashboardSummary
@@ -318,6 +407,20 @@ components:
           type: string
       required:
         - status
+    ShareLink:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+    ShareInfo:
+      type: object
+      properties:
+        publicOrigin:
+          type: string
+      required:
+        - publicOrigin
     ErrorResponse:
       type: object
       properties:

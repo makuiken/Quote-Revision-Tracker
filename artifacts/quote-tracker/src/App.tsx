@@ -15,6 +15,7 @@ import NewQuotePage from "@/pages/quote-new";
 import QuoteDetailPage from "@/pages/quote-detail";
 import PrintLogPage from "@/pages/print-log";
 import SignoffPage from "@/pages/signoff";
+import PublicSignoffPage from "@/pages/signoff-public";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -182,6 +183,7 @@ function ClerkProviderWithRoutes() {
               <Route path="/quotes/:id" component={QuoteDetailPage} />
               <Route path="/quotes/:id/print-log" component={PrintLogPage} />
               <Route path="/quotes/:id/signoff" component={SignoffPage} />
+              <Route path="/sign/:token" component={PublicSignoffPage} />
               <Route component={NotFound} />
             </Switch>
           </RoutedErrorBoundary>

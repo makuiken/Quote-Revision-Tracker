@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Router, type IRouter, type Response } from "express";
 import { desc, eq, ilike, or, sql } from "drizzle-orm";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
+  GetShareInfoResponse,
   ListQuotesQueryParams,
   ListQuotesResponse,
   CreateQuoteBody,
@@ -23,6 +25,8 @@ import {
   CreateRevisionParams,
   CreateRevisionBody,
   CreateRevisionResponse,
+  CreateShareLinkParams,
+  CreateShareLinkResponse,
   GetSignoffParams,
   SaveSignoffParams,
   SaveSignoffBody,
@@ -44,7 +48,7 @@ router.use(requireAuth);
 
 type QuoteRow = typeof quotesTable.$inferSelect;
 
-async function quoteStats(quoteIds: number[]) {
+export async function quoteStats(quoteIds: number[]) {
   if (quoteIds.length === 0)
     return new Map<
       number,
@@ -84,7 +88,7 @@ async function quoteStats(quoteIds: number[]) {
   return map;
 }
 
-function serializeQuote(
+export function serializeQuote(
   quote: QuoteRow,
   stats?: {
     revisionCount: number;
@@ -107,6 +111,20 @@ function serializeQuote(
     signed: stats?.signed ?? false,
   };
 }
+
+router.get("/share-info", async (_req, res): Promise<void> => {
+  // Determine the app's publicly reachable origin for share links.
+  // In production, REPLIT_DOMAINS holds the deployed domain(s);
+  // in development it (or REPLIT_DEV_DOMAIN) holds the public dev domain.
+  const domain =
+    process.env.REPLIT_DOMAINS?.split(",")[0]?.trim() ||
+    process.env.REPLIT_DEV_DOMAIN;
+  if (!domain) {
+    res.status(500).json({ error: "Public domain is not configured" });
+    return;
+  }
+  res.json(GetShareInfoResponse.parse({ publicOrigin: `https://${domain}` }));
+});
 
 router.get("/me", async (req: AuthedRequest, res): Promise<void> => {
   const profile = await getUserProfile(req.userId!);
@@ -316,6 +334,28 @@ router.post(
     res.status(201).json(CreateRevisionResponse.parse(revision));
   },
 );
+
+router.post("/quotes/:id/share-link", async (req, res): Promise<void> => {
+  const params = CreateShareLinkParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const quote = await loadQuote(params.data.id, res);
+  if (!quote) return;
+
+  let token = quote.shareToken;
+  if (!token) {
+    token = randomBytes(24).toString("base64url");
+    await db
+      .update(quotesTable)
+      .set({ shareToken: token })
+      .where(eq(quotesTable.id, quote.id));
+  }
+
+  res.json(CreateShareLinkResponse.parse({ token }));
+});
 
 router.get("/quotes/:id/signoff", async (req, res): Promise<void> => {
   const params = GetSignoffParams.safeParse(req.params);

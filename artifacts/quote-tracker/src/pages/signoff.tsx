@@ -1,126 +1,176 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
-import { format } from "date-fns";
-import { ArrowLeft, Printer, CheckCircle, RefreshCcw } from "lucide-react";
+import { ArrowLeft, Printer, Share2, Copy, Mail, Check } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useGetQuote, getGetQuoteQueryKey, useSaveSignoff } from "@workspace/api-client-react";
+import {
+  useGetQuote,
+  getGetQuoteQueryKey,
+  useSaveSignoff,
+  useGetShareInfo,
+  getGetShareInfoQueryKey,
+  useCreateShareLink,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
+import { SignoffDocument } from "@/components/signoff-document";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
-function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void, onClear: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  
+function ShareDialog({
+  open,
+  onOpenChange,
+  quoteId,
+  quoteNumber,
+  customerName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  quoteId: number;
+  quoteNumber: string;
+  customerName: string;
+}) {
+  const [email, setEmail] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const { data: shareInfo } = useGetShareInfo({
+    query: { queryKey: getGetShareInfoQueryKey(), enabled: open },
+  });
+  const createShareLink = useCreateShareLink();
+
+  // Generate (or fetch the existing) public share token when the dialog opens
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    
-    // Scale for retina displays
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#000000";
-  }, []);
-
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    if ('touches' in e) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top
-      };
+    if (open && !token && !createShareLink.isPending) {
+      createShareLink.mutate(
+        { id: quoteId },
+        { onSuccess: (data) => setToken(data.token) },
+      );
     }
-    return {
-      x: (e as React.MouseEvent).clientX - rect.left,
-      y: (e as React.MouseEvent).clientY - rect.top
-    };
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    setIsDrawing(true);
-    const { x, y } = getCoordinates(e);
-    const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) {
-      ctx.beginPath();
-      ctx.moveTo(x, y);
+  // Public customer link: no login required, token-gated
+  const shareOrigin = shareInfo?.publicOrigin ?? window.location.origin;
+  const shareUrl = token ? `${shareOrigin}${basePath}/sign/${token}` : null;
+
+  const subject = encodeURIComponent(`Signoff Document – Quote #${quoteNumber}`);
+  const body = shareUrl
+    ? encodeURIComponent(
+        `Hi ${customerName},\n\nPlease review and sign your quote document (Quote #${quoteNumber}) using the link below:\n\n${shareUrl}\n\nIf you have any questions, don't hesitate to reach out.\n\nThank you,\nKuiken Brothers`
+      )
+    : "";
+
+  const mailtoHref = `mailto:${email}?subject=${subject}&body=${body}`;
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = shareUrl;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
     }
-  };
-
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing) return;
-    e.preventDefault(); // Prevent scrolling on touch
-    const { x, y } = getCoordinates(e);
-    const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) {
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    }
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const handleClear = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (canvas && ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-    onClear();
-  };
-
-  const handleSave = () => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      onSave(canvas.toDataURL("image/png"));
-    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="space-y-4">
-      <div className="border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 overflow-hidden relative">
-        <canvas
-          ref={canvasRef}
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseOut={stopDrawing}
-          onTouchStart={startDrawing}
-          onTouchMove={draw}
-          onTouchEnd={stopDrawing}
-          className="w-full h-[200px] cursor-crosshair touch-none"
-        />
-        <div className="absolute bottom-2 right-2 text-xs text-gray-400 font-bold uppercase tracking-widest pointer-events-none">
-          Draw Signature Here
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-serif text-xl uppercase tracking-widest">
+            Share Signoff Document
+          </DialogTitle>
+          <DialogDescription>
+            Send the signing link for <strong>Quote #{quoteNumber}</strong> to the customer.
+            No account or login is needed — anyone with the link can view and sign.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Copy link section */}
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+            Customer Signing Link
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              readOnly
+              value={shareUrl ?? "Generating link..."}
+              className="font-mono text-xs bg-gray-50"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={handleCopyLink}
+              disabled={!shareUrl}
+              className="shrink-0"
+              title="Copy link"
+            >
+              {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
         </div>
-      </div>
-      <div className="flex gap-4">
-        <Button type="button" variant="outline" onClick={handleClear} className="w-full">
-          <RefreshCcw className="w-4 h-4 mr-2" /> Clear
-        </Button>
-        <Button type="button" onClick={handleSave} className="w-full bg-black text-white hover:bg-gray-800">
-          Confirm Signature
-        </Button>
-      </div>
-    </div>
+
+        <div className="relative my-2">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-gray-200" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-gray-400 font-bold tracking-widest">or email</span>
+          </div>
+        </div>
+
+        {/* Email section */}
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="share-email" className="text-xs font-bold uppercase tracking-widest text-gray-500">
+              Customer Email
+            </Label>
+            <Input
+              id="share-email"
+              type="email"
+              placeholder="customer@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="bg-white"
+            />
+          </div>
+          <Button
+            asChild
+            className="w-full bg-black text-white hover:bg-gray-800"
+            disabled={!shareUrl}
+          >
+            <a href={shareUrl ? mailtoHref : undefined} aria-disabled={!shareUrl}>
+              <Mail className="w-4 h-4 mr-2" />
+              Open in Email Client
+            </a>
+          </Button>
+          <p className="text-xs text-gray-500 text-center">
+            Opens your default email app with the link and message pre-filled.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export default function SignoffPage() {
   const { id } = useParams();
   const quoteId = parseInt(id || "0", 10);
-  const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -129,9 +179,7 @@ export default function SignoffPage() {
   });
   
   const saveSignoff = useSaveSignoff();
-
-  const [signMethod, setSignMethod] = useState<"draw" | "type">("draw");
-  const [typedName, setTypedName] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
 
   if (isLoading) {
     return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
@@ -142,18 +190,6 @@ export default function SignoffPage() {
   }
 
   const { quote, revisions, signoff } = detail;
-
-  const handleSaveTyped = () => {
-    if (!typedName.trim()) {
-      toast({ title: "Name required", description: "Please type your full name to sign.", variant: "destructive" });
-      return;
-    }
-    submitSignoff("typed", typedName);
-  };
-
-  const handleSaveDrawn = (dataUrl: string) => {
-    submitSignoff("drawn", dataUrl);
-  };
 
   const submitSignoff = (type: "typed" | "drawn", data: string) => {
     saveSignoff.mutate({ 
@@ -181,172 +217,35 @@ export default function SignoffPage() {
               <ArrowLeft className="w-4 h-4 mr-2" /> Back to Quote
             </Link>
           </Button>
-          <div className="flex gap-4">
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShareOpen(true)}
+              className="border-gray-300 text-gray-700 hover:bg-gray-100"
+            >
+              <Share2 className="w-4 h-4 mr-2" /> Share
+            </Button>
             <Button onClick={() => window.print()} className="bg-black text-white hover:bg-gray-800">
               <Printer className="w-4 h-4 mr-2" /> Print Document
             </Button>
           </div>
         </div>
 
-        {/* Printable Document Area */}
-        <div className="bg-white p-8 sm:p-12 shadow-lg print:shadow-none print:p-0 border border-gray-200 print:border-none">
-          <div className="flex items-center justify-between border-b-4 border-black pb-6 mb-8">
-            <img src={`${basePath}/logo.svg`} alt="Kuiken Brothers" className="h-12" style={{ filter: 'grayscale(100%)' }} />
-            <div className="text-right">
-              <h1 className="text-2xl font-serif font-bold text-black uppercase tracking-widest">Signoff Document</h1>
-              <p className="text-sm font-bold text-gray-600 mt-1">Generated: {format(new Date(), "MMM d, yyyy")}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-8 text-lg mb-8">
-            <div>
-              <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">Quote Number</p>
-              <p className="font-serif font-bold text-2xl">{quote.quoteNumber}</p>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">Customer</p>
-              <p className="font-serif font-bold text-2xl">{quote.customerName}</p>
-            </div>
-          </div>
-
-          <div className="space-y-6 mb-12">
-            <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2">Final Specifications</h2>
-            <p className="text-sm italic text-gray-600 mb-4">By signing this document, you are approving the specifications exactly as detailed below. Any subsequent changes will require a new signoff.</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {quote.categories.includes("windows") && (
-                <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-                  <h3 className="font-bold uppercase mb-2">Windows</h3>
-                  {quote.specs?.window && Object.entries(quote.specs.window).filter(([_, v]) => v).length > 0 ? (
-                    <ul className="text-sm space-y-1">
-                      {Object.entries(quote.specs.window).filter(([_, v]) => v).map(([k, v]) => (
-                        <li key={k}><span className="font-bold text-gray-600">{k.replace(/([A-Z])/g, ' $1').trim()}:</span> {v}</li>
-                      ))}
-                    </ul>
-                  ) : <p className="text-sm italic text-gray-500">No specific details.</p>}
-                </div>
-              )}
-              {quote.categories.includes("doors") && (
-                <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-                  <h3 className="font-bold uppercase mb-2">Doors</h3>
-                  {quote.specs?.door && Object.entries(quote.specs.door).filter(([_, v]) => v).length > 0 ? (
-                    <ul className="text-sm space-y-1">
-                      {Object.entries(quote.specs.door).filter(([_, v]) => v).map(([k, v]) => (
-                        <li key={k}><span className="font-bold text-gray-600">{k.replace(/([A-Z])/g, ' $1').trim()}:</span> {v}</li>
-                      ))}
-                    </ul>
-                  ) : <p className="text-sm italic text-gray-500">No specific details.</p>}
-                </div>
-              )}
-              {quote.categories.includes("trim") && (
-                <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-                  <h3 className="font-bold uppercase mb-2">Trim</h3>
-                  <p className="text-sm whitespace-pre-wrap">{quote.specs?.trimDescription || "No specific details."}</p>
-                </div>
-              )}
-              {quote.categories.includes("millwork") && (
-                <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-                  <h3 className="font-bold uppercase mb-2">Millwork</h3>
-                  <p className="text-sm whitespace-pre-wrap">{quote.specs?.millworkDescription || "No specific details."}</p>
-                </div>
-              )}
-            </div>
-            
-            {revisions.length > 0 && (
-              <div className="mt-8 break-inside-avoid">
-                <h3 className="font-bold uppercase mb-4 text-sm tracking-widest text-gray-500">Revision Summary ({revisions.length} updates)</h3>
-                <ul className="list-disc pl-5 space-y-2 text-sm text-gray-700">
-                  {revisions.slice(-5).map(rev => (
-                    <li key={rev.id}>
-                      <span className="font-bold">{format(new Date(rev.createdAt), "MM/dd/yy")}:</span> {rev.note.split('\n')[0].substring(0, 100)}{rev.note.length > 100 ? '...' : ''}
-                    </li>
-                  ))}
-                  {revisions.length > 5 && <li className="italic text-gray-500">...and {revisions.length - 5} older revisions.</li>}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t-2 border-black pt-8 break-inside-avoid">
-            <h2 className="text-xl font-bold uppercase tracking-widest mb-6">Customer Approval</h2>
-            
-            {quote.signed && signoff ? (
-              <div className="bg-gray-50 border border-gray-200 p-6 rounded-lg text-center flex flex-col items-center">
-                <CheckCircle className="w-16 h-16 text-green-700 mb-4" />
-                <h3 className="text-2xl font-serif font-bold text-green-800 mb-2">Electronically Signed</h3>
-                <p className="text-gray-600 mb-6">By {signoff.customerName} on {format(new Date(signoff.signedAt), "MMMM d, yyyy 'at' h:mm a")}</p>
-                
-                {signoff.signatureType === "drawn" ? (
-                  <div className="border-b-2 border-black inline-block px-12 pb-2">
-                    <img src={signoff.signatureData} alt="Customer Signature" className="h-24 object-contain mx-auto" />
-                  </div>
-                ) : (
-                  <div className="border-b-2 border-black inline-block px-12 pb-2">
-                    <span className="font-serif text-3xl italic">{signoff.signatureData}</span>
-                  </div>
-                )}
-                <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mt-2">Authorized Signature</p>
-              </div>
-            ) : (
-              <div>
-                {/* Print version of signature line (always visible on paper) */}
-                <div className="hidden print:block space-y-16">
-                  <div className="flex items-end gap-4">
-                    <div className="w-16 text-lg font-bold">X</div>
-                    <div className="flex-1 border-b-2 border-black pt-12"></div>
-                    <div className="w-32 border-b-2 border-black pt-12"></div>
-                  </div>
-                  <div className="flex gap-4 text-sm font-bold text-gray-500 uppercase tracking-widest">
-                    <div className="w-16"></div>
-                    <div className="flex-1">Authorized Signature</div>
-                    <div className="w-32 text-center">Date</div>
-                  </div>
-                </div>
-
-                {/* Digital Signing UI (hidden on print) */}
-                <div className="print:hidden bg-gray-50 border border-gray-200 p-6 sm:p-8 rounded-lg">
-                  <div className="flex gap-4 mb-6">
-                    <Button 
-                      variant={signMethod === "draw" ? "default" : "outline"} 
-                      onClick={() => setSignMethod("draw")}
-                      className={signMethod === "draw" ? "bg-black text-white" : ""}
-                    >
-                      Draw Signature
-                    </Button>
-                    <Button 
-                      variant={signMethod === "type" ? "default" : "outline"} 
-                      onClick={() => setSignMethod("type")}
-                      className={signMethod === "type" ? "bg-black text-white" : ""}
-                    >
-                      Type Name
-                    </Button>
-                  </div>
-
-                  {signMethod === "draw" ? (
-                    <SignaturePad onSave={handleSaveDrawn} onClear={() => {}} />
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="typedName">Type your full legal name</Label>
-                        <Input 
-                          id="typedName" 
-                          value={typedName} 
-                          onChange={(e) => setTypedName(e.target.value)} 
-                          placeholder="e.g. John Doe"
-                          className="font-serif text-2xl italic h-14 bg-white border-2 border-gray-300"
-                        />
-                      </div>
-                      <Button onClick={handleSaveTyped} className="w-full bg-black text-white hover:bg-gray-800">
-                        Confirm Signature
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <SignoffDocument
+          quote={quote}
+          revisions={revisions}
+          signoff={signoff ?? null}
+          onSubmit={submitSignoff}
+        />
       </div>
+
+      <ShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        quoteId={quote.id}
+        quoteNumber={quote.quoteNumber}
+        customerName={quote.customerName}
+      />
     </div>
   );
 }

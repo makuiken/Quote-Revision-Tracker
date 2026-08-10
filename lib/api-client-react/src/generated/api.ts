@@ -33,6 +33,8 @@ import type {
   QuoteUpdate,
   Revision,
   RevisionInput,
+  ShareInfo,
+  ShareLink,
   Signoff,
   SignoffInput
 } from './api.schemas';
@@ -130,6 +132,83 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetShareInfoUrl = () => {
+
+
+
+
+  return `/api/share-info`
+}
+
+/**
+ * @summary Get the app's publicly reachable origin for building share links
+ */
+export const getShareInfo = async ( options?: Parameters<typeof customFetch>[1]): Promise<ShareInfo> => {
+
+  return customFetch<ShareInfo>(getGetShareInfoUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetShareInfoQueryKey = () => {
+    return [
+    `/api/share-info`
+    ] as const;
+    }
+
+
+export const getGetShareInfoQueryOptions = <TData = Awaited<ReturnType<typeof getShareInfo>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShareInfo>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetShareInfoQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getShareInfo>>> = ({ signal }) => getShareInfo({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getShareInfo>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetShareInfoQueryResult = NonNullable<Awaited<ReturnType<typeof getShareInfo>>>
+export type GetShareInfoQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the app's publicly reachable origin for building share links
+ */
+
+export function useGetShareInfo<TData = Awaited<ReturnType<typeof getShareInfo>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getShareInfo>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetShareInfoQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -961,6 +1040,226 @@ export const useClearSignoff = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getClearSignoffMutationOptions(options));
+    }
+
+export const getCreateShareLinkUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/share-link`
+}
+
+/**
+ * @summary Create (or return the existing) public share token for a quote
+ */
+export const createShareLink = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<ShareLink> => {
+
+  return customFetch<ShareLink>(getCreateShareLinkUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateShareLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShareLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createShareLink>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['createShareLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createShareLink>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  createShareLink(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateShareLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createShareLink>>>
+
+    export type CreateShareLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create (or return the existing) public share token for a quote
+ */
+export const useCreateShareLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShareLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createShareLink>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCreateShareLinkMutationOptions(options));
+    }
+
+export const getGetPublicSignoffUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/signoff/${token}`
+}
+
+/**
+ * @summary Publicly view a quote's signoff document via share token (no login)
+ */
+export const getPublicSignoff = async (token: string, options?: Parameters<typeof customFetch>[1]): Promise<QuoteDetail> => {
+
+  return customFetch<QuoteDetail>(getGetPublicSignoffUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicSignoffQueryKey = (token: string,) => {
+    return [
+    `/api/public/signoff/${token}`
+    ] as const;
+    }
+
+
+export const getGetPublicSignoffQueryOptions = <TData = Awaited<ReturnType<typeof getPublicSignoff>>, TError = ErrorType<ErrorResponse>>(token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSignoff>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicSignoffQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicSignoff>>> = ({ signal }) => getPublicSignoff(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicSignoff>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicSignoffQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicSignoff>>>
+export type GetPublicSignoffQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Publicly view a quote's signoff document via share token (no login)
+ */
+
+export function useGetPublicSignoff<TData = Awaited<ReturnType<typeof getPublicSignoff>>, TError = ErrorType<ErrorResponse>>(
+ token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSignoff>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicSignoffQueryOptions(token,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSavePublicSignoffUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/signoff/${token}`
+}
+
+/**
+ * @summary Publicly save the customer signoff via share token (no login)
+ */
+export const savePublicSignoff = async (token: string,
+    signoffInput: SignoffInput, options?: Parameters<typeof customFetch>[1]): Promise<Signoff> => {
+
+  return customFetch<Signoff>(getSavePublicSignoffUrl(token),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(signoffInput)
+  }
+);}
+
+
+
+
+
+export const getSavePublicSignoffMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePublicSignoff>>, TError,{token: string;data: BodyType<SignoffInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof savePublicSignoff>>, TError,{token: string;data: BodyType<SignoffInput>}, TContext> => {
+
+const mutationKey = ['savePublicSignoff'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof savePublicSignoff>>, {token: string;data: BodyType<SignoffInput>}> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  savePublicSignoff(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SavePublicSignoffMutationResult = NonNullable<Awaited<ReturnType<typeof savePublicSignoff>>>
+    export type SavePublicSignoffMutationBody = BodyType<SignoffInput>
+    export type SavePublicSignoffMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Publicly save the customer signoff via share token (no login)
+ */
+export const useSavePublicSignoff = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePublicSignoff>>, TError,{token: string;data: BodyType<SignoffInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof savePublicSignoff>>,
+        TError,
+        {token: string;data: BodyType<SignoffInput>},
+        TContext
+      > => {
+      return useMutation(getSavePublicSignoffMutationOptions(options));
     }
 
 export const getGetDashboardSummaryUrl = () => {

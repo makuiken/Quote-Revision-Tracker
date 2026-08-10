@@ -9,6 +9,14 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface ShareLink {
+  token: string;
+}
+
+export interface ShareInfo {
+  publicOrigin: string;
+}
+
 export interface ErrorResponse {
   error: string;
 }

@@ -24,6 +24,8 @@ export * from './quoteUpdate';
 export * from './quoteUpdateCategoriesItem';
 export * from './revision';
 export * from './revisionInput';
+export * from './shareInfo';
+export * from './shareLink';
 export * from './signoff';
 export * from './signoffInput';
 export * from './signoffInputSignatureType';
