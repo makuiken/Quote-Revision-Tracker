@@ -765,7 +765,7 @@ components:
           enum: [admin, member]
         status:
           type: string
-          enum: [pending, approved]
+          enum: [pending, approved, rejected]
       required: [id, name, role, status]
     AppUser:
       type: object

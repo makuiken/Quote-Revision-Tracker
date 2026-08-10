@@ -66,7 +66,9 @@ router.get("/me", async (req: AuthedRequest, res): Promise<void> => {
       name: req.appUser?.name ?? profile.name,
       email: req.appUser?.email ?? profile.email,
       role: req.appUser?.role ?? "member",
-      status: req.appUser?.status ?? "pending",
+      status: req.emailRejected
+        ? "rejected"
+        : (req.appUser?.status ?? "pending"),
     }),
   );
 });

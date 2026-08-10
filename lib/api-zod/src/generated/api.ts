@@ -33,7 +33,7 @@ export const GetCurrentUserResponse = zod.object({
   "name": zod.string(),
   "email": zod.string().nullish(),
   "role": zod.enum(['admin', 'member']),
-  "status": zod.enum(['pending', 'approved'])
+  "status": zod.enum(['pending', 'approved', 'rejected'])
 })
 
 

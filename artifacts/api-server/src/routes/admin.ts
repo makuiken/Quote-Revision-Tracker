@@ -16,6 +16,7 @@ import {
   requireApproved,
   requireAdmin,
   invalidateAppUserCache,
+  OWNER_EMAIL,
   type AuthedRequest,
 } from "../middlewares/requireAuth";
 
@@ -90,6 +91,15 @@ router.post("/admin/users/:id/role", async (req: AuthedRequest, res): Promise<vo
     });
     return;
   }
+  if (
+    target.email?.toLowerCase() === OWNER_EMAIL &&
+    body.data.role === "member"
+  ) {
+    res.status(400).json({
+      error: "This account is the permanent owner and must stay an admin.",
+    });
+    return;
+  }
 
   const [user] = await db
     .update(usersTable)
@@ -117,6 +127,12 @@ router.delete("/admin/users/:id", async (req: AuthedRequest, res): Promise<void>
   }
   if (target.clerkUserId === req.userId) {
     res.status(400).json({ error: "You can't remove your own account." });
+    return;
+  }
+  if (target.email?.toLowerCase() === OWNER_EMAIL) {
+    res.status(400).json({
+      error: "This account is the permanent owner and can't be removed.",
+    });
     return;
   }
 

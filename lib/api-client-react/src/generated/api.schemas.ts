@@ -74,6 +74,7 @@ export type CurrentUserStatus = typeof CurrentUserStatus[keyof typeof CurrentUse
 export const CurrentUserStatus = {
   pending: 'pending',
   approved: 'approved',
+  rejected: 'rejected',
 } as const;
 
 export interface CurrentUser {

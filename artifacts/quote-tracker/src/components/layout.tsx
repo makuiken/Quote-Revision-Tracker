@@ -27,6 +27,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="min-h-[100dvh] flex items-center justify-center bg-background">
             <p className="text-muted-foreground font-medium">Loading...</p>
           </div>
+        ) : dbUser?.status === "rejected" ? (
+          <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4 text-center">
+            <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-16 mb-8 w-auto" />
+            <h1 className="text-3xl font-serif font-bold text-primary mb-2">Company Email Required</h1>
+            <p className="text-muted-foreground font-medium max-w-md mb-8">
+              This tool is only available to Kuiken Brothers team members. Please sign in with your @kuikenbrothers.com email address.
+            </p>
+            <Button onClick={() => signOut({ redirectUrl: basePath || "/" })} variant="outline" size="lg">
+              <LogOut className="w-4 h-4 mr-2" />
+              Log out
+            </Button>
+          </div>
         ) : dbUser?.status === "pending" ? (
           <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4 text-center">
             <img src={`${basePath}/logo.svg`} alt="Kuiken Brothers" className="h-12 mb-8" />
