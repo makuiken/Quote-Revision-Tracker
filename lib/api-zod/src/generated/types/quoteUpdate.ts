@@ -9,10 +9,17 @@ import type { QuoteSpecs } from './quoteSpecs';
 import type { QuoteUpdateCategoriesItem } from './quoteUpdateCategoriesItem';
 
 export interface QuoteUpdate {
-  /** @minLength 1 */
+  /**
+     * BisTrack quote number (7 digits)
+     * @pattern ^[0-9]{7}$
+     */
   quoteNumber?: string;
   /** @minLength 1 */
   customerName?: string;
+  /** @minLength 1 */
+  projectName?: string;
+  /** @minLength 1 */
+  jobAddress?: string;
   /** @minItems 1 */
   categories?: QuoteUpdateCategoriesItem[];
   specs?: QuoteSpecs;

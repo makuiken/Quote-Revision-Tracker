@@ -31,7 +31,9 @@ export const GetShareInfoResponse = zod.object({
 export const GetCurrentUserResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "email": zod.string().nullish()
+  "email": zod.string().nullish(),
+  "role": zod.enum(['admin', 'member']),
+  "status": zod.enum(['pending', 'approved'])
 })
 
 
@@ -46,6 +48,9 @@ export const ListQuotesResponseItem = zod.object({
   "id": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -85,14 +90,18 @@ export const ListQuotesResponse = zod.array(ListQuotesResponseItem)
 /**
  * @summary Create a quote
  */
+export const createQuoteBodyQuoteNumberRegExp = new RegExp('^[0-9]{7}$');
+
 
 
 
 
 
 export const CreateQuoteBody = zod.object({
-  "quoteNumber": zod.string().min(1),
+  "quoteNumber": zod.string().regex(createQuoteBodyQuoteNumberRegExp).describe('BisTrack quote number (7 digits)'),
   "customerName": zod.string().min(1),
+  "projectName": zod.string().min(1),
+  "jobAddress": zod.string().min(1),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])).min(1),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -125,6 +134,9 @@ export const CreateQuoteResponse = zod.object({
   "id": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -172,6 +184,9 @@ export const GetQuoteResponse = zod.object({
   "id": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -230,14 +245,18 @@ export const UpdateQuoteParams = zod.object({
   "id": zod.coerce.number().int()
 })
 
+export const updateQuoteBodyQuoteNumberRegExp = new RegExp('^[0-9]{7}$');
+
 
 
 
 
 
 export const UpdateQuoteBody = zod.object({
-  "quoteNumber": zod.string().min(1).optional(),
+  "quoteNumber": zod.string().regex(updateQuoteBodyQuoteNumberRegExp).optional().describe('BisTrack quote number (7 digits)'),
   "customerName": zod.string().min(1).optional(),
+  "projectName": zod.string().min(1).optional(),
+  "jobAddress": zod.string().min(1).optional(),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])).min(1).optional(),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -270,6 +289,9 @@ export const UpdateQuoteResponse = zod.object({
   "id": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -433,6 +455,9 @@ export const GetPublicSignoffResponse = zod.object({
   "id": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
   "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
@@ -534,11 +559,74 @@ export const GetRecentActivityResponseItem = zod.object({
   "quoteId": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
+  "projectName": zod.string(),
   "authorName": zod.string(),
   "note": zod.string(),
   "createdAt": zod.coerce.date()
 })
 export const GetRecentActivityResponse = zod.array(GetRecentActivityResponseItem)
+
+
+/**
+ * @summary List all team member accounts (admin only)
+ */
+export const ListUsersResponseItem = zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "email": zod.string().nullish(),
+  "role": zod.enum(['admin', 'member']),
+  "status": zod.enum(['pending', 'approved']),
+  "createdAt": zod.coerce.date()
+})
+export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Approve a pending sign-up request (admin only)
+ */
+export const ApproveUserParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ApproveUserResponse = zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "email": zod.string().nullish(),
+  "role": zod.enum(['admin', 'member']),
+  "status": zod.enum(['pending', 'approved']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Make a user an admin or a regular member (admin only)
+ */
+export const SetUserRoleParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const SetUserRoleBody = zod.object({
+  "role": zod.enum(['admin', 'member'])
+})
+
+export const SetUserRoleResponse = zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "email": zod.string().nullish(),
+  "role": zod.enum(['admin', 'member']),
+  "status": zod.enum(['pending', 'approved']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove a user's access entirely (admin only)
+ */
+export const RemoveUserParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RemoveUserResponse = zod.void()
 
 
 /**

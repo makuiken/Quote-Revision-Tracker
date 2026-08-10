@@ -1,1 +1,2 @@
 - [Orval zod v4 syntax](orval-zod-v4.md) — orval emits `zod.int()` but imports classic zod v3; codegen script rewrites the import to `zod/v4`.
+- [DB drift after task merges](db-drift-after-merges.md) — merged schema code may lack DB columns; check with psql and apply additive DDL manually (drizzle push needs a TTY).

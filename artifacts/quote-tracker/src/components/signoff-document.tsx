@@ -155,8 +155,9 @@ export function SignoffDocument({
           <p className="font-serif font-bold text-2xl">{quote.quoteNumber}</p>
         </div>
         <div>
-          <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">Customer</p>
-          <p className="font-serif font-bold text-2xl">{quote.customerName}</p>
+          <p className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-1">Customer / Project</p>
+          <p className="font-serif font-bold text-2xl">{quote.displayName}</p>
+          <p className="text-gray-600 mt-1">{quote.jobAddress}</p>
         </div>
       </div>
 

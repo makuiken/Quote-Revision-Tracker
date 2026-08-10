@@ -12,6 +12,9 @@ export interface Quote {
   id: number;
   quoteNumber: string;
   customerName: string;
+  projectName: string;
+  jobAddress: string;
+  displayName: string;
   categories: QuoteCategoriesItem[];
   specs: QuoteSpecs;
   /** @nullable */

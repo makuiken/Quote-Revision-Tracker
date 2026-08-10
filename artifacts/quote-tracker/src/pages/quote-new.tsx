@@ -14,8 +14,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toaster";
 
 const quoteSchema = z.object({
-  quoteNumber: z.string().min(1, "Quote number is required"),
+  quoteNumber: z.string().regex(/^[0-9]{7}$/, "Must be exactly 7 digits"),
   customerName: z.string().min(1, "Customer name is required"),
+  projectName: z.string().min(1, "Project name is required"),
+  jobAddress: z.string().min(1, "Job address is required"),
   categories: z.array(z.enum(["doors", "windows", "trim", "millwork"])).min(1, "Select at least one category"),
   notes: z.string().optional(),
   specs: z.object({
@@ -63,6 +65,8 @@ export default function NewQuotePage() {
     defaultValues: {
       quoteNumber: "",
       customerName: "",
+      projectName: "",
+      jobAddress: "",
       categories: [],
       notes: "",
       specs: {},
@@ -102,10 +106,13 @@ export default function NewQuotePage() {
           <CardContent className="p-6 sm:p-8 space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="quoteNumber">Quote Number</Label>
+                <Label htmlFor="quoteNumber">BisTrack Quote #</Label>
+                <p className="text-xs text-muted-foreground">7-digit number from BisTrack</p>
                 <Input 
                   id="quoteNumber" 
-                  placeholder="e.g. Q-12345" 
+                  placeholder="e.g. 1234567" 
+                  inputMode="numeric"
+                  maxLength={7}
                   {...form.register("quoteNumber")} 
                 />
                 {form.formState.errors.quoteNumber && (
@@ -114,6 +121,7 @@ export default function NewQuotePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="customerName">Customer Name</Label>
+                <div className="h-4"></div>
                 <Input 
                   id="customerName" 
                   placeholder="e.g. John Doe / Acme Builders" 
@@ -121,6 +129,28 @@ export default function NewQuotePage() {
                 />
                 {form.formState.errors.customerName && (
                   <p className="text-sm text-destructive font-medium">{form.formState.errors.customerName.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="projectName">Project Name</Label>
+                <Input 
+                  id="projectName" 
+                  placeholder="e.g. Main Street Renovation" 
+                  {...form.register("projectName")} 
+                />
+                {form.formState.errors.projectName && (
+                  <p className="text-sm text-destructive font-medium">{form.formState.errors.projectName.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="jobAddress">Job Address</Label>
+                <Input 
+                  id="jobAddress" 
+                  placeholder="e.g. 123 Main St, City, ST 12345" 
+                  {...form.register("jobAddress")} 
+                />
+                {form.formState.errors.jobAddress && (
+                  <p className="text-sm text-destructive font-medium">{form.formState.errors.jobAddress.message}</p>
                 )}
               </div>
             </div>

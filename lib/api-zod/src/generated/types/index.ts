@@ -7,9 +7,14 @@
  */
 
 export * from './activityEntry';
+export * from './appUser';
+export * from './appUserRole';
+export * from './appUserStatus';
 export * from './attachment';
 export * from './attachmentInput';
 export * from './currentUser';
+export * from './currentUserRole';
+export * from './currentUserStatus';
 export * from './dashboardSummary';
 export * from './doorSpec';
 export * from './errorResponse';
@@ -34,4 +39,6 @@ export * from './signoffInputSignatureType';
 export * from './signoffSignatureType';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
+export * from './userRoleInput';
+export * from './userRoleInputRole';
 export * from './windowSpec';

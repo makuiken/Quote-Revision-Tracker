@@ -38,10 +38,27 @@ export type QuoteSpecs = {
   millworkDescription?: string | null;
 };
 
+export const usersTable = pgTable("users", {
+  id: serial("id").primaryKey(),
+  clerkUserId: text("clerk_user_id").notNull().unique(),
+  name: text("name").notNull(),
+  email: text("email"),
+  role: text("role").$type<"admin" | "member">().notNull().default("member"),
+  status: text("status")
+    .$type<"pending" | "approved">()
+    .notNull()
+    .default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const quotesTable = pgTable("quotes", {
   id: serial("id").primaryKey(),
   quoteNumber: text("quote_number").notNull(),
   customerName: text("customer_name").notNull(),
+  projectName: text("project_name").notNull().default(""),
+  jobAddress: text("job_address").notNull().default(""),
   categories: text("categories").array().notNull(),
   specs: jsonb("specs").$type<QuoteSpecs>().notNull().default({}),
   notes: text("notes"),
@@ -110,3 +127,4 @@ export type Quote = typeof quotesTable.$inferSelect;
 export type Revision = typeof revisionsTable.$inferSelect;
 export type Signoff = typeof signoffsTable.$inferSelect;
 export type Attachment = typeof attachmentsTable.$inferSelect;
+export type AppUser = typeof usersTable.$inferSelect;

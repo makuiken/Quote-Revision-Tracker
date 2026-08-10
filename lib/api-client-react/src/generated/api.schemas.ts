@@ -60,11 +60,67 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type CurrentUserRole = typeof CurrentUserRole[keyof typeof CurrentUserRole];
+
+
+export const CurrentUserRole = {
+  admin: 'admin',
+  member: 'member',
+} as const;
+
+export type CurrentUserStatus = typeof CurrentUserStatus[keyof typeof CurrentUserStatus];
+
+
+export const CurrentUserStatus = {
+  pending: 'pending',
+  approved: 'approved',
+} as const;
+
 export interface CurrentUser {
   id: string;
   name: string;
   /** @nullable */
   email?: string | null;
+  role: CurrentUserRole;
+  status: CurrentUserStatus;
+}
+
+export type AppUserRole = typeof AppUserRole[keyof typeof AppUserRole];
+
+
+export const AppUserRole = {
+  admin: 'admin',
+  member: 'member',
+} as const;
+
+export type AppUserStatus = typeof AppUserStatus[keyof typeof AppUserStatus];
+
+
+export const AppUserStatus = {
+  pending: 'pending',
+  approved: 'approved',
+} as const;
+
+export interface AppUser {
+  id: number;
+  name: string;
+  /** @nullable */
+  email?: string | null;
+  role: AppUserRole;
+  status: AppUserStatus;
+  createdAt: string;
+}
+
+export type UserRoleInputRole = typeof UserRoleInputRole[keyof typeof UserRoleInputRole];
+
+
+export const UserRoleInputRole = {
+  admin: 'admin',
+  member: 'member',
+} as const;
+
+export interface UserRoleInput {
+  role: UserRoleInputRole;
 }
 
 export interface WindowSpec {
@@ -128,6 +184,9 @@ export interface Quote {
   id: number;
   quoteNumber: string;
   customerName: string;
+  projectName: string;
+  jobAddress: string;
+  displayName: string;
   categories: QuoteCategoriesItem[];
   specs: QuoteSpecs;
   /** @nullable */
@@ -183,10 +242,17 @@ export const QuoteInputCategoriesItem = {
 } as const;
 
 export interface QuoteInput {
-  /** @minLength 1 */
+  /**
+     * BisTrack quote number (7 digits)
+     * @pattern ^[0-9]{7}$
+     */
   quoteNumber: string;
   /** @minLength 1 */
   customerName: string;
+  /** @minLength 1 */
+  projectName: string;
+  /** @minLength 1 */
+  jobAddress: string;
   /** @minItems 1 */
   categories: QuoteInputCategoriesItem[];
   specs?: QuoteSpecs;
@@ -205,10 +271,17 @@ export const QuoteUpdateCategoriesItem = {
 } as const;
 
 export interface QuoteUpdate {
-  /** @minLength 1 */
+  /**
+     * BisTrack quote number (7 digits)
+     * @pattern ^[0-9]{7}$
+     */
   quoteNumber?: string;
   /** @minLength 1 */
   customerName?: string;
+  /** @minLength 1 */
+  projectName?: string;
+  /** @minLength 1 */
+  jobAddress?: string;
   /** @minItems 1 */
   categories?: QuoteUpdateCategoriesItem[];
   specs?: QuoteSpecs;
@@ -249,6 +322,7 @@ export interface ActivityEntry {
   quoteId: number;
   quoteNumber: string;
   customerName: string;
+  projectName: string;
   authorName: string;
   note: string;
   createdAt: string;

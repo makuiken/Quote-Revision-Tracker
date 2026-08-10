@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="240" height="60">
-  <rect width="240" height="60" fill="none" />
-  <text x="10" y="40" font-family="Georgia, serif" font-size="32" font-weight="bold" fill="#244234">Kuiken Bros</text>
-  <path d="M 10 48 L 205 48" stroke="#c26e38" stroke-width="3" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 60" width="280" height="60">
+  <rect width="280" height="60" fill="none" />
+  <text x="10" y="40" font-family="Georgia, serif" font-size="32" font-weight="bold" fill="#244234">Kuiken Brothers</text>
+  <path d="M 10 48 L 265 48" stroke="#c26e38" stroke-width="3" />
 </svg>

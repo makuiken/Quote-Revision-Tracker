@@ -5,10 +5,14 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { CurrentUserRole } from './currentUserRole';
+import type { CurrentUserStatus } from './currentUserStatus';
 
 export interface CurrentUser {
   id: string;
   name: string;
   /** @nullable */
   email?: string | null;
+  role: CurrentUserRole;
+  status: CurrentUserStatus;
 }

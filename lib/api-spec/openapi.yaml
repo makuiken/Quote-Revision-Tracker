@@ -22,6 +22,8 @@ tags:
     description: Object storage upload and serving endpoints
   - name: attachments
     description: Quote file attachments
+  - name: admin
+    description: Team member administration (admin only)
 paths:
   /healthz:
     get:
@@ -402,6 +404,112 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ActivityEntry"
+  /admin/users:
+    get:
+      operationId: listUsers
+      tags: [admin]
+      summary: List all team member accounts (admin only)
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppUser"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users/{id}/approve:
+    post:
+      operationId: approveUser
+      tags: [admin]
+      summary: Approve a pending sign-up request (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppUser"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users/{id}/role:
+    post:
+      operationId: setUserRole
+      tags: [admin]
+      summary: Make a user an admin or a regular member (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRoleInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppUser"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users/{id}:
+    delete:
+      operationId: removeUser
+      tags: [admin]
+      summary: Remove a user's access entirely (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Removed
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /storage/uploads/request-url:
     post:
       tags: [storage]
@@ -638,7 +746,34 @@ components:
           type: string
         email:
           type: ["string", "null"]
-      required: [id, name]
+        role:
+          type: string
+          enum: [admin, member]
+        status:
+          type: string
+          enum: [pending, approved]
+      required: [id, name, role, status]
+    AppUser:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: ["string", "null"] }
+        role:
+          type: string
+          enum: [admin, member]
+        status:
+          type: string
+          enum: [pending, approved]
+        createdAt: { type: string, format: date-time }
+      required: [id, name, role, status, createdAt]
+    UserRoleInput:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [admin, member]
+      required: [role]
     WindowSpec:
       type: object
       properties:
@@ -680,6 +815,9 @@ components:
         id: { type: integer }
         quoteNumber: { type: string }
         customerName: { type: string }
+        projectName: { type: string }
+        jobAddress: { type: string }
+        displayName: { type: string }
         categories:
           type: array
           items:
@@ -698,6 +836,9 @@ components:
         - id
         - quoteNumber
         - customerName
+        - projectName
+        - jobAddress
+        - displayName
         - categories
         - specs
         - createdByName
@@ -722,8 +863,13 @@ components:
     QuoteInput:
       type: object
       properties:
-        quoteNumber: { type: string, minLength: 1 }
+        quoteNumber:
+          type: string
+          pattern: "^[0-9]{7}$"
+          description: BisTrack quote number (7 digits)
         customerName: { type: string, minLength: 1 }
+        projectName: { type: string, minLength: 1 }
+        jobAddress: { type: string, minLength: 1 }
         categories:
           type: array
           items:
@@ -733,12 +879,17 @@ components:
         specs:
           $ref: "#/components/schemas/QuoteSpecs"
         notes: { type: ["string", "null"] }
-      required: [quoteNumber, customerName, categories]
+      required: [quoteNumber, customerName, projectName, jobAddress, categories]
     QuoteUpdate:
       type: object
       properties:
-        quoteNumber: { type: string, minLength: 1 }
+        quoteNumber:
+          type: string
+          pattern: "^[0-9]{7}$"
+          description: BisTrack quote number (7 digits)
         customerName: { type: string, minLength: 1 }
+        projectName: { type: string, minLength: 1 }
+        jobAddress: { type: string, minLength: 1 }
         categories:
           type: array
           items:
@@ -798,7 +949,8 @@ components:
         quoteId: { type: integer }
         quoteNumber: { type: string }
         customerName: { type: string }
+        projectName: { type: string }
         authorName: { type: string }
         note: { type: string }
         createdAt: { type: string, format: date-time }
-      required: [id, quoteId, quoteNumber, customerName, authorName, note, createdAt]
+      required: [id, quoteId, quoteNumber, customerName, projectName, authorName, note, createdAt]

@@ -45,6 +45,7 @@ import {
 } from "@workspace/api-zod";
 import {
   requireAuth,
+  requireApproved,
   getUserProfile,
   type AuthedRequest,
 } from "../middlewares/requireAuth";
@@ -52,6 +53,23 @@ import {
 const router: IRouter = Router();
 
 router.use(requireAuth);
+
+// /me must stay reachable for pending users so the app can show them an
+// "awaiting approval" screen; everything below requireApproved is gated.
+router.get("/me", async (req: AuthedRequest, res): Promise<void> => {
+  const profile = await getUserProfile(req.userId!);
+  res.json(
+    GetCurrentUserResponse.parse({
+      id: req.userId,
+      name: req.appUser?.name ?? profile.name,
+      email: req.appUser?.email ?? profile.email,
+      role: req.appUser?.role ?? "member",
+      status: req.appUser?.status ?? "pending",
+    }),
+  );
+});
+
+router.use(requireApproved);
 
 type QuoteRow = typeof quotesTable.$inferSelect;
 
@@ -107,6 +125,11 @@ export function serializeQuote(
     id: quote.id,
     quoteNumber: quote.quoteNumber,
     customerName: quote.customerName,
+    projectName: quote.projectName,
+    jobAddress: quote.jobAddress,
+    displayName: quote.projectName
+      ? `${quote.customerName} - ${quote.projectName}`
+      : quote.customerName,
     categories: quote.categories,
     specs: quote.specs ?? {},
     notes: quote.notes,
@@ -133,17 +156,6 @@ router.get("/share-info", async (_req, res): Promise<void> => {
   res.json(GetShareInfoResponse.parse({ publicOrigin: `https://${domain}` }));
 });
 
-router.get("/me", async (req: AuthedRequest, res): Promise<void> => {
-  const profile = await getUserProfile(req.userId!);
-  res.json(
-    GetCurrentUserResponse.parse({
-      id: req.userId,
-      name: profile.name,
-      email: profile.email,
-    }),
-  );
-});
-
 router.get("/quotes", async (req, res): Promise<void> => {
   const query = ListQuotesQueryParams.safeParse(req.query);
   const search = query.success ? query.data.search : undefined;
@@ -156,6 +168,8 @@ router.get("/quotes", async (req, res): Promise<void> => {
         ? or(
             ilike(quotesTable.quoteNumber, `%${search}%`),
             ilike(quotesTable.customerName, `%${search}%`),
+            ilike(quotesTable.projectName, `%${search}%`),
+            ilike(quotesTable.jobAddress, `%${search}%`),
           )
         : undefined,
     )
@@ -180,6 +194,8 @@ router.post("/quotes", async (req: AuthedRequest, res): Promise<void> => {
     .values({
       quoteNumber: parsed.data.quoteNumber,
       customerName: parsed.data.customerName,
+      projectName: parsed.data.projectName,
+      jobAddress: parsed.data.jobAddress,
       categories: parsed.data.categories,
       specs: parsed.data.specs ?? {},
       notes: parsed.data.notes ?? null,
@@ -234,7 +250,7 @@ router.get("/quotes/:id", async (req, res): Promise<void> => {
   );
 });
 
-router.patch("/quotes/:id", async (req, res): Promise<void> => {
+router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
   const params = UpdateQuoteParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -246,30 +262,57 @@ router.patch("/quotes/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const updates: Partial<QuoteRow> = {};
-  if (parsed.data.quoteNumber !== undefined)
-    updates.quoteNumber = parsed.data.quoteNumber;
-  if (parsed.data.customerName !== undefined)
-    updates.customerName = parsed.data.customerName;
-  if (parsed.data.categories !== undefined)
-    updates.categories = parsed.data.categories;
-  if (parsed.data.specs !== undefined) updates.specs = parsed.data.specs;
-  if (parsed.data.notes !== undefined) updates.notes = parsed.data.notes;
+  const before = await loadQuote(params.data.id, res);
+  if (!before) return;
 
-  const [quote] = await db
-    .update(quotesTable)
-    .set(updates)
-    .where(eq(quotesTable.id, params.data.id))
-    .returning();
+  const updates: Partial<QuoteRow> = {};
+  const changed: string[] = [];
+  const track = (label: string, key: keyof QuoteRow, value: unknown) => {
+    if (value === undefined) return;
+    (updates as Record<string, unknown>)[key] = value;
+    if (JSON.stringify(value) !== JSON.stringify(before[key] ?? null))
+      changed.push(label);
+  };
+  track("quote number", "quoteNumber", parsed.data.quoteNumber);
+  track("customer name", "customerName", parsed.data.customerName);
+  track("project name", "projectName", parsed.data.projectName);
+  track("job address", "jobAddress", parsed.data.jobAddress);
+  track("categories", "categories", parsed.data.categories);
+  track("specifications", "specs", parsed.data.specs);
+  track("notes", "notes", parsed.data.notes);
+
+  const profile = await getUserProfile(req.userId!);
+
+  // Update, signoff invalidation, and the auto revision entry are atomic so
+  // the register always matches the saved edit.
+  const quote = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(quotesTable)
+      .set(updates)
+      .where(eq(quotesTable.id, params.data.id))
+      .returning();
+    if (!updated) return null;
+
+    // Any edit to the quote invalidates a previously captured customer
+    // signoff: the signed document no longer reflects the current specs.
+    await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, updated.id));
+
+    // Log the edit in the revision register automatically.
+    if (changed.length > 0) {
+      await tx.insert(revisionsTable).values({
+        quoteId: updated.id,
+        authorId: req.userId!,
+        authorName: profile.name,
+        note: `Edited quote details: ${changed.join(", ")}`,
+      });
+    }
+    return updated;
+  });
 
   if (!quote) {
     res.status(404).json({ error: "Quote not found" });
     return;
   }
-
-  // Any edit to the quote invalidates a previously captured customer signoff:
-  // the signed document no longer reflects the current specifications.
-  await db.delete(signoffsTable).where(eq(signoffsTable.quoteId, quote.id));
 
   const stats = await quoteStats([quote.id]);
   res.json(UpdateQuoteResponse.parse(serializeQuote(quote, stats.get(quote.id))));
@@ -545,6 +588,7 @@ router.get("/activity/recent", async (req, res): Promise<void> => {
       quoteId: revisionsTable.quoteId,
       quoteNumber: quotesTable.quoteNumber,
       customerName: quotesTable.customerName,
+      projectName: quotesTable.projectName,
       authorName: revisionsTable.authorName,
       note: revisionsTable.note,
       createdAt: revisionsTable.createdAt,

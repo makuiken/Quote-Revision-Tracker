@@ -11,6 +11,7 @@ export interface ActivityEntry {
   quoteId: number;
   quoteNumber: string;
   customerName: string;
+  projectName: string;
   authorName: string;
   note: string;
   createdAt: Date;

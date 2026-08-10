@@ -10,14 +10,10 @@ import {
   ObjectStorageService,
 } from '../lib/objectStorage';
 
-import { getAuth } from '@clerk/express';
+import { requireAuth, requireApproved } from '../middlewares/requireAuth';
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
-
-function hasAuthenticatedSession(req: Request): boolean {
-  return Boolean(getAuth(req)?.userId);
-}
 
 /**
  * POST /storage/uploads/request-url
@@ -29,13 +25,9 @@ function hasAuthenticatedSession(req: Request): boolean {
  */
 router.post(
   '/storage/uploads/request-url',
+  requireAuth,
+  requireApproved,
   async (req: Request, res: Response) => {
-    if (!hasAuthenticatedSession(req)) {
-      res.status(401).json({ error: 'Unauthorized' });
-
-      return;
-    }
-
     const parsed = RequestUploadUrlBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Missing or invalid required fields' });
@@ -109,19 +101,14 @@ router.get(
  * These are served from a separate path from /public-objects and can optionally
  * be protected with authentication or ACL checks based on the use case.
  */
-router.get('/storage/objects/*path', async (req: Request, res: Response) => {
+// Attachments are team-internal: require a signed-in, approved user.
+router.get('/storage/objects/*path', requireAuth, requireApproved, async (req: Request, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile =
       await objectStorageService.getObjectEntityFile(objectPath);
-
-    // Attachments are team-internal: require a signed-in user to download.
-    if (!hasAuthenticatedSession(req)) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
 
     const response = await objectStorageService.downloadObject(objectFile);
 
