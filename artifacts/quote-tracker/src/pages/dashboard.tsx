@@ -51,7 +51,7 @@ export default function DashboardPage() {
     return true;
   });
 
-  const userNames = teamMembers?.map(m => m.name) ?? [];
+  const userNames = Array.from(new Set(teamMembers?.map(m => m.name) ?? []));
 
   return (
     <Shell>

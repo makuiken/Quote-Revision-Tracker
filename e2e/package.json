@@ -12,6 +12,8 @@
     "@clerk/testing": "^1.13.9",
     "@playwright/test": "^1.56.1",
     "@types/node": "catalog:",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.22.0",
     "typescript": "~5.9.3"
   }
 }

@@ -17,7 +17,16 @@ export const OWNER_EMAIL = "makuiken@kuikenbrothers.com";
 export const ALLOWED_EMAIL_DOMAIN = "kuikenbrothers.com";
 
 export function isAllowedEmail(email: string | null): boolean {
-  return !!email && email.toLowerCase().endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+  if (!email) return false;
+  const lower = email.toLowerCase();
+  if (lower.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`)) return true;
+  // Development only: Clerk test accounts used by the automated e2e suite.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    lower.endsWith("+clerk_test@example.com")
+  )
+    return true;
+  return false;
 }
 
 function isOwnerEmail(email: string | null): boolean {

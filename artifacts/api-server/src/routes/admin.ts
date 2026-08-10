@@ -22,7 +22,10 @@ import {
 
 const router: IRouter = Router();
 
-router.use(requireAuth, requireApproved, requireAdmin);
+// Scope the guards to /admin paths only — a bare router.use() would run them
+// for every API request passing through this router and block non-admins
+// from the whole API.
+router.use("/admin", requireAuth, requireApproved, requireAdmin);
 
 function serializeUser(u: typeof usersTable.$inferSelect) {
   return {

@@ -10,8 +10,11 @@ import { TEST_USER_EMAIL } from "../test-user";
  */
 
 const runId = Date.now().toString(36);
-const quoteNumber = `E2E-${runId}`;
+// BisTrack quote numbers are exactly 7 digits.
+const quoteNumber = String(1000000 + (Date.now() % 9000000));
 const customerName = `E2E Customer ${runId}`;
+const projectName = `E2E Project ${runId}`;
+const jobAddress = "123 Test Lane, Fair Lawn, NJ";
 
 let quoteUrl: string;
 
@@ -29,6 +32,8 @@ test.describe.serial("quote-to-signoff flow", () => {
     await page.goto("/quotes/new");
     await page.locator("#quoteNumber").fill(quoteNumber);
     await page.locator("#customerName").fill(customerName);
+    await page.locator("#projectName").fill(projectName);
+    await page.locator("#jobAddress").fill(jobAddress);
 
     // Select the Windows category card and fill its specs.
     await page.getByText("Windows", { exact: true }).click();
