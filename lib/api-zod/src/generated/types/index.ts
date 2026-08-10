@@ -10,6 +10,7 @@ export * from './activityEntry';
 export * from './appUser';
 export * from './appUserRole';
 export * from './appUserStatus';
+export * from './archiveQuoteInput';
 export * from './attachment';
 export * from './attachmentInput';
 export * from './currentUser';

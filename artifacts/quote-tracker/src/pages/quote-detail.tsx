@@ -5,10 +5,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText } from "lucide-react";
+import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText, Archive, ArchiveRestore } from "lucide-react";
 import { 
   useGetQuote, 
-  getGetQuoteQueryKey, 
+  getGetQuoteQueryKey,
+  getGetRecentActivityQueryKey, 
   useCreateRevision,
   useUpdateQuote,
   getListQuotesQueryKey,
@@ -16,7 +17,9 @@ import {
   getListAttachmentsQueryKey,
   useCreateAttachment,
   useDeleteAttachment,
-  getListRevisionsQueryKey
+  getListRevisionsQueryKey,
+  useArchiveQuote,
+  useUnarchiveQuote
 } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
 import { Shell } from "@/components/layout";
@@ -72,7 +75,7 @@ function formatFileSize(bytes: number | null | undefined) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function AttachmentsCard({ quoteId }: { quoteId: number }) {
+function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readOnly?: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,15 +153,17 @@ function AttachmentsCard({ quoteId }: { quoteId: number }) {
           accept="image/*,.pdf,.dwg,.dxf,.doc,.docx,.xls,.xlsx"
           onChange={(e) => handleFiles(e.target.files)}
         />
-        <Button
-          variant="outline"
-          className="w-full"
-          disabled={isUploading}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="w-4 h-4 mr-2" />
-          {isUploading ? `Uploading... ${progress}%` : "Upload Drawings or Photos"}
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={isUploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            {isUploading ? `Uploading... ${progress}%` : "Upload Drawings or Photos"}
+          </Button>
+        )}
 
         {isLoading ? (
           <p className="text-center text-sm text-muted-foreground font-medium py-2">Loading attachments...</p>
@@ -194,16 +199,18 @@ function AttachmentsCard({ quoteId }: { quoteId: number }) {
                         <Download className="w-4 h-4" />
                       </a>
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                      title="Remove"
-                      disabled={deleteAttachment.isPending}
-                      onClick={() => handleDelete(att.id, att.name)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {!readOnly && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        title="Remove"
+                        disabled={deleteAttachment.isPending}
+                        onClick={() => handleDelete(att.id, att.name)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </li>
               );
@@ -234,10 +241,14 @@ export default function QuoteDetailPage() {
   });
   const createRevision = useCreateRevision();
   const updateQuote = useUpdateQuote();
+  const archiveQuote = useArchiveQuote();
+  const unarchiveQuote = useUnarchiveQuote();
 
   const [note, setNote] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [pendingData, setPendingData] = useState<QuoteFormValues | null>(null);
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+  const [archiveReason, setArchiveReason] = useState("");
 
   const form = useForm<QuoteFormValues>({
     resolver: zodResolver(quoteSchema),
@@ -339,6 +350,41 @@ export default function QuoteDetailPage() {
     });
   };
 
+  const refreshQuote = () => {
+    queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+    queryClient.invalidateQueries({ queryKey: getListQuotesQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListRevisionsQueryKey(quoteId) });
+    // Prefix match: refreshes recent-activity queries for all param variants.
+    queryClient.invalidateQueries({ queryKey: getGetRecentActivityQueryKey() });
+  };
+
+  const handleArchive = () => {
+    if (!archiveReason.trim()) return;
+    archiveQuote.mutate({ id: quoteId, data: { reason: archiveReason.trim() } }, {
+      onSuccess: () => {
+        refreshQuote();
+        setIsArchiveDialogOpen(false);
+        setArchiveReason("");
+        toast({ title: "Quote archived", description: "The quote is kept with its full history and can be restored anytime." });
+      },
+      onError: (err: any) => {
+        toast({ title: "Error", description: err?.data?.error || "Failed to archive quote.", variant: "destructive" });
+      }
+    });
+  };
+
+  const handleUnarchive = () => {
+    unarchiveQuote.mutate({ id: quoteId }, {
+      onSuccess: () => {
+        refreshQuote();
+        toast({ title: "Quote restored", description: "The quote is active again." });
+      },
+      onError: (err: any) => {
+        toast({ title: "Error", description: err?.data?.error || "Failed to restore quote.", variant: "destructive" });
+      }
+    });
+  };
+
   const renderSpecGrid = (specs: Record<string, any> | undefined | null) => {
     if (!specs) return null;
     const entries = Object.entries(specs).filter(([_, v]) => v);
@@ -368,7 +414,9 @@ export default function QuoteDetailPage() {
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-4xl font-serif font-bold text-primary">{quote.quoteNumber}</h1>
-              {quote.signed ? (
+              {quote.archived ? (
+                <Badge variant="outline" className="text-sm px-3 py-1 text-muted-foreground">Archived</Badge>
+              ) : quote.signed ? (
                 <Badge variant="success" className="text-sm px-3 py-1">Signed</Badge>
               ) : (
                 <Badge variant="warning" className="text-sm px-3 py-1">Awaiting Signoff</Badge>
@@ -379,18 +427,36 @@ export default function QuoteDetailPage() {
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
+            {quote.archived ? (
+              <Button variant="outline" className="bg-card" onClick={handleUnarchive} disabled={unarchiveQuote.isPending}>
+                <ArchiveRestore className="w-4 h-4 mr-2" />
+                {unarchiveQuote.isPending ? "Restoring..." : "Restore"}
+              </Button>
+            ) : (
+              <Button variant="outline" className="bg-card" onClick={() => setIsArchiveDialogOpen(true)} disabled={isEditing}>
+                <Archive className="w-4 h-4 mr-2" />
+                Archive
+              </Button>
+            )}
             <Button asChild variant="outline" className="bg-card" disabled={isEditing}>
               <Link href={`/quotes/${quote.id}/print-log`}>
                 <Printer className="w-4 h-4 mr-2" />
                 Print Log
               </Link>
             </Button>
-            <Button asChild className={quote.signed ? "bg-green-700 hover:bg-green-800" : ""} disabled={isEditing}>
-              <Link href={`/quotes/${quote.id}/signoff`}>
+            {quote.archived && !quote.signed ? (
+              <Button disabled title="Archived quotes can't be signed. Restore the quote first.">
                 <PenTool className="w-4 h-4 mr-2" />
-                {quote.signed ? "View Signoff" : "Signoff Document"}
-              </Link>
-            </Button>
+                Signoff Document
+              </Button>
+            ) : (
+              <Button asChild className={quote.signed ? "bg-green-700 hover:bg-green-800" : ""} disabled={isEditing}>
+                <Link href={`/quotes/${quote.id}/signoff`}>
+                  <PenTool className="w-4 h-4 mr-2" />
+                  {quote.signed ? "View Signoff" : "Signoff Document"}
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -590,9 +656,11 @@ export default function QuoteDetailPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-4">
                 <CardTitle>Quote Details</CardTitle>
-                <Button variant="outline" size="sm" onClick={startEditing}>
-                  <Edit className="w-4 h-4 mr-2" /> Edit Quote
-                </Button>
+                {!quote.archived && (
+                  <Button variant="outline" size="sm" onClick={startEditing}>
+                    <Edit className="w-4 h-4 mr-2" /> Edit Quote
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-8 pt-6">
                 {quote.categories.includes("windows") && (
@@ -641,6 +709,25 @@ export default function QuoteDetailPage() {
         </div>
 
         <div className="space-y-8">
+          {quote.archived && (
+            <Card className="border-border bg-muted/40">
+              <CardContent className="p-6 space-y-2">
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <Archive className="w-5 h-5" /> Archived
+                </h3>
+                <p className="text-sm text-muted-foreground font-medium">
+                  {quote.archivedByName ? `By ${quote.archivedByName}` : "Archived"}
+                  {quote.archivedAt ? ` on ${format(new Date(quote.archivedAt), "MMM d, yyyy")}` : ""}
+                </p>
+                {quote.archiveReason && (
+                  <p className="text-sm text-foreground font-medium italic border-l-2 border-border pl-3 whitespace-pre-wrap">
+                    "{quote.archiveReason}"
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {quote.signed && signoff && !isEditing && (
             <Card className="border-green-700/30 bg-green-700/5">
               <CardContent className="p-6 flex flex-col items-center text-center space-y-3">
@@ -658,7 +745,7 @@ export default function QuoteDetailPage() {
             </Card>
           )}
 
-          <AttachmentsCard quoteId={quoteId} />
+          <AttachmentsCard quoteId={quoteId} readOnly={quote.archived} />
 
           <Card>
             <CardHeader className="pb-4">
@@ -701,9 +788,9 @@ export default function QuoteDetailPage() {
                   onChange={e => setNote(e.target.value)}
                   placeholder="Log a change, conversation, or decision..."
                   className="min-h-[100px] resize-none"
-                  disabled={isEditing}
+                  disabled={isEditing || quote.archived}
                 />
-                <Button type="submit" className="w-full" disabled={createRevision.isPending || !note.trim() || isEditing}>
+                <Button type="submit" className="w-full" disabled={createRevision.isPending || !note.trim() || isEditing || quote.archived}>
                   {createRevision.isPending ? "Saving..." : "Add Update"}
                 </Button>
               </form>
@@ -711,6 +798,35 @@ export default function QuoteDetailPage() {
           </Card>
         </div>
       </div>
+
+      <Dialog open={isArchiveDialogOpen} onOpenChange={(open) => { setIsArchiveDialogOpen(open); if (!open) setArchiveReason(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Archive className="w-5 h-5" /> Archive Quote
+            </DialogTitle>
+            <DialogDescription className="text-base text-foreground mt-2">
+              The quote and its full history are kept — it just moves out of the active list. You can restore it anytime.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-2">
+            <Label htmlFor="archiveReason">Reason for archiving</Label>
+            <Textarea
+              id="archiveReason"
+              value={archiveReason}
+              onChange={e => setArchiveReason(e.target.value)}
+              placeholder="e.g. Project on hold, customer went another direction..."
+              className="min-h-[100px] resize-none"
+            />
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setIsArchiveDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleArchive} disabled={archiveQuote.isPending || !archiveReason.trim()}>
+              {archiveQuote.isPending ? "Archiving..." : "Archive Quote"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!pendingData} onOpenChange={(open) => !open && setPendingData(null)}>
         <DialogContent>

@@ -197,6 +197,7 @@ export interface Quote {
   specs: QuoteSpecs;
   /** @nullable */
   notes?: string | null;
+  createdById: string;
   createdByName: string;
   createdAt: string;
   updatedAt: string;
@@ -204,6 +205,13 @@ export interface Quote {
   /** @nullable */
   lastActivityAt?: string | null;
   signed: boolean;
+  archived: boolean;
+  /** @nullable */
+  archivedAt?: string | null;
+  /** @nullable */
+  archiveReason?: string | null;
+  /** @nullable */
+  archivedByName?: string | null;
 }
 
 export interface Revision {
@@ -235,6 +243,14 @@ export interface QuoteDetail {
   quote: Quote;
   revisions: Revision[];
   signoff?: Signoff | null;
+}
+
+export interface ArchiveQuoteInput {
+  /**
+     * Why the quote is being archived
+     * @minLength 1
+     */
+  reason: string;
 }
 
 export type QuoteInputCategoriesItem = typeof QuoteInputCategoriesItem[keyof typeof QuoteInputCategoriesItem];
@@ -343,5 +359,9 @@ search?: string;
 
 export type GetRecentActivityParams = {
 limit?: number;
+/**
+ * Only include activity on quotes created by the signed-in user
+ */
+mine?: boolean;
 };
 

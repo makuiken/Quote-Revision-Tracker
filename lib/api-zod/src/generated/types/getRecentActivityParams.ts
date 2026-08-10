@@ -8,4 +8,8 @@
 
 export type GetRecentActivityParams = {
 limit?: number;
+/**
+ * Only include activity on quotes created by the signed-in user
+ */
+mine?: boolean;
 };

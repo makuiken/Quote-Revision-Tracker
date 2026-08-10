@@ -198,6 +198,72 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/archive:
+    post:
+      operationId: archiveQuote
+      tags: [quotes]
+      summary: Archive a quote with a required reason (kept, not deleted)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveQuoteInput"
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "400":
+          description: Missing reason or quote already archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/unarchive:
+    post:
+      operationId: unarchiveQuote
+      tags: [quotes]
+      summary: Restore an archived quote to active status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "400":
+          description: Quote is not archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /quotes/{id}/revisions:
     get:
       operationId: listRevisions
@@ -409,6 +475,12 @@ paths:
           required: false
           schema:
             type: integer
+        - name: mine
+          in: query
+          required: false
+          description: Only include activity on quotes created by the signed-in user
+          schema:
+            type: boolean
       responses:
         "200":
           description: Recent activity entries
@@ -846,12 +918,17 @@ components:
         specs:
           $ref: "#/components/schemas/QuoteSpecs"
         notes: { type: ["string", "null"] }
+        createdById: { type: string }
         createdByName: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         revisionCount: { type: integer }
         lastActivityAt: { type: ["string", "null"], format: date-time }
         signed: { type: boolean }
+        archived: { type: boolean }
+        archivedAt: { type: ["string", "null"], format: date-time }
+        archiveReason: { type: ["string", "null"] }
+        archivedByName: { type: ["string", "null"] }
       required:
         - id
         - quoteNumber
@@ -861,11 +938,13 @@ components:
         - displayName
         - categories
         - specs
+        - createdById
         - createdByName
         - createdAt
         - updatedAt
         - revisionCount
         - signed
+        - archived
     QuoteDetail:
       type: object
       properties:
@@ -880,6 +959,14 @@ components:
             - $ref: "#/components/schemas/Signoff"
             - type: "null"
       required: [quote, revisions]
+    ArchiveQuoteInput:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: Why the quote is being archived
+      required: [reason]
     QuoteInput:
       type: object
       properties:

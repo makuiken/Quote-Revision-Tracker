@@ -65,6 +65,10 @@ export const quotesTable = pgTable("quotes", {
   shareToken: text("share_token").unique(),
   createdById: text("created_by_id").notNull(),
   createdByName: text("created_by_name").notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archiveReason: text("archive_reason"),
+  archivedById: text("archived_by_id"),
+  archivedByName: text("archived_by_name"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

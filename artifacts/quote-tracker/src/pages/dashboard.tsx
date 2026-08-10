@@ -6,6 +6,7 @@ import {
   useListQuotes, 
   useGetRecentActivity,
   useListTeamMembers,
+  useGetCurrentUser,
 } from "@workspace/api-client-react";
 import { Shell } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type StatusFilter = "all" | "awaiting" | "signed";
+type StatusFilter = "all" | "awaiting" | "signed" | "archived";
 type CategoryFilter = "all" | "doors" | "windows" | "trim" | "millwork";
 
 export default function DashboardPage() {
@@ -23,6 +24,8 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
+  // Default to showing only the viewer's own quotes; collaboration is infrequent.
+  const [viewScope, setViewScope] = useState<"mine" | "everyone">("mine");
 
   const searchTimerRef = useRef<number | null>(null);
 
@@ -37,10 +40,27 @@ export default function DashboardPage() {
   }, [searchTerm]);
 
   const { data: quotes, isLoading: isLoadingQuotes } = useListQuotes({ search: debouncedSearch || undefined });
-  const { data: activity } = useGetRecentActivity({ limit: 5 });
+  // "My Quotes" scope is applied server-side for activity, by creator ID.
+  const { data: activity } = useGetRecentActivity({
+    limit: 5,
+    mine: viewScope === "mine" ? true : undefined,
+  });
   const { data: teamMembers } = useListTeamMembers();
+  const { data: me } = useGetCurrentUser();
+
+  // Match by immutable user ID, never display name. Until the profile
+  // loads, quotes stay in the loading state rather than flashing a wrong list.
+  const isMine = (createdById: string) => createdById === me?.id;
+  const isLoadingList = isLoadingQuotes || (viewScope === "mine" && !me);
 
   const filteredQuotes = quotes?.filter(q => {
+    if (viewScope === "mine" && !isMine(q.createdById)) return false;
+    // Archived quotes only appear under the Archived filter.
+    if (statusFilter === "archived") {
+      if (!q.archived) return false;
+    } else if (q.archived) {
+      return false;
+    }
     if (statusFilter === "awaiting" && q.signed) return false;
     if (statusFilter === "signed" && !q.signed) return false;
     
@@ -52,6 +72,8 @@ export default function DashboardPage() {
   });
 
   const userNames = Array.from(new Set(teamMembers?.map(m => m.name) ?? []));
+
+  const visibleActivity = activity ?? [];
 
   return (
     <Shell>
@@ -87,6 +109,21 @@ export default function DashboardPage() {
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center bg-card border-2 border-border rounded-md overflow-hidden p-1 shadow-sm">
               <Button 
+                variant={viewScope === "mine" ? "default" : "ghost"} 
+                size="sm" 
+                className={`rounded ${viewScope === "mine" ? "" : "hover:bg-accent/50"} h-8 px-4`}
+                onClick={() => setViewScope("mine")}
+              >My Quotes</Button>
+              <Button 
+                variant={viewScope === "everyone" ? "default" : "ghost"} 
+                size="sm" 
+                className={`rounded ${viewScope === "everyone" ? "" : "hover:bg-accent/50"} h-8 px-4`}
+                onClick={() => { setViewScope("everyone"); }}
+              >Everyone</Button>
+            </div>
+
+            <div className="flex items-center bg-card border-2 border-border rounded-md overflow-hidden p-1 shadow-sm">
+              <Button 
                 variant={statusFilter === "all" ? "default" : "ghost"} 
                 size="sm" 
                 className={`rounded ${statusFilter === "all" ? "" : "hover:bg-accent/50"} h-8 px-4`}
@@ -104,6 +141,12 @@ export default function DashboardPage() {
                 className={`rounded ${statusFilter === "signed" ? "" : "hover:bg-accent/50"} h-8 px-4`}
                 onClick={() => setStatusFilter("signed")}
               >Signed</Button>
+              <Button 
+                variant={statusFilter === "archived" ? "default" : "ghost"} 
+                size="sm" 
+                className={`rounded ${statusFilter === "archived" ? "" : "hover:bg-accent/50"} h-8 px-4`}
+                onClick={() => setStatusFilter("archived")}
+              >Archived</Button>
             </div>
 
             <div className="flex items-center bg-card border-2 border-border rounded-md overflow-hidden p-1 shadow-sm overflow-x-auto">
@@ -118,22 +161,24 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            <Select value={userFilter} onValueChange={setUserFilter}>
-              <SelectTrigger aria-label="Filter quotes by user" className="w-full sm:w-[200px] bg-card border-2 border-border shadow-sm font-medium">
-                <User aria-hidden="true" className="w-4 h-4 text-muted-foreground shrink-0" />
-                <SelectValue placeholder="All users" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All users</SelectItem>
-                {userNames.map(name => (
-                  <SelectItem key={name} value={name}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {viewScope === "everyone" && (
+              <Select value={userFilter} onValueChange={setUserFilter}>
+                <SelectTrigger aria-label="Filter quotes by user" className="w-full sm:w-[200px] bg-card border-2 border-border shadow-sm font-medium">
+                  <User aria-hidden="true" className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <SelectValue placeholder="All users" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All users</SelectItem>
+                  {userNames.map(name => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <Card className="overflow-hidden">
-            {isLoadingQuotes ? (
+            {isLoadingList ? (
               <div className="p-8 text-center text-muted-foreground font-medium">Loading quotes...</div>
             ) : filteredQuotes?.length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center">
@@ -156,7 +201,9 @@ export default function DashboardPage() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-3">
                           <span className="font-bold text-lg text-foreground">{quote.quoteNumber}</span>
-                          {quote.signed ? (
+                          {quote.archived ? (
+                            <Badge variant="outline" className="text-muted-foreground">Archived</Badge>
+                          ) : quote.signed ? (
                             <Badge variant="success">Signed</Badge>
                           ) : (
                             <Badge variant="warning">Awaiting Signoff</Badge>
@@ -192,11 +239,11 @@ export default function DashboardPage() {
           <h2 className="text-2xl font-serif font-bold text-foreground">Recent Activity</h2>
           <Card>
             <CardContent className="p-0">
-              {!activity || activity.length === 0 ? (
+              {visibleActivity.length === 0 ? (
                 <div className="p-6 text-center text-muted-foreground font-medium">No activity yet.</div>
               ) : (
                 <div className="divide-y divide-border/50">
-                  {activity.map(entry => (
+                  {visibleActivity.map(entry => (
                     <div key={entry.id} className="p-5 flex gap-4">
                       <div className="w-2 h-2 mt-2 rounded-full bg-secondary shrink-0"></div>
                       <div className="space-y-1">

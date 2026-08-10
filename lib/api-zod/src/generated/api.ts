@@ -87,12 +87,17 @@ export const ListQuotesResponseItem = zod.object({
   "millworkDescription": zod.string().nullish()
 }),
   "notes": zod.string().nullish(),
+  "createdById": zod.string(),
   "createdByName": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "revisionCount": zod.int(),
   "lastActivityAt": zod.coerce.date().nullish(),
-  "signed": zod.boolean()
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
 })
 export const ListQuotesResponse = zod.array(ListQuotesResponseItem)
 
@@ -173,12 +178,17 @@ export const CreateQuoteResponse = zod.object({
   "millworkDescription": zod.string().nullish()
 }),
   "notes": zod.string().nullish(),
+  "createdById": zod.string(),
   "createdByName": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "revisionCount": zod.int(),
   "lastActivityAt": zod.coerce.date().nullish(),
-  "signed": zod.boolean()
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
 })
 
 
@@ -223,12 +233,17 @@ export const GetQuoteResponse = zod.object({
   "millworkDescription": zod.string().nullish()
 }),
   "notes": zod.string().nullish(),
+  "createdById": zod.string(),
   "createdByName": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "revisionCount": zod.int(),
   "lastActivityAt": zod.coerce.date().nullish(),
-  "signed": zod.boolean()
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
 }),
   "revisions": zod.array(zod.object({
   "id": zod.int(),
@@ -328,12 +343,17 @@ export const UpdateQuoteResponse = zod.object({
   "millworkDescription": zod.string().nullish()
 }),
   "notes": zod.string().nullish(),
+  "createdById": zod.string(),
   "createdByName": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "revisionCount": zod.int(),
   "lastActivityAt": zod.coerce.date().nullish(),
-  "signed": zod.boolean()
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
 })
 
 
@@ -345,6 +365,121 @@ export const DeleteQuoteParams = zod.object({
 })
 
 export const DeleteQuoteResponse = zod.void()
+
+
+/**
+ * @summary Archive a quote with a required reason (kept, not deleted)
+ */
+export const ArchiveQuoteParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const ArchiveQuoteBody = zod.object({
+  "reason": zod.string().min(1).describe('Why the quote is being archived')
+})
+
+export const ArchiveQuoteResponse = zod.object({
+  "id": zod.int(),
+  "quoteNumber": zod.string(),
+  "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "specs": zod.object({
+  "window": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "series": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorColor": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "dividedLites": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "screenColor": zod.string().nullish()
+}),zod.null()]).optional(),
+  "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "trimDescription": zod.string().nullish(),
+  "millworkDescription": zod.string().nullish()
+}),
+  "notes": zod.string().nullish(),
+  "createdById": zod.string(),
+  "createdByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "revisionCount": zod.int(),
+  "lastActivityAt": zod.coerce.date().nullish(),
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
+})
+
+
+/**
+ * @summary Restore an archived quote to active status
+ */
+export const UnarchiveQuoteParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const UnarchiveQuoteResponse = zod.object({
+  "id": zod.int(),
+  "quoteNumber": zod.string(),
+  "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "specs": zod.object({
+  "window": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "series": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorColor": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "dividedLites": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "screenColor": zod.string().nullish()
+}),zod.null()]).optional(),
+  "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "trimDescription": zod.string().nullish(),
+  "millworkDescription": zod.string().nullish()
+}),
+  "notes": zod.string().nullish(),
+  "createdById": zod.string(),
+  "createdByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "revisionCount": zod.int(),
+  "lastActivityAt": zod.coerce.date().nullish(),
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
+})
 
 
 /**
@@ -494,12 +629,17 @@ export const GetPublicSignoffResponse = zod.object({
   "millworkDescription": zod.string().nullish()
 }),
   "notes": zod.string().nullish(),
+  "createdById": zod.string(),
   "createdByName": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "revisionCount": zod.int(),
   "lastActivityAt": zod.coerce.date().nullish(),
-  "signed": zod.boolean()
+  "signed": zod.boolean(),
+  "archived": zod.boolean(),
+  "archivedAt": zod.coerce.date().nullish(),
+  "archiveReason": zod.string().nullish(),
+  "archivedByName": zod.string().nullish()
 }),
   "revisions": zod.array(zod.object({
   "id": zod.int(),
@@ -561,7 +701,8 @@ export const GetDashboardSummaryResponse = zod.object({
  * @summary Most recent revision entries across all quotes
  */
 export const GetRecentActivityQueryParams = zod.object({
-  "limit": zod.coerce.number().int().optional()
+  "limit": zod.coerce.number().int().optional(),
+  "mine": zod.coerce.boolean().optional().describe('Only include activity on quotes created by the signed-in user')
 })
 
 export const GetRecentActivityResponseItem = zod.object({

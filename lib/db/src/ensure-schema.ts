@@ -12,6 +12,11 @@ const RECONCILIATION_STATEMENTS: string[] = [
   // quotes.share_token was added after the initial schema; older databases lack it.
   `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS quotes_share_token_unique ON quotes (share_token)`,
+  // Archive support: quotes can be archived (kept, not deleted) with a reason.
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS archived_at timestamptz`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS archive_reason text`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS archived_by_id text`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS archived_by_name text`,
 ];
 
 export async function ensureSchema(): Promise<void> {

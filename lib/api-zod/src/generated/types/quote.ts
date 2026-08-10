@@ -19,6 +19,7 @@ export interface Quote {
   specs: QuoteSpecs;
   /** @nullable */
   notes?: string | null;
+  createdById: string;
   createdByName: string;
   createdAt: Date;
   updatedAt: Date;
@@ -26,4 +27,11 @@ export interface Quote {
   /** @nullable */
   lastActivityAt?: Date | null;
   signed: boolean;
+  archived: boolean;
+  /** @nullable */
+  archivedAt?: Date | null;
+  /** @nullable */
+  archiveReason?: string | null;
+  /** @nullable */
+  archivedByName?: string | null;
 }

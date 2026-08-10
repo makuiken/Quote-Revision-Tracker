@@ -56,6 +56,20 @@ router.get("/public/signoff/:token", async (req, res): Promise<void> => {
   );
 });
 
+// Archived quotes cannot be signed, even through an already-issued link.
+function rejectIfArchived(
+  quote: { archivedAt: Date | null },
+  res: Parameters<Parameters<IRouter["put"]>[1]>[1],
+): boolean {
+  if (quote.archivedAt) {
+    res.status(400).json({
+      error: "This quote is no longer active and cannot be signed.",
+    });
+    return true;
+  }
+  return false;
+}
+
 router.put("/public/signoff/:token", async (req, res): Promise<void> => {
   const params = SavePublicSignoffParams.safeParse(req.params);
   if (!params.success) {
@@ -73,6 +87,7 @@ router.put("/public/signoff/:token", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Invalid or revoked link" });
     return;
   }
+  if (rejectIfArchived(quote, res)) return;
 
   const [signoff] = await db
     .insert(signoffsTable)

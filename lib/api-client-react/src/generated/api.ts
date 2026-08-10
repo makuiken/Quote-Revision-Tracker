@@ -22,6 +22,7 @@ import type {
 import type {
   ActivityEntry,
   AppUser,
+  ArchiveQuoteInput,
   Attachment,
   AttachmentInput,
   CurrentUser,
@@ -755,6 +756,149 @@ export const useDeleteQuote = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getDeleteQuoteMutationOptions(options));
+    }
+
+export const getArchiveQuoteUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/archive`
+}
+
+/**
+ * @summary Archive a quote with a required reason (kept, not deleted)
+ */
+export const archiveQuote = async (id: number,
+    archiveQuoteInput: ArchiveQuoteInput, options?: Parameters<typeof customFetch>[1]): Promise<Quote> => {
+
+  return customFetch<Quote>(getArchiveQuoteUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(archiveQuoteInput)
+  }
+);}
+
+
+
+
+
+export const getArchiveQuoteMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveQuote>>, TError,{id: number;data: BodyType<ArchiveQuoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveQuote>>, TError,{id: number;data: BodyType<ArchiveQuoteInput>}, TContext> => {
+
+const mutationKey = ['archiveQuote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveQuote>>, {id: number;data: BodyType<ArchiveQuoteInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  archiveQuote(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveQuoteMutationResult = NonNullable<Awaited<ReturnType<typeof archiveQuote>>>
+    export type ArchiveQuoteMutationBody = BodyType<ArchiveQuoteInput>
+    export type ArchiveQuoteMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Archive a quote with a required reason (kept, not deleted)
+ */
+export const useArchiveQuote = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveQuote>>, TError,{id: number;data: BodyType<ArchiveQuoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveQuote>>,
+        TError,
+        {id: number;data: BodyType<ArchiveQuoteInput>},
+        TContext
+      > => {
+      return useMutation(getArchiveQuoteMutationOptions(options));
+    }
+
+export const getUnarchiveQuoteUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/unarchive`
+}
+
+/**
+ * @summary Restore an archived quote to active status
+ */
+export const unarchiveQuote = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<Quote> => {
+
+  return customFetch<Quote>(getUnarchiveQuoteUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnarchiveQuoteMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveQuote>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unarchiveQuote>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['unarchiveQuote'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveQuote>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  unarchiveQuote(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnarchiveQuoteMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveQuote>>>
+
+    export type UnarchiveQuoteMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Restore an archived quote to active status
+ */
+export const useUnarchiveQuote = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveQuote>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unarchiveQuote>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getUnarchiveQuoteMutationOptions(options));
     }
 
 export const getListRevisionsUrl = (id: number,) => {

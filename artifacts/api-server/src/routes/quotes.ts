@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Router, type IRouter, type Response } from "express";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   db,
   quotesTable,
@@ -22,6 +22,11 @@ import {
   UpdateQuoteParams,
   UpdateQuoteBody,
   UpdateQuoteResponse,
+  ArchiveQuoteParams,
+  ArchiveQuoteBody,
+  ArchiveQuoteResponse,
+  UnarchiveQuoteParams,
+  UnarchiveQuoteResponse,
   DeleteQuoteParams,
   ListRevisionsParams,
   ListRevisionsResponse,
@@ -146,12 +151,17 @@ export function serializeQuote(
     categories: quote.categories,
     specs: quote.specs ?? {},
     notes: quote.notes,
+    createdById: quote.createdById,
     createdByName: quote.createdByName,
     createdAt: quote.createdAt,
     updatedAt: quote.updatedAt,
     revisionCount: stats?.revisionCount ?? 0,
     lastActivityAt: stats?.lastActivityAt ?? null,
     signed: stats?.signed ?? false,
+    archived: quote.archivedAt !== null,
+    archivedAt: quote.archivedAt,
+    archiveReason: quote.archiveReason,
+    archivedByName: quote.archivedByName,
   };
 }
 
@@ -220,6 +230,21 @@ router.post("/quotes", async (req: AuthedRequest, res): Promise<void> => {
   res.status(201).json(CreateQuoteResponse.parse(serializeQuote(quote!)));
 });
 
+/**
+ * Archived quotes are read-only: no edits, revisions, attachments, share
+ * links, or signatures until they are restored. Returns false (and responds
+ * 400) when the quote is archived.
+ */
+function guardNotArchived(quote: QuoteRow, res: Response): boolean {
+  if (quote.archivedAt) {
+    res.status(400).json({
+      error: "This quote is archived. Restore it to make changes.",
+    });
+    return false;
+  }
+  return true;
+}
+
 async function loadQuote(id: number, res: Response): Promise<QuoteRow | null> {
   const [quote] = await db
     .select()
@@ -277,6 +302,7 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
 
   const before = await loadQuote(params.data.id, res);
   if (!before) return;
+  if (!guardNotArchived(before, res)) return;
 
   const updates: Partial<QuoteRow> = {};
   const changed: string[] = [];
@@ -360,6 +386,126 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
   res.json(UpdateQuoteResponse.parse(serializeQuote(quote, stats.get(quote.id))));
 });
 
+router.post(
+  "/quotes/:id/archive",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = ArchiveQuoteParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const parsed = ArchiveQuoteBody.safeParse(req.body);
+    const reason = parsed.success ? parsed.data.reason.trim() : "";
+    if (!reason) {
+      res.status(400).json({ error: "A reason for archiving is required" });
+      return;
+    }
+
+    const before = await loadQuote(params.data.id, res);
+    if (!before) return;
+    if (before.archivedAt) {
+      res.status(400).json({ error: "Quote is already archived" });
+      return;
+    }
+
+    const profile = await getUserProfile(req.userId!);
+
+    // Archive + register entry are atomic so the log always matches. The
+    // update is conditional on the quote still being active, so concurrent
+    // archive requests cannot double-archive or double-log.
+    const quote = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(quotesTable)
+        .set({
+          archivedAt: new Date(),
+          archiveReason: reason,
+          archivedById: req.userId!,
+          archivedByName: profile.name,
+        })
+        .where(
+          and(eq(quotesTable.id, params.data.id), isNull(quotesTable.archivedAt)),
+        )
+        .returning();
+      if (!updated) return null;
+
+      await tx.insert(revisionsTable).values({
+        quoteId: updated.id,
+        authorId: req.userId!,
+        authorName: profile.name,
+        note: `Archived quote. Reason: ${reason}`,
+      });
+      return updated;
+    });
+
+    if (!quote) {
+      res.status(400).json({ error: "Quote is already archived" });
+      return;
+    }
+
+    const stats = await quoteStats([quote.id]);
+    res.json(
+      ArchiveQuoteResponse.parse(serializeQuote(quote, stats.get(quote.id))),
+    );
+  },
+);
+
+router.post(
+  "/quotes/:id/unarchive",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = UnarchiveQuoteParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const before = await loadQuote(params.data.id, res);
+    if (!before) return;
+    if (!before.archivedAt) {
+      res.status(400).json({ error: "Quote is not archived" });
+      return;
+    }
+
+    const profile = await getUserProfile(req.userId!);
+
+    const quote = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(quotesTable)
+        .set({
+          archivedAt: null,
+          archiveReason: null,
+          archivedById: null,
+          archivedByName: null,
+        })
+        .where(
+          and(
+            eq(quotesTable.id, params.data.id),
+            isNotNull(quotesTable.archivedAt),
+          ),
+        )
+        .returning();
+      if (!updated) return null;
+
+      await tx.insert(revisionsTable).values({
+        quoteId: updated.id,
+        authorId: req.userId!,
+        authorName: profile.name,
+        note: "Restored quote from archive",
+      });
+      return updated;
+    });
+
+    if (!quote) {
+      res.status(400).json({ error: "Quote is not archived" });
+      return;
+    }
+
+    const stats = await quoteStats([quote.id]);
+    res.json(
+      UnarchiveQuoteResponse.parse(serializeQuote(quote, stats.get(quote.id))),
+    );
+  },
+);
+
 router.delete("/quotes/:id", async (req, res): Promise<void> => {
   const params = DeleteQuoteParams.safeParse(req.params);
   if (!params.success) {
@@ -411,6 +557,7 @@ router.post(
 
     const quote = await loadQuote(params.data.id, res);
     if (!quote) return;
+    if (!guardNotArchived(quote, res)) return;
 
     const profile = await getUserProfile(req.userId!);
     const [revision] = await db
@@ -462,6 +609,7 @@ router.post(
 
     const quote = await loadQuote(params.data.id, res);
     if (!quote) return;
+    if (!guardNotArchived(quote, res)) return;
 
     const profile = await getUserProfile(req.userId!);
     const [attachment] = await db
@@ -517,6 +665,7 @@ router.post("/quotes/:id/share-link", async (req, res): Promise<void> => {
 
   const quote = await loadQuote(params.data.id, res);
   if (!quote) return;
+  if (!guardNotArchived(quote, res)) return;
 
   let token = quote.shareToken;
   if (!token) {
@@ -559,6 +708,7 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
 
   const quote = await loadQuote(params.data.id, res);
   if (!quote) return;
+  if (!guardNotArchived(quote, res)) return;
 
   const [signoff] = await db
     .insert(signoffsTable)
@@ -620,9 +770,10 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
   );
 });
 
-router.get("/activity/recent", async (req, res): Promise<void> => {
+router.get("/activity/recent", async (req: AuthedRequest, res): Promise<void> => {
   const query = GetRecentActivityQueryParams.safeParse(req.query);
   const limit = Math.min(query.success ? (query.data.limit ?? 10) : 10, 50);
+  const mine = query.success ? query.data.mine === true : false;
 
   const rows = await db
     .select({
@@ -637,6 +788,7 @@ router.get("/activity/recent", async (req, res): Promise<void> => {
     })
     .from(revisionsTable)
     .innerJoin(quotesTable, eq(revisionsTable.quoteId, quotesTable.id))
+    .where(mine ? eq(quotesTable.createdById, req.userId!) : undefined)
     .orderBy(desc(revisionsTable.createdAt))
     .limit(limit);
 
