@@ -36,6 +36,7 @@ minimumReleaseAgeExclude:
 
 packages:
   - artifacts/*
+  - e2e
   - lib/*
   - lib/integrations/*
   - scripts
