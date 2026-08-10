@@ -226,7 +226,7 @@ const CATEGORIES = [
   { id: "doors", label: "Doors" },
   { id: "windows", label: "Windows" },
   { id: "trim", label: "Trim" },
-  { id: "millwork", label: "General Millwork" },
+  { id: "millwork", label: "Misc. Millwork" },
 ] as const;
 
 export default function QuoteDetailPage() {
