@@ -278,18 +278,47 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
 
   const updates: Partial<QuoteRow> = {};
   const changed: string[] = [];
+
+  const fmtValue = (value: unknown): string => {
+    if (value === null || value === undefined || value === "") return "(blank)";
+    if (Array.isArray(value)) return value.length ? value.join(", ") : "(blank)";
+    const s = typeof value === "string" ? value : JSON.stringify(value);
+    return s.length > 120 ? `${s.slice(0, 117)}...` : s;
+  };
+
   const track = (label: string, key: keyof QuoteRow, value: unknown) => {
     if (value === undefined) return;
     (updates as Record<string, unknown>)[key] = value;
     if (JSON.stringify(value) !== JSON.stringify(before[key] ?? null))
-      changed.push(label);
+      changed.push(`${label}: ${fmtValue(before[key])} → ${fmtValue(value)}`);
   };
+
+  // Specs are nested (category → fields), so diff them field by field for a
+  // readable log entry instead of dumping the whole object.
+  const trackSpecs = (value: unknown) => {
+    if (value === undefined) return;
+    (updates as Record<string, unknown>).specs = value;
+    const prev = (before.specs ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
+    const next = (value ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
+    for (const category of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+      const prevFields = prev[category] ?? {};
+      const nextFields = next[category] ?? {};
+      for (const field of new Set([...Object.keys(prevFields), ...Object.keys(nextFields)])) {
+        const a = (prevFields as Record<string, unknown>)[field];
+        const b = (nextFields as Record<string, unknown>)[field];
+        if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) {
+          changed.push(`${category} ${field}: ${fmtValue(a)} → ${fmtValue(b)}`);
+        }
+      }
+    }
+  };
+
   track("quote number", "quoteNumber", parsed.data.quoteNumber);
   track("customer name", "customerName", parsed.data.customerName);
   track("project name", "projectName", parsed.data.projectName);
   track("job address", "jobAddress", parsed.data.jobAddress);
   track("categories", "categories", parsed.data.categories);
-  track("specifications", "specs", parsed.data.specs);
+  trackSpecs(parsed.data.specs);
   track("notes", "notes", parsed.data.notes);
 
   const profile = await getUserProfile(req.userId!);
@@ -314,7 +343,7 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
         quoteId: updated.id,
         authorId: req.userId!,
         authorName: profile.name,
-        note: `Edited quote details: ${changed.join(", ")}`,
+        note: `Edited quote details:\n${changed.join("\n")}`,
       });
     }
     return updated;

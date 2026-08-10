@@ -206,7 +206,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-muted-foreground font-medium">
                           {format(new Date(entry.createdAt), "MMM d, h:mm a")}
                         </p>
-                        <p className="text-sm text-muted-foreground mt-2 italic border-l-2 border-border pl-3">
+                        <p className="text-sm text-muted-foreground mt-2 italic border-l-2 border-border pl-3 whitespace-pre-line">
                           "{entry.note}"
                         </p>
                       </div>
