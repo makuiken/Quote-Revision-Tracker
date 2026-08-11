@@ -2,4 +2,5 @@
 - [DB drift after task merges](db-drift-after-merges.md) — merged schema code may lack DB columns; check with psql and apply additive DDL manually (drizzle push needs a TTY).
 - [Express router guards](express-router-guards.md) — bare `router.use(guard)` in a root-mounted sub-router blocks the whole API for non-matching users; always scope guards to a path.
 - [Signoff document versioning](signoff-document-version.md) — signing must echo a documentVersion hash; all signoff-affecting mutations must clear signatures and change the hash.
+- [Draft/autosave write ordering](draft-write-ordering.md) — autosaved drafts need an ordered write queue + epoch drop; publish must carry the latest text in one server transaction.
 - [E2E testing setup](e2e-testing.md) — Playwright suite in `e2e/`; Clerk headless sign-in needs ticket strategy, system chromium on NixOS, drizzle push needs a TTY.

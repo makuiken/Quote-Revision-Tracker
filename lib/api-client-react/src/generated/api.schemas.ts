@@ -327,6 +327,23 @@ export interface RevisionInput {
   note: string;
 }
 
+export interface RevisionDraft {
+  id: number;
+  quoteId: number;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RevisionDraftLookup {
+  draft: RevisionDraft | null;
+}
+
+export interface RevisionDraftInput {
+  /** @minLength 1 */
+  note: string;
+}
+
 export interface RevisionExclusionInput {
   /** Hide (true) or show (false) this revision on the signoff document only */
   excludedFromSignoff: boolean;

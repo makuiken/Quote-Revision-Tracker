@@ -40,6 +40,18 @@ const RECONCILIATION_STATEMENTS: string[] = [
 
   // Per-revision signoff exclusion: hides an entry on the signoff document only.
   `ALTER TABLE revisions ADD COLUMN IF NOT EXISTS excluded_from_signoff boolean NOT NULL DEFAULT false`,
+
+  // Private per-user drafts of revision notes. One resumable draft per user
+  // per quote; drafts never touch signoff state or the document version.
+  `CREATE TABLE IF NOT EXISTS revision_drafts (
+    id serial PRIMARY KEY,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    author_id text NOT NULL,
+    note text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT revision_drafts_quote_author_unique UNIQUE (quote_id, author_id)
+  )`,
 ];
 
 export async function ensureSchema(): Promise<void> {

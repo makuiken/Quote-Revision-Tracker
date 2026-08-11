@@ -6,6 +6,7 @@ import {
   quotesTable,
   revisionsTable,
   signoffsTable,
+  revisionDraftsTable,
   attachmentsTable,
   usersTable,
 } from "@workspace/db";
@@ -33,6 +34,15 @@ import {
   CreateRevisionParams,
   CreateRevisionBody,
   CreateRevisionResponse,
+  GetRevisionDraftParams,
+  GetRevisionDraftResponse,
+  SaveRevisionDraftParams,
+  SaveRevisionDraftBody,
+  SaveRevisionDraftResponse,
+  DiscardRevisionDraftParams,
+  PublishRevisionDraftBody,
+  PublishRevisionDraftParams,
+  PublishRevisionDraftResponse,
   SetRevisionSignoffExclusionParams,
   SetRevisionSignoffExclusionBody,
   SetRevisionSignoffExclusionResponse,
@@ -601,6 +611,190 @@ router.delete("/quotes/:id", async (req, res): Promise<void> => {
   }
   res.sendStatus(204);
 });
+
+// ---------- Revision drafts ----------
+// Private, per-user drafts of revision notes. Drafts live entirely outside
+// the published revisions flow: they never appear in the revision log,
+// signoff document, public share view, print log, or the document version
+// hash, and saving/discarding one never touches signoff state.
+
+router.get(
+  "/quotes/:id/revision-draft",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = GetRevisionDraftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const quote = await loadQuote(params.data.id, res);
+    if (!quote) return;
+
+    const [draft] = await db
+      .select()
+      .from(revisionDraftsTable)
+      .where(
+        and(
+          eq(revisionDraftsTable.quoteId, quote.id),
+          eq(revisionDraftsTable.authorId, req.userId!),
+        ),
+      );
+
+    res.json(GetRevisionDraftResponse.parse({ draft: draft ?? null }));
+  },
+);
+
+router.put(
+  "/quotes/:id/revision-draft",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = SaveRevisionDraftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const parsed = SaveRevisionDraftBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    if (!parsed.data.note.trim()) {
+      res.status(400).json({ error: "Draft cannot be empty." });
+      return;
+    }
+
+    const quote = await loadQuote(params.data.id, res);
+    if (!quote) return;
+    if (!guardNotArchived(quote, res)) return;
+
+    // Upsert: one resumable draft per user per quote.
+    const [draft] = await db
+      .insert(revisionDraftsTable)
+      .values({
+        quoteId: quote.id,
+        authorId: req.userId!,
+        note: parsed.data.note,
+      })
+      .onConflictDoUpdate({
+        target: [revisionDraftsTable.quoteId, revisionDraftsTable.authorId],
+        set: { note: parsed.data.note, updatedAt: new Date() },
+      })
+      .returning();
+
+    res.json(SaveRevisionDraftResponse.parse(draft));
+  },
+);
+
+router.delete(
+  "/quotes/:id/revision-draft",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = DiscardRevisionDraftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const quote = await loadQuote(params.data.id, res);
+    if (!quote) return;
+
+    await db
+      .delete(revisionDraftsTable)
+      .where(
+        and(
+          eq(revisionDraftsTable.quoteId, quote.id),
+          eq(revisionDraftsTable.authorId, req.userId!),
+        ),
+      );
+
+    res.sendStatus(204);
+  },
+);
+
+router.post(
+  "/quotes/:id/revision-draft/publish",
+  async (req: AuthedRequest, res): Promise<void> => {
+    const params = PublishRevisionDraftParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    // Optional body: the latest composer text. When provided it supersedes
+    // the stored draft, making publish a single atomic request — an
+    // in-flight auto-save can never overtake it with older text.
+    let providedNote: string | undefined;
+    if (req.body && typeof req.body === "object" && "note" in req.body) {
+      const body = PublishRevisionDraftBody.safeParse(req.body);
+      if (!body.success) {
+        res.status(400).json({ error: body.error.message });
+        return;
+      }
+      if (!body.data.note.trim()) {
+        res.status(400).json({ error: "Update note cannot be empty." });
+        return;
+      }
+      providedNote = body.data.note;
+    }
+
+    const quote = await loadQuote(params.data.id, res);
+    if (!quote) return;
+    if (!guardNotArchived(quote, res)) return;
+
+    const profile = await getUserProfile(req.userId!);
+    // Publishing behaves identically to posting a fresh revision: it
+    // invalidates any existing customer signoff and stamps the author.
+    // The draft is deleted in the same transaction (atomic publish).
+    const result = await db.transaction(async (tx) => {
+      // Re-validate archive state under the lock: an archive may have
+      // committed between the pre-transaction check and lock acquisition.
+      const current = await lockQuoteRow(tx, quote.id);
+      if (!current || current.archivedAt) return { archived: true as const };
+
+      // Validate BEFORE deleting anything, so an invalid (missing or
+      // blank) draft is never destroyed by a failed publish.
+      const [draft] = await tx
+        .select()
+        .from(revisionDraftsTable)
+        .where(
+          and(
+            eq(revisionDraftsTable.quoteId, quote.id),
+            eq(revisionDraftsTable.authorId, req.userId!),
+          ),
+        );
+      const note = providedNote ?? draft?.note;
+      if (!note || !note.trim()) return { noDraft: true as const };
+
+      if (draft) {
+        await tx
+          .delete(revisionDraftsTable)
+          .where(eq(revisionDraftsTable.id, draft.id));
+      }
+      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, quote.id));
+      const [rev] = await tx
+        .insert(revisionsTable)
+        .values({
+          quoteId: quote.id,
+          authorId: req.userId!,
+          authorName: profile.name,
+          note,
+        })
+        .returning();
+      return { revision: rev };
+    });
+
+    if ("archived" in result) {
+      res.status(400).json({
+        error: "This quote is archived. Restore it to make changes.",
+      });
+      return;
+    }
+    if ("noDraft" in result) {
+      res.status(400).json({ error: "There is no draft to publish." });
+      return;
+    }
+
+    res.status(201).json(PublishRevisionDraftResponse.parse(result.revision));
+  },
+);
 
 router.get("/quotes/:id/revisions", async (req, res): Promise<void> => {
   const params = ListRevisionsParams.safeParse(req.params);

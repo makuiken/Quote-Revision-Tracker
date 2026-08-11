@@ -36,6 +36,9 @@ import type {
   QuoteInput,
   QuoteUpdate,
   Revision,
+  RevisionDraft,
+  RevisionDraftInput,
+  RevisionDraftLookup,
   RevisionExclusionInput,
   RevisionInput,
   ShareInfo,
@@ -900,6 +903,298 @@ export const useUnarchiveQuote = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getUnarchiveQuoteMutationOptions(options));
+    }
+
+export const getGetRevisionDraftUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/revision-draft`
+}
+
+/**
+ * @summary Get the current user's private draft revision note for a quote, if any
+ */
+export const getRevisionDraft = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<RevisionDraftLookup> => {
+
+  return customFetch<RevisionDraftLookup>(getGetRevisionDraftUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRevisionDraftQueryKey = (id: number,) => {
+    return [
+    `/api/quotes/${id}/revision-draft`
+    ] as const;
+    }
+
+
+export const getGetRevisionDraftQueryOptions = <TData = Awaited<ReturnType<typeof getRevisionDraft>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRevisionDraft>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRevisionDraftQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRevisionDraft>>> = ({ signal }) => getRevisionDraft(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRevisionDraft>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRevisionDraftQueryResult = NonNullable<Awaited<ReturnType<typeof getRevisionDraft>>>
+export type GetRevisionDraftQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the current user's private draft revision note for a quote, if any
+ */
+
+export function useGetRevisionDraft<TData = Awaited<ReturnType<typeof getRevisionDraft>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRevisionDraft>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRevisionDraftQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveRevisionDraftUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/revision-draft`
+}
+
+/**
+ * @summary Create or update the current user's private draft revision note for a quote
+ */
+export const saveRevisionDraft = async (id: number,
+    revisionDraftInput: RevisionDraftInput, options?: Parameters<typeof customFetch>[1]): Promise<RevisionDraft> => {
+
+  return customFetch<RevisionDraft>(getSaveRevisionDraftUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(revisionDraftInput)
+  }
+);}
+
+
+
+
+
+export const getSaveRevisionDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveRevisionDraft>>, TError,{id: number;data: BodyType<RevisionDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveRevisionDraft>>, TError,{id: number;data: BodyType<RevisionDraftInput>}, TContext> => {
+
+const mutationKey = ['saveRevisionDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveRevisionDraft>>, {id: number;data: BodyType<RevisionDraftInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveRevisionDraft(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveRevisionDraftMutationResult = NonNullable<Awaited<ReturnType<typeof saveRevisionDraft>>>
+    export type SaveRevisionDraftMutationBody = BodyType<RevisionDraftInput>
+    export type SaveRevisionDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create or update the current user's private draft revision note for a quote
+ */
+export const useSaveRevisionDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveRevisionDraft>>, TError,{id: number;data: BodyType<RevisionDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveRevisionDraft>>,
+        TError,
+        {id: number;data: BodyType<RevisionDraftInput>},
+        TContext
+      > => {
+      return useMutation(getSaveRevisionDraftMutationOptions(options));
+    }
+
+export const getDiscardRevisionDraftUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/revision-draft`
+}
+
+/**
+ * @summary Discard the current user's draft revision note for a quote
+ */
+export const discardRevisionDraft = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDiscardRevisionDraftUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDiscardRevisionDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discardRevisionDraft>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof discardRevisionDraft>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['discardRevisionDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof discardRevisionDraft>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  discardRevisionDraft(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DiscardRevisionDraftMutationResult = NonNullable<Awaited<ReturnType<typeof discardRevisionDraft>>>
+
+    export type DiscardRevisionDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Discard the current user's draft revision note for a quote
+ */
+export const useDiscardRevisionDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discardRevisionDraft>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof discardRevisionDraft>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDiscardRevisionDraftMutationOptions(options));
+    }
+
+export const getPublishRevisionDraftUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/revision-draft/publish`
+}
+
+/**
+ * @summary Publish a revision entry from the user's draft (or the provided note) and delete the draft atomically
+ */
+export const publishRevisionDraft = async (id: number,
+    revisionDraftInput?: RevisionDraftInput, options?: Parameters<typeof customFetch>[1]): Promise<Revision> => {
+
+  return customFetch<Revision>(getPublishRevisionDraftUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(revisionDraftInput)
+  }
+);}
+
+
+
+
+
+export const getPublishRevisionDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishRevisionDraft>>, TError,{id: number;data?: BodyType<RevisionDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof publishRevisionDraft>>, TError,{id: number;data?: BodyType<RevisionDraftInput>}, TContext> => {
+
+const mutationKey = ['publishRevisionDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof publishRevisionDraft>>, {id: number;data?: BodyType<RevisionDraftInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  publishRevisionDraft(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PublishRevisionDraftMutationResult = NonNullable<Awaited<ReturnType<typeof publishRevisionDraft>>>
+    export type PublishRevisionDraftMutationBody = BodyType<RevisionDraftInput> | undefined
+    export type PublishRevisionDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Publish a revision entry from the user's draft (or the provided note) and delete the draft atomically
+ */
+export const usePublishRevisionDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishRevisionDraft>>, TError,{id: number;data?: BodyType<RevisionDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof publishRevisionDraft>>,
+        TError,
+        {id: number;data?: BodyType<RevisionDraftInput>},
+        TContext
+      > => {
+      return useMutation(getPublishRevisionDraftMutationOptions(options));
     }
 
 export const getListRevisionsUrl = (id: number,) => {

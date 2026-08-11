@@ -264,6 +264,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/revision-draft:
+    get:
+      operationId: getRevisionDraft
+      tags: [revisions]
+      summary: Get the current user's private draft revision note for a quote, if any
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The user's draft for this quote, or null if none exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevisionDraftLookup"
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: saveRevisionDraft
+      tags: [revisions]
+      summary: Create or update the current user's private draft revision note for a quote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevisionDraftInput"
+      responses:
+        "200":
+          description: Saved draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevisionDraft"
+        "400":
+          description: Quote is archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: discardRevisionDraft
+      tags: [revisions]
+      summary: Discard the current user's draft revision note for a quote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Draft discarded (no-op if none existed)
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/revision-draft/publish:
+    post:
+      operationId: publishRevisionDraft
+      tags: [revisions]
+      summary: Publish a revision entry from the user's draft (or the provided note) and delete the draft atomically
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        description: Optional latest note text; when provided it supersedes the stored draft so an in-flight auto-save can never overtake the publish
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevisionDraftInput"
+      responses:
+        "201":
+          description: Revision created from the draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Revision"
+        "400":
+          description: Quote archived or no draft to publish
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /quotes/{id}/revisions:
     get:
       operationId: listRevisions
@@ -1063,6 +1178,28 @@ components:
         createdAt: { type: string, format: date-time }
       required: [id, quoteId, authorName, note, excludedFromSignoff, createdAt]
     RevisionInput:
+      type: object
+      properties:
+        note: { type: string, minLength: 1 }
+      required: [note]
+    RevisionDraft:
+      type: object
+      properties:
+        id: { type: integer }
+        quoteId: { type: integer }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, quoteId, note, createdAt, updatedAt]
+    RevisionDraftLookup:
+      type: object
+      properties:
+        draft:
+          oneOf:
+            - $ref: "#/components/schemas/RevisionDraft"
+            - type: "null"
+      required: [draft]
+    RevisionDraftInput:
       type: object
       properties:
         note: { type: string, minLength: 1 }

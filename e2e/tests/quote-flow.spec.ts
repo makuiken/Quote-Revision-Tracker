@@ -53,16 +53,208 @@ test.describe.serial("quote-to-signoff flow", () => {
   test("add revision entries", async ({ page }) => {
     await page.goto(quoteUrl);
     await page.locator("#note").fill("Changed jamb depth per customer request");
-    await page.getByRole("button", { name: /add update/i }).click();
+    await page.getByRole("button", { name: /publish update/i }).click();
     await expect(
       page.getByText("Changed jamb depth per customer request"),
     ).toBeVisible();
+    // Wait for the composer to reset after publishing before typing again —
+    // the post-publish state update would otherwise race with the next fill.
+    await expect(page.locator("#note")).toHaveValue("");
 
     await page.locator("#note").fill("Confirmed hardware finish with supplier");
-    await page.getByRole("button", { name: /add update/i }).click();
+    await page.getByRole("button", { name: /publish update/i }).click();
     await expect(
       page.getByText("Confirmed hardware finish with supplier"),
     ).toBeVisible();
+    await expect(page.locator("#note")).toHaveValue("");
+  });
+
+  test("draft revision notes persist, stay private, and publish", async ({ page }) => {
+    const draftText = "Draft: waiting on trim pricing from supplier";
+    await page.goto(quoteUrl);
+    await page.locator("#note").fill(draftText);
+    await page.getByRole("button", { name: /save draft/i }).click();
+    await expect(page.getByText(/draft — not published/i)).toBeVisible();
+
+    // Draft survives a reload and is re-hydrated into the composer.
+    await page.reload();
+    await expect(page.locator("#note")).toHaveValue(draftText);
+    await expect(page.getByText(/draft — not published/i)).toBeVisible();
+
+    // Draft is absent from the printed log.
+    await page.goto(`${quoteUrl}/print-log`);
+    await expect(page.getByText(draftText)).not.toBeVisible();
+
+    // Draft is absent from the signoff document.
+    await page.goto(`${quoteUrl}/signoff`);
+    await expect(page.getByText(draftText)).not.toBeVisible();
+
+    // Publishing turns the draft into a normal revision entry.
+    await page.goto(quoteUrl);
+    await expect(page.locator("#note")).toHaveValue(draftText);
+    await page.getByRole("button", { name: /publish update/i }).click();
+    await expect(
+      page.locator("#note"),
+    ).toHaveValue("", { timeout: 15000 });
+    await expect(page.getByText(draftText)).toBeVisible();
+    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+  });
+
+  test("discarding a draft removes it without publishing", async ({ page }) => {
+    const draftText = "Draft to discard — should never publish";
+    await page.goto(quoteUrl);
+    await page.locator("#note").fill(draftText);
+    await page.getByRole("button", { name: /save draft/i }).click();
+    await expect(page.getByText(/draft — not published/i)).toBeVisible();
+
+    await page.getByRole("button", { name: /discard draft/i }).click();
+    await expect(page.locator("#note")).toHaveValue("");
+    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+
+    await page.reload();
+    await expect(page.locator("#note")).toHaveValue("");
+    await expect(page.getByText(draftText)).not.toBeVisible();
+  });
+
+  test("whitespace-only drafts are rejected without destroying anything", async ({ page }) => {
+    await page.goto(quoteUrl);
+    const quoteId = quoteUrl.split("/").pop();
+
+    // Saving a whitespace-only draft is rejected.
+    const saveStatus = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/revision-draft`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: "   " }),
+      });
+      return res.status;
+    }, quoteId);
+    expect(saveStatus).toBe(400);
+
+    // Publishing with no draft is rejected (and nothing is deleted).
+    const publishStatus = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/revision-draft/publish`, {
+        method: "POST",
+      });
+      return res.status;
+    }, quoteId);
+    expect(publishStatus).toBe(400);
+  });
+
+  test("delayed out-of-order auto-saves cannot resurrect a discarded draft", async ({ page }) => {
+    // All draft PUTs are delayed so a second auto-save is deterministically
+    // dispatched and still in flight when Discard is clicked. The client
+    // write queue must keep every write ordered, and Discard (queued last)
+    // must win — no delayed PUT may recreate the deleted draft.
+    let putCount = 0;
+    await page.route("**/revision-draft", async (route) => {
+      if (route.request().method() === "PUT") {
+        putCount++;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      await route.continue();
+    });
+
+    await page.goto(quoteUrl);
+    // First auto-save (slow PUT #1)...
+    await page.locator("#note").fill("First auto-saved text");
+    await page.waitForTimeout(2700);
+    // ...second auto-save queues behind it (fast PUT #2)...
+    await page.locator("#note").fill("Second auto-saved text");
+    await page.waitForTimeout(2700);
+    // ...then discard while writes are still settling.
+    await expect(page.getByRole("button", { name: /discard draft/i })).toBeVisible({ timeout: 15000 });
+    await page.getByRole("button", { name: /discard draft/i }).click();
+    await expect(page.locator("#note")).toHaveValue("", { timeout: 20000 });
+    expect(putCount).toBeGreaterThanOrEqual(2);
+
+    // After everything settles, no draft exists on the server.
+    await page.waitForTimeout(3500);
+    await page.unroute("**/revision-draft");
+    await page.reload();
+    await expect(page.locator("#note")).toHaveValue("");
+    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+  });
+
+  test("delayed out-of-order auto-saves cannot overtake publish with older text", async ({ page }) => {
+    let putCount = 0;
+    await page.route("**/revision-draft", async (route) => {
+      if (route.request().method() === "PUT") {
+        putCount++;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      await route.continue();
+    });
+
+    await page.goto(quoteUrl);
+    // Two delayed auto-saves, the second still in flight at publish time...
+    await page.locator("#note").fill("Older auto-saved text");
+    await page.waitForTimeout(2700);
+    await page.locator("#note").fill("Newer auto-saved text");
+    await page.waitForTimeout(2700);
+    // ...then publish the latest text while writes are still settling.
+    await page.locator("#note").fill("Final published text");
+    await page.getByRole("button", { name: /publish update/i }).click();
+    await expect(page.getByText("Final published text")).toBeVisible({ timeout: 25000 });
+    await expect(page.locator("#note")).toHaveValue("", { timeout: 15000 });
+    expect(putCount).toBeGreaterThanOrEqual(2);
+
+    // The published entry has the latest text and no draft remains.
+    await page.waitForTimeout(3500);
+    await page.unroute("**/revision-draft");
+    await page.reload();
+    await expect(page.getByText("Final published text")).toBeVisible();
+    await expect(page.locator("#note")).toHaveValue("");
+    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+    await expect(page.getByText("Older auto-saved text")).not.toBeVisible();
+    await expect(page.getByText("Newer auto-saved text")).not.toBeVisible();
+  });
+
+  test("leaving via browser back auto-saves the typed draft", async ({ page }) => {
+    // Reach the quote via an in-app (SPA) navigation so browser back is a
+    // popstate, not a full page load.
+    await page.goto("/quotes");
+    await page.getByText(quoteNumber).first().click();
+    await expect(page).toHaveURL(new RegExp(`${quoteUrl}$`));
+
+    await page.locator("#note").fill("History nav draft text");
+    const savedResponse = page.waitForResponse(
+      (r) => r.url().includes("/revision-draft") && r.request().method() === "PUT" && r.ok(),
+    );
+    await page.goBack();
+    await expect(page).toHaveURL(/\/quotes$/);
+    await savedResponse;
+
+    // The typed text survived as a draft; clean it up.
+    await page.goto(quoteUrl);
+    await expect(page.locator("#note")).toHaveValue("History nav draft text");
+    await page.getByRole("button", { name: /discard draft/i }).click();
+    await expect(page.locator("#note")).toHaveValue("");
+  });
+
+  test("in-app navigation with unsaved typing warns before leaving", async ({ page }) => {
+    await page.goto(quoteUrl);
+    await page.locator("#note").fill("Guard test: unsaved typing");
+    await page.getByRole("link", { name: /back to dashboard/i }).click();
+
+    // Guard dialog appears; staying keeps the text and the page.
+    await expect(page.getByText(/unsaved changes/i).first()).toBeVisible();
+    await page.getByRole("button", { name: /^stay$/i }).click();
+    await expect(page).toHaveURL(new RegExp(`${quoteUrl}$`));
+    await expect(page.locator("#note")).toHaveValue("Guard test: unsaved typing");
+
+    // Make the composer dirty again, then save-and-leave.
+    await page.locator("#note").fill("Guard test: unsaved typing, extended");
+    await page.getByRole("link", { name: /back to dashboard/i }).click();
+    await expect(page.getByText(/unsaved changes/i).first()).toBeVisible();
+    await page.getByRole("button", { name: /save draft & leave/i }).click();
+    await expect(page).toHaveURL(/\/quotes$/);
+
+    // The draft survived the navigation; clean it up.
+    await page.goto(quoteUrl);
+    await expect(page.locator("#note")).toHaveValue("Guard test: unsaved typing, extended");
+    await page.getByRole("button", { name: /discard draft/i }).click();
+    await expect(page.locator("#note")).toHaveValue("");
   });
 
   test("print log page renders the revision history", async ({ page }) => {
@@ -131,10 +323,10 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     await page.goto(quoteUrl);
     await page.locator("#note").fill("New revision after signing");
-    await page.getByRole("button", { name: /add update/i }).click();
+    await page.getByRole("button", { name: /publish update/i }).click();
     // Warning dialog: confirm signature removal.
     await page
-      .getByRole("button", { name: /remove signature & add update/i })
+      .getByRole("button", { name: /remove signature & publish update/i })
       .click();
     await expect(page.getByText("New revision after signing")).toBeVisible();
 
@@ -209,7 +401,10 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     // Exclusion toggles are rejected while archived.
     const excluded = await page.evaluate(async (id) => {
-      const list = await fetch(`/api/quotes/${id}`).then((r) => r.json());
+      // no-store: avoid a cached/stale response missing the revisions array.
+      const listRes = await fetch(`/api/quotes/${id}`, { cache: "no-store" });
+      if (!listRes.ok) throw new Error(`GET /quotes/${id} failed: ${listRes.status}`);
+      const list = await listRes.json();
       const revisionId = list.revisions[0].id;
       const res = await fetch(
         `/api/quotes/${id}/revisions/${revisionId}/signoff-exclusion`,

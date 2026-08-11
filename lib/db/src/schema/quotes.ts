@@ -6,6 +6,7 @@ import {
   jsonb,
   integer,
   boolean,
+  unique,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -97,6 +98,35 @@ export const revisionsTable = pgTable("revisions", {
     .defaultNow(),
 });
 
+// Private, per-user draft of a revision note. Drafts live entirely outside the
+// published revisions flow: they never appear in the revision log, signoff
+// document, public share view, print log, or the document version hash.
+export const revisionDraftsTable = pgTable(
+  "revision_drafts",
+  {
+    id: serial("id").primaryKey(),
+    quoteId: integer("quote_id")
+      .notNull()
+      .references(() => quotesTable.id, { onDelete: "cascade" }),
+    authorId: text("author_id").notNull(),
+    note: text("note").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    // One resumable draft per user per quote.
+    unique("revision_drafts_quote_author_unique").on(
+      table.quoteId,
+      table.authorId,
+    ),
+  ],
+);
+
 export const signoffsTable = pgTable("signoffs", {
   id: serial("id").primaryKey(),
   quoteId: integer("quote_id")
@@ -135,6 +165,7 @@ export const insertQuoteSchema = createInsertSchema(quotesTable).omit({
 export type InsertQuote = z.infer<typeof insertQuoteSchema>;
 export type Quote = typeof quotesTable.$inferSelect;
 export type Revision = typeof revisionsTable.$inferSelect;
+export type RevisionDraft = typeof revisionDraftsTable.$inferSelect;
 export type Signoff = typeof signoffsTable.$inferSelect;
 export type Attachment = typeof attachmentsTable.$inferSelect;
 export type AppUser = typeof usersTable.$inferSelect;

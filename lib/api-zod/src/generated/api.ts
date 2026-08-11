@@ -645,6 +645,81 @@ export const UnarchiveQuoteResponse = zod.object({
 
 
 /**
+ * @summary Get the current user's private draft revision note for a quote, if any
+ */
+export const GetRevisionDraftParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetRevisionDraftResponse = zod.object({
+  "draft": zod.union([zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "note": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Create or update the current user's private draft revision note for a quote
+ */
+export const SaveRevisionDraftParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const SaveRevisionDraftBody = zod.object({
+  "note": zod.string().min(1)
+})
+
+export const SaveRevisionDraftResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "note": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Discard the current user's draft revision note for a quote
+ */
+export const DiscardRevisionDraftParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const DiscardRevisionDraftResponse = zod.void()
+
+
+/**
+ * @summary Publish a revision entry from the user's draft (or the provided note) and delete the draft atomically
+ */
+export const PublishRevisionDraftParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const PublishRevisionDraftBody = zod.object({
+  "note": zod.string().min(1)
+})
+
+export const PublishRevisionDraftResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "authorName": zod.string(),
+  "note": zod.string(),
+  "excludedFromSignoff": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List a quote's revision log entries, oldest first
  */
 export const ListRevisionsParams = zod.object({

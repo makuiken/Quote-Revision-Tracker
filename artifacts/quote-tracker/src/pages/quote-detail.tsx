@@ -1,16 +1,15 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams, Link } from "wouter";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText, Archive, ArchiveRestore } from "lucide-react";
+import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText, FileEdit, Archive, ArchiveRestore } from "lucide-react";
 import { 
   useGetQuote, 
   getGetQuoteQueryKey,
   getGetRecentActivityQueryKey, 
-  useCreateRevision,
   useUpdateQuote,
   getListQuotesQueryKey,
   useListAttachments,
@@ -19,7 +18,12 @@ import {
   useDeleteAttachment,
   getListRevisionsQueryKey,
   useArchiveQuote,
-  useUnarchiveQuote
+  useUnarchiveQuote,
+  useGetRevisionDraft,
+  getGetRevisionDraftQueryKey,
+  useSaveRevisionDraft,
+  useDiscardRevisionDraft,
+  usePublishRevisionDraft
 } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
 import { Shell } from "@/components/layout";
@@ -246,13 +250,167 @@ export default function QuoteDetailPage() {
   const { data: detail, isLoading } = useGetQuote(quoteId, { 
     query: { enabled: !!quoteId, queryKey: getGetQuoteQueryKey(quoteId) } 
   });
-  const createRevision = useCreateRevision();
   const updateQuote = useUpdateQuote();
   const archiveQuote = useArchiveQuote();
   const unarchiveQuote = useUnarchiveQuote();
+  const saveDraft = useSaveRevisionDraft();
+  const discardDraft = useDiscardRevisionDraft();
+  const publishDraft = usePublishRevisionDraft();
+
+  const { data: draftLookup } = useGetRevisionDraft(quoteId, {
+    query: { enabled: !!quoteId, queryKey: getGetRevisionDraftQueryKey(quoteId) },
+  });
+  const draft = draftLookup?.draft ?? null;
 
   const [note, setNote] = useState("");
+  // The note the server currently holds as this user's draft ("" = none).
+  const [savedDraftNote, setSavedDraftNote] = useState<string | null>(null);
+  const hydratedDraftRef = useRef(false);
+  const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
+
+  // Latest composer state, readable from unmount cleanups without stale closures.
+  const composerRef = useRef({ note: "", savedDraftNote: null as string | null });
+  composerRef.current = { note, savedDraftNote };
+  const saveDraftMutateAsyncRef = useRef(saveDraft.mutateAsync);
+  saveDraftMutateAsyncRef.current = saveDraft.mutateAsync;
+
+  // Per-quote lifecycle: reset all composer/draft state when the quote id
+  // changes (the page component can be reused across quote routes), and
+  // flush any unsaved typing as a draft when leaving this quote — this
+  // covers browser back/forward and programmatic navigation, which cannot
+  // be intercepted for a confirmation dialog (wouter navigation is not
+  // cancelable), so instead of losing text we quietly save it.
+  useEffect(() => {
+    hydratedDraftRef.current = false;
+    setNote("");
+    setSavedDraftNote(null);
+    setPendingNavHref(null);
+    const flushQuoteId = quoteId;
+    return () => {
+      const { note: text, savedDraftNote: saved } = composerRef.current;
+      if (flushQuoteId && text.trim() && text !== (saved ?? "")) {
+        // Route the flush through the write queue so it stays ordered
+        // behind any in-flight draft writes for this quote.
+        enqueueDraftWriteRef
+          .current(() => saveDraftMutateAsyncRef.current({ id: flushQuoteId, data: { note: text } }))
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(flushQuoteId) });
+          })
+          .catch(() => undefined);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteId]);
+
+  // Hydrate the composer from the saved draft once, on first load.
+  useEffect(() => {
+    if (draftLookup === undefined || hydratedDraftRef.current) return;
+    hydratedDraftRef.current = true;
+    setSavedDraftNote(draft?.note ?? null);
+    if (draft && draft.note) {
+      setNote((current) => (current.trim() ? current : draft.note));
+    }
+  }, [draftLookup, draft]);
+
+  const hasDraft = savedDraftNote !== null;
+  const isDirty = note.trim() !== "" && note !== (savedDraftNote ?? "");
+
+  // Draft-write coordination: ALL draft mutations (save, discard, publish)
+  // run through a single promise-chain queue, so at most one request is in
+  // flight and the server always sees writes in the order the user made
+  // them. Destructive actions (publish, discard) additionally bump the
+  // epoch: any queued-but-not-yet-dispatched save checks the epoch at its
+  // turn and is dropped before dispatch, so a stale auto-save can never
+  // reach the server after a publish or discard, and never resurrects a
+  // deleted draft.
+  const writeEpochRef = useRef(0);
+  const writeChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const enqueueDraftWrite = <T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = writeChainRef.current.then(fn);
+    // The chain itself swallows failures so one failed write doesn't wedge
+    // the queue; callers observe errors through the returned promise.
+    writeChainRef.current = run.catch(() => undefined);
+    return run;
+  };
+  const enqueueDraftWriteRef = useRef(enqueueDraftWrite);
+  enqueueDraftWriteRef.current = enqueueDraftWrite;
+
+  const persistDraft = (text: string, opts?: { silent?: boolean; onSuccess?: () => void }) => {
+    const epoch = writeEpochRef.current;
+    enqueueDraftWrite(async () => {
+      // Superseded (published/discarded) while queued: never dispatched.
+      if (epoch !== writeEpochRef.current) return null;
+      return saveDraft.mutateAsync({ id: quoteId, data: { note: text } });
+    })
+      .then((saved) => {
+        if (!saved || epoch !== writeEpochRef.current) return;
+        setSavedDraftNote(saved.note);
+        queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(quoteId) });
+        if (!opts?.silent) {
+          toast({ title: "Draft saved", description: "Your update is saved privately — it isn't published yet." });
+        }
+        opts?.onSuccess?.();
+      })
+      .catch(() => {
+        if (!opts?.silent && epoch === writeEpochRef.current) {
+          toast({ title: "Error", description: "Failed to save draft.", variant: "destructive" });
+        }
+      });
+  };
+
+  // Auto-save: quietly persist typing as a draft after a short pause.
+  // Skipped while a publish is in flight, and epoch-checked so a late timer
+  // can't re-create a draft that publish or discard just consumed.
+  useEffect(() => {
+    if (!isDirty || !hydratedDraftRef.current) return;
+    if (publishDraft.isPending) return;
+    const epoch = writeEpochRef.current;
+    const timer = setTimeout(() => {
+      if (epoch !== writeEpochRef.current) return;
+      if (publishDraft.isPending) return;
+      persistDraft(note, { silent: true });
+    }, 2500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note, isDirty, publishDraft.isPending]);
+
+  // Warn before leaving the page with unsaved typing (browser close/reload).
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  // Guard in-app navigation: intercept clicks on internal links while the
+  // composer has unsaved typing and ask before leaving. (Back/forward and
+  // programmatic navigation are covered by the unmount flush above.)
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      const dest = url.pathname + url.search + url.hash;
+      if (dest === window.location.pathname + window.location.search + window.location.hash) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setPendingNavHref(dest);
+    };
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, [isDirty]);
   const [isEditing, setIsEditing] = useState(false);
+  const [isCoordinatingPublish, setIsCoordinatingPublish] = useState(false);
   const [pendingData, setPendingData] = useState<QuoteFormValues | null>(null);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
   const [isRevisionWarningOpen, setIsRevisionWarningOpen] = useState(false);
@@ -306,19 +464,55 @@ export default function QuoteDetailPage() {
     executeAddUpdate();
   };
 
+  const finishPublish = () => {
+    setNote("");
+    setSavedDraftNote(null);
+    setIsRevisionWarningOpen(false);
+    toast({ title: "Update added", description: "The revision log has been updated." });
+    queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+    queryClient.invalidateQueries({ queryKey: getListQuotesQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(quoteId) });
+  };
+
+  const publishError = () => {
+    toast({ title: "Error", description: "Failed to add update.", variant: "destructive" });
+  };
+
   const executeAddUpdate = () => {
-    createRevision.mutate({ id: quoteId, data: { note } }, {
-      onSuccess: () => {
+    // Single atomic request: the server publishes the provided text and
+    // deletes any stored draft in one transaction. Bumping the epoch drops
+    // any queued-but-undispatched auto-save, and enqueueing the publish
+    // orders it after every already-dispatched save.
+    setIsCoordinatingPublish(true);
+    writeEpochRef.current++;
+    enqueueDraftWrite(() => publishDraft.mutateAsync({ id: quoteId, data: { note } }))
+      .then(finishPublish)
+      .catch(publishError)
+      .finally(() => setIsCoordinatingPublish(false));
+  };
+
+  const isPublishing = publishDraft.isPending || isCoordinatingPublish;
+
+  const handleSaveDraft = () => {
+    if (!note.trim()) return;
+    persistDraft(note);
+  };
+
+  const handleDiscardDraft = () => {
+    // Bump the epoch (drops queued auto-saves before dispatch) and enqueue
+    // the DELETE after any already-dispatched save, so a delayed PUT can't
+    // land after the DELETE and resurrect the discarded draft.
+    writeEpochRef.current++;
+    enqueueDraftWrite(() => discardDraft.mutateAsync({ id: quoteId }))
+      .then(() => {
         setNote("");
-        setIsRevisionWarningOpen(false);
-        toast({ title: "Update added", description: "The revision log has been updated." });
-        queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
-        queryClient.invalidateQueries({ queryKey: getListQuotesQueryKey() });
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to add update.", variant: "destructive" });
-      }
-    });
+        setSavedDraftNote(null);
+        queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(quoteId) });
+        toast({ title: "Draft discarded", description: "The draft was removed. Nothing was published." });
+      })
+      .catch(() => {
+        toast({ title: "Error", description: "Failed to discard draft.", variant: "destructive" });
+      });
   };
 
   const startEditing = () => {
@@ -827,6 +1021,19 @@ export default function QuoteDetailPage() {
               </div>
               
               <form onSubmit={handleAddUpdate} className="mt-auto pt-4 border-t-2 border-border space-y-3">
+                {(hasDraft || isDirty) && (
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="outline" className="text-xs font-bold uppercase tracking-wider text-amber-700 border-amber-400 bg-amber-50">
+                      <FileEdit className="w-3 h-3 mr-1" />
+                      Draft — not published
+                    </Badge>
+                    <span className="text-xs text-muted-foreground font-medium">
+                      {isDirty
+                        ? (saveDraft.isPending ? "Saving draft..." : "Unsaved changes")
+                        : "Draft saved — only you can see it"}
+                    </span>
+                  </div>
+                )}
                 <Label htmlFor="note" className="sr-only">Add an update</Label>
                 <Textarea 
                   id="note"
@@ -836,9 +1043,32 @@ export default function QuoteDetailPage() {
                   className="min-h-[320px] resize-y text-base leading-relaxed p-4"
                   disabled={isEditing || quote.archived}
                 />
-                <Button type="submit" className="w-full" disabled={createRevision.isPending || !note.trim() || isEditing || quote.archived}>
-                  {createRevision.isPending ? "Saving..." : "Add Update"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1" disabled={isPublishing || !note.trim() || isEditing || quote.archived}>
+                    {isPublishing ? "Publishing..." : "Publish Update"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={saveDraft.isPending || !note.trim() || !isDirty || isEditing || quote.archived}
+                    onClick={handleSaveDraft}
+                  >
+                    <FileEdit className="w-4 h-4 mr-2" />
+                    Save Draft
+                  </Button>
+                  {hasDraft && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      disabled={discardDraft.isPending || isEditing || quote.archived}
+                      onClick={handleDiscardDraft}
+                      title="Discard draft"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               </form>
             </CardContent>
           </Card>
@@ -886,8 +1116,55 @@ export default function QuoteDetailPage() {
           </DialogHeader>
           <DialogFooter className="mt-6">
             <Button variant="outline" onClick={() => setIsRevisionWarningOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={executeAddUpdate} disabled={createRevision.isPending}>
-              {createRevision.isPending ? "Saving..." : "Remove Signature & Add Update"}
+            <Button variant="destructive" onClick={executeAddUpdate} disabled={isPublishing}>
+              {isPublishing ? "Publishing..." : "Remove Signature & Publish Update"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!pendingNavHref} onOpenChange={(open) => !open && setPendingNavHref(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600" /> Unsaved Changes
+            </DialogTitle>
+            <DialogDescription className="text-base text-foreground mt-2">
+              Your update hasn't been saved as a draft yet. Save it before leaving so you don't lose your text.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2">
+            <Button variant="outline" onClick={() => setPendingNavHref(null)}>Stay</Button>
+            <Button
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={() => {
+                const dest = pendingNavHref!;
+                setPendingNavHref(null);
+                setNote(savedDraftNote ?? "");
+                // Update the ref synchronously so the unmount flush doesn't
+                // re-save the text the user chose to abandon.
+                composerRef.current = { note: savedDraftNote ?? "", savedDraftNote };
+                setLocation(dest);
+              }}
+            >
+              Leave Without Saving
+            </Button>
+            <Button
+              disabled={saveDraft.isPending}
+              onClick={() => {
+                const dest = pendingNavHref!;
+                persistDraft(note, {
+                  silent: true,
+                  onSuccess: () => {
+                    setPendingNavHref(null);
+                    composerRef.current = { note, savedDraftNote: note };
+                    setLocation(dest);
+                  },
+                });
+              }}
+            >
+              {saveDraft.isPending ? "Saving..." : "Save Draft & Leave"}
             </Button>
           </DialogFooter>
         </DialogContent>
