@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { Router, type IRouter, type Response } from "express";
 import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
@@ -33,6 +33,9 @@ import {
   CreateRevisionParams,
   CreateRevisionBody,
   CreateRevisionResponse,
+  SetRevisionSignoffExclusionParams,
+  SetRevisionSignoffExclusionBody,
+  SetRevisionSignoffExclusionResponse,
   CreateShareLinkParams,
   CreateShareLinkResponse,
   GetSignoffParams,
@@ -167,6 +170,58 @@ export function serializeQuote(
   };
 }
 
+/**
+ * Opaque fingerprint of the signoff document content: the quote's last edit
+ * plus the exact set of revisions shown to the signer. Signing requires the
+ * client to echo this back, so a stale, already-open document can never be
+ * signed after the content changes.
+ */
+export function computeDocumentVersion(
+  quote: Pick<QuoteRow, "updatedAt">,
+  includedRevisions: Array<{ id: number }>,
+): string {
+  return createHash("sha1")
+    .update(
+      `${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}`,
+    )
+    .digest("hex");
+}
+
+/**
+ * Locks the quote row (SELECT ... FOR UPDATE) inside a transaction and returns
+ * the current row. Every signoff-affecting mutation and both sign routes take
+ * this lock, so version checks and content changes are fully serialized: a
+ * signer can never race a concurrent edit/revision/exclusion.
+ */
+export async function lockQuoteRow(
+  tx: Pick<typeof db, "select">,
+  quoteId: number,
+): Promise<QuoteRow | null> {
+  const [quote] = await tx
+    .select()
+    .from(quotesTable)
+    .where(eq(quotesTable.id, quoteId))
+    .for("update");
+  return quote ?? null;
+}
+
+/** Loads the revisions currently shown on the signoff document (excluded ones omitted). */
+export async function loadIncludedRevisions(
+  tx: Pick<typeof db, "select">,
+  quoteId: number,
+) {
+  return tx
+    .select({ id: revisionsTable.id })
+    .from(revisionsTable)
+    .where(
+      and(
+        eq(revisionsTable.quoteId, quoteId),
+        eq(revisionsTable.excludedFromSignoff, false),
+      ),
+    )
+    .orderBy(revisionsTable.createdAt);
+}
+
 router.get("/share-info", async (_req, res): Promise<void> => {
   // Determine the app's publicly reachable origin for share links.
   // In production, REPLIT_DOMAINS holds the deployed domain(s);
@@ -286,6 +341,10 @@ router.get("/quotes/:id", async (req, res): Promise<void> => {
       quote: serializeQuote(quote, stats.get(quote.id)),
       revisions,
       signoff: signoff ?? null,
+      documentVersion: computeDocumentVersion(
+        quote,
+        revisions.filter((r) => !r.excludedFromSignoff),
+      ),
     }),
   );
 });
@@ -356,6 +415,11 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
   // Update, signoff invalidation, and the auto revision entry are atomic so
   // the register always matches the saved edit.
   const quote = await db.transaction(async (tx) => {
+    // Take the quote-row lock first (shared discipline with the sign routes)
+    // and re-validate state under the lock rather than trusting the
+    // pre-transaction read.
+    const current = await lockQuoteRow(tx, params.data.id);
+    if (!current || current.archivedAt) return null;
     const [updated] = await tx
       .update(quotesTable)
       .set(updates)
@@ -416,6 +480,7 @@ router.post(
     // update is conditional on the quote still being active, so concurrent
     // archive requests cannot double-archive or double-log.
     const quote = await db.transaction(async (tx) => {
+      await lockQuoteRow(tx, params.data.id);
       const [updated] = await tx
         .update(quotesTable)
         .set({
@@ -430,6 +495,9 @@ router.post(
         .returning();
       if (!updated) return null;
 
+      // The archive entry appears in the revision log, so any existing
+      // signature no longer covers what the signer reviewed — invalidate it.
+      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, updated.id));
       await tx.insert(revisionsTable).values({
         quoteId: updated.id,
         authorId: req.userId!,
@@ -470,6 +538,7 @@ router.post(
     const profile = await getUserProfile(req.userId!);
 
     const quote = await db.transaction(async (tx) => {
+      await lockQuoteRow(tx, params.data.id);
       const [updated] = await tx
         .update(quotesTable)
         .set({
@@ -487,6 +556,9 @@ router.post(
         .returning();
       if (!updated) return null;
 
+      // The restore entry appears in the revision log, so any existing
+      // signature no longer covers what the signer reviewed — invalidate it.
+      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, updated.id));
       await tx.insert(revisionsTable).values({
         quoteId: updated.id,
         authorId: req.userId!,
@@ -508,6 +580,9 @@ router.post(
   },
 );
 
+// Quote deletion is intentionally allowed for archived quotes: archiving
+// makes a quote's *content* read-only, while deletion is a record-lifecycle
+// action and the only way to permanently remove a record.
 router.delete("/quotes/:id", async (req, res): Promise<void> => {
   const params = DeleteQuoteParams.safeParse(req.params);
   if (!params.success) {
@@ -562,17 +637,89 @@ router.post(
     if (!guardNotArchived(quote, res)) return;
 
     const profile = await getUserProfile(req.userId!);
-    const [revision] = await db
-      .insert(revisionsTable)
-      .values({
-        quoteId: quote.id,
-        authorId: req.userId!,
-        authorName: profile.name,
-        note: parsed.data.note,
-      })
-      .returning();
+    // Adding a revision invalidates any existing customer signoff: the
+    // signed document no longer reflects the latest revision history.
+    // Lock the quote row to serialize with concurrent sign attempts.
+    const revision = await db.transaction(async (tx) => {
+      // Re-validate archive state under the lock: an archive may have
+      // committed between the pre-transaction check and lock acquisition.
+      const current = await lockQuoteRow(tx, quote.id);
+      if (!current || current.archivedAt) return null;
+      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, quote.id));
+      const [rev] = await tx
+        .insert(revisionsTable)
+        .values({
+          quoteId: quote.id,
+          authorId: req.userId!,
+          authorName: profile.name,
+          note: parsed.data.note,
+        })
+        .returning();
+      return rev;
+    });
+
+    if (!revision) {
+      res.status(400).json({
+        error: "This quote is archived. Restore it to make changes.",
+      });
+      return;
+    }
 
     res.status(201).json(CreateRevisionResponse.parse(revision));
+  },
+);
+
+router.patch(
+  "/quotes/:id/revisions/:revisionId/signoff-exclusion",
+  async (req, res): Promise<void> => {
+    const params = SetRevisionSignoffExclusionParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const parsed = SetRevisionSignoffExclusionBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    // Only affects signoff-document visibility; the revision log is immutable.
+    // Changing what the signoff sheet shows alters the document the customer
+    // approved, so any existing signature is cleared atomically — the quote
+    // must be re-signed. Lock the quote row to serialize with sign attempts,
+    // and enforce the read-only archive policy under that lock.
+    const revision = await db.transaction(async (tx) => {
+      const current = await lockQuoteRow(tx, params.data.id);
+      if (!current) return { kind: "notFound" as const };
+      if (current.archivedAt) return { kind: "archived" as const };
+      const [rev] = await tx
+        .update(revisionsTable)
+        .set({ excludedFromSignoff: parsed.data.excludedFromSignoff })
+        .where(
+          and(
+            eq(revisionsTable.id, params.data.revisionId),
+            eq(revisionsTable.quoteId, params.data.id),
+          ),
+        )
+        .returning();
+      if (!rev) return { kind: "notFound" as const };
+      await tx
+        .delete(signoffsTable)
+        .where(eq(signoffsTable.quoteId, params.data.id));
+      return { kind: "ok" as const, rev };
+    });
+
+    if (revision.kind === "archived") {
+      res.status(400).json({
+        error: "This quote is archived. Restore it to make changes.",
+      });
+      return;
+    }
+    if (revision.kind === "notFound") {
+      res.status(404).json({ error: "Revision not found" });
+      return;
+    }
+    res.json(SetRevisionSignoffExclusionResponse.parse(revision.rev));
   },
 );
 
@@ -640,17 +787,31 @@ router.delete(
       return;
     }
 
-    const [attachment] = await db
-      .delete(attachmentsTable)
-      .where(
-        and(
-          eq(attachmentsTable.id, params.data.attachmentId),
-          eq(attachmentsTable.quoteId, params.data.id),
-        ),
-      )
-      .returning();
+    // Archived quotes are read-only: re-validate under the quote-row lock so
+    // deletion cannot race an archive.
+    const outcome = await db.transaction(async (tx) => {
+      const current = await lockQuoteRow(tx, params.data.id);
+      if (!current) return "notFound" as const;
+      if (current.archivedAt) return "archived" as const;
+      const [attachment] = await tx
+        .delete(attachmentsTable)
+        .where(
+          and(
+            eq(attachmentsTable.id, params.data.attachmentId),
+            eq(attachmentsTable.quoteId, params.data.id),
+          ),
+        )
+        .returning();
+      return attachment ? ("deleted" as const) : ("notFound" as const);
+    });
 
-    if (!attachment) {
+    if (outcome === "archived") {
+      res.status(400).json({
+        error: "This quote is archived. Restore it to make changes.",
+      });
+      return;
+    }
+    if (outcome === "notFound") {
       res.status(404).json({ error: "Attachment not found" });
       return;
     }
@@ -726,24 +887,44 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
   if (!quote) return;
   if (!guardNotArchived(quote, res)) return;
 
-  const [signoff] = await db
-    .insert(signoffsTable)
-    .values({
-      quoteId: quote.id,
-      customerName: parsed.data.customerName,
-      signatureType: parsed.data.signatureType,
-      signatureData: parsed.data.signatureData,
-    })
-    .onConflictDoUpdate({
-      target: signoffsTable.quoteId,
-      set: {
+  // Reject stale submissions: the document the signer loaded must still
+  // match the current content (quote edits, new revisions, exclusions).
+  // The quote row is locked and re-read inside the transaction so the
+  // version check cannot race a concurrent mutation.
+  const signoff = await db.transaction(async (tx) => {
+    const current = await lockQuoteRow(tx, quote.id);
+    if (!current || current.archivedAt) return null;
+    const included = await loadIncludedRevisions(tx, quote.id);
+    if (computeDocumentVersion(current, included) !== parsed.data.documentVersion)
+      return null;
+    const [row] = await tx
+      .insert(signoffsTable)
+      .values({
+        quoteId: quote.id,
         customerName: parsed.data.customerName,
         signatureType: parsed.data.signatureType,
         signatureData: parsed.data.signatureData,
-        signedAt: new Date(),
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: signoffsTable.quoteId,
+        set: {
+          customerName: parsed.data.customerName,
+          signatureType: parsed.data.signatureType,
+          signatureData: parsed.data.signatureData,
+          signedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  });
+
+  if (!signoff) {
+    res.status(409).json({
+      error:
+        "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
+    });
+    return;
+  }
 
   res.json(SaveSignoffResponse.parse(signoff));
 });

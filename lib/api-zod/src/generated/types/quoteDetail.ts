@@ -13,4 +13,6 @@ export interface QuoteDetail {
   quote: Quote;
   revisions: Revision[];
   signoff?: Signoff | null;
+  /** Opaque version of the signoff document content; must be echoed back when signing */
+  documentVersion: string;
 }

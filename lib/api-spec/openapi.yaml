@@ -313,6 +313,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/revisions/{revisionId}/signoff-exclusion:
+    patch:
+      operationId: setRevisionSignoffExclusion
+      tags: [revisions]
+      summary: Exclude or re-include a revision on the signoff document (log itself is untouched)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: revisionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevisionExclusionInput"
+      responses:
+        "200":
+          description: Updated revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Revision"
+        "404":
+          description: Revision not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /quotes/{id}/signoff:
     get:
       operationId: getSignoff
@@ -899,6 +934,14 @@ components:
           anyOf:
             - $ref: "#/components/schemas/DoorSpec"
             - type: "null"
+        interiorDoor:
+          anyOf:
+            - $ref: "#/components/schemas/DoorSpec"
+            - type: "null"
+        exteriorDoor:
+          anyOf:
+            - $ref: "#/components/schemas/DoorSpec"
+            - type: "null"
         trimDescription: { type: ["string", "null"] }
         millworkDescription: { type: ["string", "null"] }
     Quote:
@@ -914,7 +957,7 @@ components:
           type: array
           items:
             type: string
-            enum: [doors, windows, trim, millwork]
+            enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
         specs:
           $ref: "#/components/schemas/QuoteSpecs"
         notes: { type: ["string", "null"] }
@@ -958,7 +1001,10 @@ components:
           anyOf:
             - $ref: "#/components/schemas/Signoff"
             - type: "null"
-      required: [quote, revisions]
+        documentVersion:
+          type: string
+          description: Opaque version of the signoff document content; must be echoed back when signing
+      required: [quote, revisions, documentVersion]
     ArchiveQuoteInput:
       type: object
       properties:
@@ -981,7 +1027,7 @@ components:
           type: array
           items:
             type: string
-            enum: [doors, windows, trim, millwork]
+            enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
           minItems: 1
         specs:
           $ref: "#/components/schemas/QuoteSpecs"
@@ -1001,7 +1047,7 @@ components:
           type: array
           items:
             type: string
-            enum: [doors, windows, trim, millwork]
+            enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
           minItems: 1
         specs:
           $ref: "#/components/schemas/QuoteSpecs"
@@ -1013,13 +1059,21 @@ components:
         quoteId: { type: integer }
         authorName: { type: string }
         note: { type: string }
+        excludedFromSignoff: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, quoteId, authorName, note, createdAt]
+      required: [id, quoteId, authorName, note, excludedFromSignoff, createdAt]
     RevisionInput:
       type: object
       properties:
         note: { type: string, minLength: 1 }
       required: [note]
+    RevisionExclusionInput:
+      type: object
+      properties:
+        excludedFromSignoff:
+          type: boolean
+          description: Hide (true) or show (false) this revision on the signoff document only
+      required: [excludedFromSignoff]
     Signoff:
       type: object
       properties:
@@ -1040,7 +1094,11 @@ components:
           type: string
           enum: [typed, drawn]
         signatureData: { type: string, minLength: 1 }
-      required: [customerName, signatureType, signatureData]
+        documentVersion:
+          type: string
+          minLength: 1
+          description: The documentVersion the signer loaded; signing is rejected if the document has changed since
+      required: [customerName, signatureType, signatureData, documentVersion]
     DashboardSummary:
       type: object
       properties:

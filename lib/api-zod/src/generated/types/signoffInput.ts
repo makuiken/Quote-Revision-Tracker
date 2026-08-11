@@ -13,4 +13,9 @@ export interface SignoffInput {
   signatureType: SignoffInputSignatureType;
   /** @minLength 1 */
   signatureData: string;
+  /**
+     * The documentVersion the signer loaded; signing is rejected if the document has changed since
+     * @minLength 1
+     */
+  documentVersion: string;
 }

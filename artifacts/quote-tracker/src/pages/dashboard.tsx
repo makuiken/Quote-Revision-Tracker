@@ -16,8 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type StatusFilter = "all" | "awaiting" | "signed" | "archived";
-type CategoryFilter = "all" | "doors" | "windows" | "trim" | "millwork";
-const categoryLabel: Record<CategoryFilter, string> = { all: "All", doors: "Doors", windows: "Windows", trim: "Trim", millwork: "Misc." };
+type CategoryFilter = "all" | "interiorDoors" | "exteriorDoors" | "windows" | "trim" | "millwork";
+const categoryLabel: Record<CategoryFilter, string> = { all: "All", interiorDoors: "Int. Doors", exteriorDoors: "Ext. Doors", windows: "Windows", trim: "Trim", millwork: "Misc." };
+// Display labels for category badges (legacy "doors" quotes still render).
+const badgeLabel: Record<string, string> = { doors: "Doors", interiorDoors: "Interior Doors", exteriorDoors: "Exterior Doors", windows: "Windows", trim: "Trim", millwork: "Millwork" };
 
 export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -151,7 +153,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-center bg-card border-2 border-border rounded-md overflow-hidden p-1 shadow-sm overflow-x-auto">
-              {(["all", "doors", "windows", "trim", "millwork"] as CategoryFilter[]).map(cat => (
+              {(["all", "interiorDoors", "exteriorDoors", "windows", "trim", "millwork"] as CategoryFilter[]).map(cat => (
                 <Button 
                   key={cat}
                   variant={categoryFilter === cat ? "default" : "ghost"} 
@@ -216,7 +218,7 @@ export default function DashboardPage() {
                         </p>
                         <div className="flex flex-wrap gap-2 mt-2 pt-1">
                           {quote.categories.map(cat => (
-                            <Badge key={cat} variant="outline" className="bg-background capitalize">{cat}</Badge>
+                            <Badge key={cat} variant="outline" className="bg-background">{badgeLabel[cat] ?? cat}</Badge>
                           ))}
                         </div>
                       </div>
@@ -239,7 +241,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           <h2 className="text-2xl font-serif font-bold text-foreground">Recent Activity</h2>
           <Card>
-            <CardContent className="p-0">
+            <CardContent className="p-0 h-[480px] overflow-y-auto">
               {visibleActivity.length === 0 ? (
                 <div className="p-6 text-center text-muted-foreground font-medium">No activity yet.</div>
               ) : (

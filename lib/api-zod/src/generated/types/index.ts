@@ -31,6 +31,7 @@ export * from './quoteSpecs';
 export * from './quoteUpdate';
 export * from './quoteUpdateCategoriesItem';
 export * from './revision';
+export * from './revisionExclusionInput';
 export * from './revisionInput';
 export * from './shareInfo';
 export * from './shareLink';

@@ -13,12 +13,23 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toaster";
 
+const doorSpecSchema = z.object({
+  brand: z.string().optional(),
+  seriesStyle: z.string().optional(),
+  materialSpecies: z.string().optional(),
+  exteriorColor: z.string().optional(),
+  interiorFinish: z.string().optional(),
+  jambDepth: z.string().optional(),
+  hardwareFinish: z.string().optional(),
+  glassLiteOptions: z.string().optional(),
+}).optional();
+
 const quoteSchema = z.object({
   quoteNumber: z.string().regex(/^[0-9]{7}$/, "Must be exactly 7 digits"),
   customerName: z.string().min(1, "Customer name is required"),
   projectName: z.string().min(1, "Project name is required"),
   jobAddress: z.string().min(1, "Job address is required"),
-  categories: z.array(z.enum(["doors", "windows", "trim", "millwork"])).min(1, "Select at least one category"),
+  categories: z.array(z.enum(["interiorDoors", "exteriorDoors", "windows", "trim", "millwork"])).min(1, "Select at least one category"),
   notes: z.string().optional(),
   specs: z.object({
     window: z.object({
@@ -31,16 +42,8 @@ const quoteSchema = z.object({
       hardwareFinish: z.string().optional(),
       screenColor: z.string().optional(),
     }).optional(),
-    door: z.object({
-      brand: z.string().optional(),
-      seriesStyle: z.string().optional(),
-      materialSpecies: z.string().optional(),
-      exteriorColor: z.string().optional(),
-      interiorFinish: z.string().optional(),
-      jambDepth: z.string().optional(),
-      hardwareFinish: z.string().optional(),
-      glassLiteOptions: z.string().optional(),
-    }).optional(),
+    interiorDoor: doorSpecSchema,
+    exteriorDoor: doorSpecSchema,
     trimDescription: z.string().optional(),
     millworkDescription: z.string().optional(),
   }).optional(),
@@ -49,11 +52,14 @@ const quoteSchema = z.object({
 type QuoteFormValues = z.infer<typeof quoteSchema>;
 
 const CATEGORIES = [
-  { id: "doors", label: "Doors" },
+  { id: "interiorDoors", label: "Interior Doors" },
+  { id: "exteriorDoors", label: "Exterior Doors" },
   { id: "windows", label: "Windows" },
   { id: "trim", label: "Trim" },
   { id: "millwork", label: "Misc. Millwork" },
 ] as const;
+
+const DOOR_SPEC_FIELDS = ["brand", "seriesStyle", "materialSpecies", "exteriorColor", "interiorFinish", "jambDepth", "hardwareFinish", "glassLiteOptions"] as const;
 
 export default function NewQuotePage() {
   const [, setLocation] = useLocation();
@@ -213,23 +219,28 @@ export default function NewQuotePage() {
           </Card>
         )}
 
-        {selectedCategories.includes("doors") && (
-          <Card>
-            <CardContent className="p-6 sm:p-8 space-y-6">
-              <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">Door Specifications</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {["brand", "seriesStyle", "materialSpecies", "exteriorColor", "interiorFinish", "jambDepth", "hardwareFinish", "glassLiteOptions"].map((field) => (
-                  <div key={field} className="space-y-2">
-                    <Label htmlFor={`door.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
-                    <Input 
-                      id={`door.${field}`} 
-                      {...form.register(`specs.door.${field}` as any)} 
-                    />
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+        {([
+          ["interiorDoors", "interiorDoor", "Interior Door Specifications"],
+          ["exteriorDoors", "exteriorDoor", "Exterior Door Specifications"],
+        ] as const).map(([category, specKey, title]) =>
+          selectedCategories.includes(category) && (
+            <Card key={category}>
+              <CardContent className="p-6 sm:p-8 space-y-6">
+                <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">{title}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {DOOR_SPEC_FIELDS.map((field) => (
+                    <div key={field} className="space-y-2">
+                      <Label htmlFor={`${specKey}.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
+                      <Input 
+                        id={`${specKey}.${field}`} 
+                        {...form.register(`specs.${specKey}.${field}` as any)} 
+                      />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )
         )}
 
         {selectedCategories.includes("trim") && (

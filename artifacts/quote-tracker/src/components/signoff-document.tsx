@@ -114,16 +114,39 @@ export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => vo
   );
 }
 
+const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+function SpecSection({ title, spec }: { title: string; spec: object | null | undefined }) {
+  const entries = spec ? Object.entries(spec).filter(([_, v]) => v) : [];
+  return (
+    <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
+      <h3 className="font-bold uppercase mb-2">{title}</h3>
+      {entries.length > 0 ? (
+        <ul className="text-sm space-y-1">
+          {entries.map(([k, v]) => (
+            <li key={k}>
+              <span className="font-bold text-gray-600">{capitalize(k.replace(/([A-Z])/g, ' $1').trim())}:</span> {capitalize(String(v))}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm italic text-gray-500">No specific details.</p>}
+    </div>
+  );
+}
+
 export function SignoffDocument({
   quote,
   revisions,
   signoff,
   onSubmit,
+  onToggleExclude,
 }: {
   quote: Quote;
   revisions: Revision[];
   signoff: Signoff | null;
   onSubmit: (type: "typed" | "drawn", data: string) => void;
+  /** When provided (internal view), shows hide/show controls per revision. */
+  onToggleExclude?: (revision: Revision) => void;
 }) {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
   const [signMethod, setSignMethod] = useState<"draw" | "type">("draw");
@@ -142,7 +165,7 @@ export function SignoffDocument({
   return (
     <div className="bg-white p-8 sm:p-12 shadow-lg print:shadow-none print:p-0 border border-gray-200 print:border-none">
       <div className="flex items-center justify-between border-b-4 border-black pb-6 mb-8">
-        <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-12" style={{ filter: 'grayscale(100%)' }} />
+        <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-20" style={{ filter: 'grayscale(100%)' }} />
         <div className="text-right">
           <h1 className="text-2xl font-serif font-bold text-black uppercase tracking-widest">Signoff Document</h1>
           <p className="text-sm font-bold text-gray-600 mt-1">Generated: {format(new Date(), "MMM d, yyyy")}</p>
@@ -167,56 +190,77 @@ export function SignoffDocument({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {quote.categories.includes("windows") && (
-            <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-              <h3 className="font-bold uppercase mb-2">Windows</h3>
-              {quote.specs?.window && Object.entries(quote.specs.window).filter(([_, v]) => v).length > 0 ? (
-                <ul className="text-sm space-y-1">
-                  {Object.entries(quote.specs.window).filter(([_, v]) => v).map(([k, v]) => (
-                    <li key={k}><span className="font-bold text-gray-600">{k.replace(/([A-Z])/g, ' $1').trim()}:</span> {v}</li>
-                  ))}
-                </ul>
-              ) : <p className="text-sm italic text-gray-500">No specific details.</p>}
-            </div>
+            <SpecSection title="Windows" spec={quote.specs?.window} />
+          )}
+          {quote.categories.includes("interiorDoors") && (
+            <SpecSection title="Interior Doors" spec={quote.specs?.interiorDoor} />
+          )}
+          {quote.categories.includes("exteriorDoors") && (
+            <SpecSection title="Exterior Doors" spec={quote.specs?.exteriorDoor} />
           )}
           {quote.categories.includes("doors") && (
-            <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-              <h3 className="font-bold uppercase mb-2">Doors</h3>
-              {quote.specs?.door && Object.entries(quote.specs.door).filter(([_, v]) => v).length > 0 ? (
-                <ul className="text-sm space-y-1">
-                  {Object.entries(quote.specs.door).filter(([_, v]) => v).map(([k, v]) => (
-                    <li key={k}><span className="font-bold text-gray-600">{k.replace(/([A-Z])/g, ' $1').trim()}:</span> {v}</li>
-                  ))}
-                </ul>
-              ) : <p className="text-sm italic text-gray-500">No specific details.</p>}
-            </div>
+            <SpecSection title="Doors" spec={quote.specs?.door} />
           )}
           {quote.categories.includes("trim") && (
             <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
               <h3 className="font-bold uppercase mb-2">Trim</h3>
-              <p className="text-sm whitespace-pre-wrap">{quote.specs?.trimDescription || "No specific details."}</p>
+              <p className="text-sm whitespace-pre-wrap">{capitalize(quote.specs?.trimDescription || "") || "No specific details."}</p>
             </div>
           )}
           {quote.categories.includes("millwork") && (
             <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
               <h3 className="font-bold uppercase mb-2">Millwork</h3>
-              <p className="text-sm whitespace-pre-wrap">{quote.specs?.millworkDescription || "No specific details."}</p>
+              <p className="text-sm whitespace-pre-wrap">{capitalize(quote.specs?.millworkDescription || "") || "No specific details."}</p>
             </div>
           )}
         </div>
 
-        {revisions.length > 0 && (
-          <div className="mt-8 break-inside-avoid">
-            <h3 className="font-bold uppercase mb-4 text-sm tracking-widest text-gray-500">Revision Summary ({revisions.length} updates)</h3>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-gray-700">
-              {revisions.slice(-5).map(rev => (
-                <li key={rev.id}>
-                  <span className="font-bold">{format(new Date(rev.createdAt), "MM/dd/yy")}:</span> {rev.note.split('\n')[0].substring(0, 100)}{rev.note.length > 100 ? '...' : ''}
-                </li>
-              ))}
-              {revisions.length > 5 && <li className="italic text-gray-500">...and {revisions.length - 5} older revisions.</li>}
-            </ul>
-          </div>
-        )}
+        {revisions.length > 0 && (() => {
+          const included = revisions.filter(rev => !rev.excludedFromSignoff);
+          return (
+            <div className="mt-8">
+              <h3 className="font-bold uppercase mb-4 text-sm tracking-widest text-gray-500">
+                Complete Revision Log ({included.length} {included.length === 1 ? "update" : "updates"})
+              </h3>
+              {onToggleExclude && revisions.length !== included.length && (
+                <p className="print:hidden text-xs italic text-gray-500 mb-3">
+                  {revisions.length - included.length} revision{revisions.length - included.length === 1 ? " is" : "s are"} hidden from this signoff document. They remain in the full revision log.
+                </p>
+              )}
+              <div className="space-y-4 text-sm text-gray-700">
+                {revisions.map(rev => {
+                  const excluded = rev.excludedFromSignoff;
+                  if (excluded && !onToggleExclude) return null;
+                  return (
+                    <div
+                      key={rev.id}
+                      className={`border border-gray-200 rounded p-3 break-inside-avoid ${excluded ? "print:hidden opacity-50 bg-gray-100" : "bg-white"}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-bold text-gray-800">
+                          {format(new Date(rev.createdAt), "MM/dd/yy h:mm a")} — {rev.authorName}
+                          {excluded && <span className="ml-2 text-xs font-bold uppercase tracking-wider text-gray-400">Hidden from signoff</span>}
+                        </p>
+                        {onToggleExclude && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="print:hidden shrink-0 h-7 text-xs"
+                            onClick={() => onToggleExclude(rev)}
+                          >
+                            {excluded ? "Include on Signoff" : "Hide from Signoff"}
+                          </Button>
+                        )}
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap leading-relaxed">{rev.note}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="border-t-2 border-black pt-8 break-inside-avoid">

@@ -37,6 +37,9 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS quotes_created_by_id_idx ON quotes (created_by_id)`,
   // Default quote list sort.
   `CREATE INDEX IF NOT EXISTS quotes_created_at_idx ON quotes (created_at DESC)`,
+
+  // Per-revision signoff exclusion: hides an entry on the signoff document only.
+  `ALTER TABLE revisions ADD COLUMN IF NOT EXISTS excluded_from_signoff boolean NOT NULL DEFAULT false`,
 ];
 
 export async function ensureSchema(): Promise<void> {

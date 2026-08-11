@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, quotesTable, revisionsTable, signoffsTable } from "@workspace/db";
 import {
   GetPublicSignoffParams,
@@ -9,7 +9,13 @@ import {
   SavePublicSignoffResponse,
 } from "@workspace/api-zod";
 import { publicSignoffWriteLimiter } from "../lib/rateLimiters";
-import { quoteStats, serializeQuote } from "./quotes";
+import {
+  quoteStats,
+  serializeQuote,
+  computeDocumentVersion,
+  loadIncludedRevisions,
+  lockQuoteRow,
+} from "./quotes";
 
 // Public, token-gated routes. No login required — access is granted by
 // knowing the unguessable share token attached to a quote.
@@ -36,10 +42,17 @@ router.get("/public/signoff/:token", async (req, res): Promise<void> => {
     return;
   }
 
+  // Customers only see revisions the internal team hasn't excluded from
+  // the signoff sheet (exclusion never touches the real revision log).
   const revisions = await db
     .select()
     .from(revisionsTable)
-    .where(eq(revisionsTable.quoteId, quote.id))
+    .where(
+      and(
+        eq(revisionsTable.quoteId, quote.id),
+        eq(revisionsTable.excludedFromSignoff, false),
+      ),
+    )
     .orderBy(revisionsTable.createdAt);
 
   const [signoff] = await db
@@ -53,6 +66,7 @@ router.get("/public/signoff/:token", async (req, res): Promise<void> => {
       quote: serializeQuote(quote, stats.get(quote.id)),
       revisions,
       signoff: signoff ?? null,
+      documentVersion: computeDocumentVersion(quote, revisions),
     }),
   );
 });
@@ -78,44 +92,65 @@ router.put(
   "/public/signoff/:token",
   publicSignoffWriteLimiter,
   async (req, res): Promise<void> => {
-  const params = SavePublicSignoffParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const parsed = SavePublicSignoffBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
+    const params = SavePublicSignoffParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const parsed = SavePublicSignoffBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
 
-  const quote = await loadQuoteByToken(params.data.token);
-  if (!quote) {
-    res.status(404).json({ error: "Invalid or revoked link" });
-    return;
-  }
-  if (rejectIfArchived(quote, res)) return;
+    const quote = await loadQuoteByToken(params.data.token);
+    if (!quote) {
+      res.status(404).json({ error: "Invalid or revoked link" });
+      return;
+    }
+    if (rejectIfArchived(quote, res)) return;
 
-  const [signoff] = await db
-    .insert(signoffsTable)
-    .values({
-      quoteId: quote.id,
-      customerName: parsed.data.customerName,
-      signatureType: parsed.data.signatureType,
-      signatureData: parsed.data.signatureData,
-    })
-    .onConflictDoUpdate({
-      target: signoffsTable.quoteId,
-      set: {
-        customerName: parsed.data.customerName,
-        signatureType: parsed.data.signatureType,
-        signatureData: parsed.data.signatureData,
-        signedAt: new Date(),
-      },
-    })
-    .returning();
+    // Reject stale submissions: if the document changed (new revision, edit,
+    // or exclusion) after the customer loaded it, they must review the latest
+    // version before signing. The quote row is locked and re-read inside the
+    // transaction so the version check cannot race a concurrent mutation.
+    const signoff = await db.transaction(async (tx) => {
+      const current = await lockQuoteRow(tx, quote.id);
+      if (!current || current.archivedAt) return null;
+      const included = await loadIncludedRevisions(tx, quote.id);
+      if (computeDocumentVersion(current, included) !== parsed.data.documentVersion)
+        return null;
+      const [row] = await tx
+        .insert(signoffsTable)
+        .values({
+          quoteId: quote.id,
+          customerName: parsed.data.customerName,
+          signatureType: parsed.data.signatureType,
+          signatureData: parsed.data.signatureData,
+        })
+        .onConflictDoUpdate({
+          target: signoffsTable.quoteId,
+          set: {
+            customerName: parsed.data.customerName,
+            signatureType: parsed.data.signatureType,
+            signatureData: parsed.data.signatureData,
+            signedAt: new Date(),
+          },
+        })
+        .returning();
+      return row;
+    });
 
-  res.json(SavePublicSignoffResponse.parse(signoff));
-});
+    if (!signoff) {
+      res.status(409).json({
+        error:
+          "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
+      });
+      return;
+    }
+
+    res.json(SavePublicSignoffResponse.parse(signoff));
+  },
+);
 
 export default router;

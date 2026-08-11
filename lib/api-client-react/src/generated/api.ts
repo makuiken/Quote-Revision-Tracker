@@ -36,6 +36,7 @@ import type {
   QuoteInput,
   QuoteUpdate,
   Revision,
+  RevisionExclusionInput,
   RevisionInput,
   ShareInfo,
   ShareLink,
@@ -1048,6 +1049,80 @@ export const useCreateRevision = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateRevisionMutationOptions(options));
+    }
+
+export const getSetRevisionSignoffExclusionUrl = (id: number,
+    revisionId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/revisions/${revisionId}/signoff-exclusion`
+}
+
+/**
+ * @summary Exclude or re-include a revision on the signoff document (log itself is untouched)
+ */
+export const setRevisionSignoffExclusion = async (id: number,
+    revisionId: number,
+    revisionExclusionInput: RevisionExclusionInput, options?: Parameters<typeof customFetch>[1]): Promise<Revision> => {
+
+  return customFetch<Revision>(getSetRevisionSignoffExclusionUrl(id,revisionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(revisionExclusionInput)
+  }
+);}
+
+
+
+
+
+export const getSetRevisionSignoffExclusionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setRevisionSignoffExclusion>>, TError,{id: number;revisionId: number;data: BodyType<RevisionExclusionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setRevisionSignoffExclusion>>, TError,{id: number;revisionId: number;data: BodyType<RevisionExclusionInput>}, TContext> => {
+
+const mutationKey = ['setRevisionSignoffExclusion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setRevisionSignoffExclusion>>, {id: number;revisionId: number;data: BodyType<RevisionExclusionInput>}> = (props) => {
+          const {id,revisionId,data} = props ?? {};
+
+          return  setRevisionSignoffExclusion(id,revisionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetRevisionSignoffExclusionMutationResult = NonNullable<Awaited<ReturnType<typeof setRevisionSignoffExclusion>>>
+    export type SetRevisionSignoffExclusionMutationBody = BodyType<RevisionExclusionInput>
+    export type SetRevisionSignoffExclusionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Exclude or re-include a revision on the signoff document (log itself is untouched)
+ */
+export const useSetRevisionSignoffExclusion = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setRevisionSignoffExclusion>>, TError,{id: number;revisionId: number;data: BodyType<RevisionExclusionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setRevisionSignoffExclusion>>,
+        TError,
+        {id: number;revisionId: number;data: BodyType<RevisionExclusionInput>},
+        TContext
+      > => {
+      return useMutation(getSetRevisionSignoffExclusionMutationOptions(options));
     }
 
 export const getGetSignoffUrl = (id: number,) => {

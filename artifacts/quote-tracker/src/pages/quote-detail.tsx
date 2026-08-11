@@ -33,12 +33,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toaster";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 
+const doorSpecSchema = z.object({
+  brand: z.string().optional(),
+  seriesStyle: z.string().optional(),
+  materialSpecies: z.string().optional(),
+  exteriorColor: z.string().optional(),
+  interiorFinish: z.string().optional(),
+  jambDepth: z.string().optional(),
+  hardwareFinish: z.string().optional(),
+  glassLiteOptions: z.string().optional(),
+}).optional();
+
 const quoteSchema = z.object({
   quoteNumber: z.string().regex(/^[0-9]{7}$/, "Must be exactly 7 digits"),
   customerName: z.string().min(1, "Customer name is required"),
   projectName: z.string().min(1, "Project name is required"),
   jobAddress: z.string().min(1, "Job address is required"),
-  categories: z.array(z.enum(["doors", "windows", "trim", "millwork"])).min(1, "Select at least one category"),
+  categories: z.array(z.enum(["doors", "interiorDoors", "exteriorDoors", "windows", "trim", "millwork"])).min(1, "Select at least one category"),
   notes: z.string().optional(),
   specs: z.object({
     window: z.object({
@@ -51,16 +62,9 @@ const quoteSchema = z.object({
       hardwareFinish: z.string().optional(),
       screenColor: z.string().optional(),
     }).optional(),
-    door: z.object({
-      brand: z.string().optional(),
-      seriesStyle: z.string().optional(),
-      materialSpecies: z.string().optional(),
-      exteriorColor: z.string().optional(),
-      interiorFinish: z.string().optional(),
-      jambDepth: z.string().optional(),
-      hardwareFinish: z.string().optional(),
-      glassLiteOptions: z.string().optional(),
-    }).optional(),
+    door: doorSpecSchema,
+    interiorDoor: doorSpecSchema,
+    exteriorDoor: doorSpecSchema,
     trimDescription: z.string().optional(),
     millworkDescription: z.string().optional(),
   }).optional(),
@@ -223,11 +227,14 @@ function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readO
 }
 
 const CATEGORIES = [
-  { id: "doors", label: "Doors" },
+  { id: "interiorDoors", label: "Interior Doors" },
+  { id: "exteriorDoors", label: "Exterior Doors" },
   { id: "windows", label: "Windows" },
   { id: "trim", label: "Trim" },
   { id: "millwork", label: "Misc. Millwork" },
 ] as const;
+
+const DOOR_SPEC_FIELDS = ["brand", "seriesStyle", "materialSpecies", "exteriorColor", "interiorFinish", "jambDepth", "hardwareFinish", "glassLiteOptions"] as const;
 
 export default function QuoteDetailPage() {
   const { id } = useParams();
@@ -248,6 +255,7 @@ export default function QuoteDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [pendingData, setPendingData] = useState<QuoteFormValues | null>(null);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+  const [isRevisionWarningOpen, setIsRevisionWarningOpen] = useState(false);
   const [archiveReason, setArchiveReason] = useState("");
 
   const form = useForm<QuoteFormValues>({
@@ -290,12 +298,22 @@ export default function QuoteDetailPage() {
   const handleAddUpdate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!note.trim()) return;
+    // Adding a revision invalidates an existing signature — confirm first.
+    if (quote.signed) {
+      setIsRevisionWarningOpen(true);
+      return;
+    }
+    executeAddUpdate();
+  };
 
+  const executeAddUpdate = () => {
     createRevision.mutate({ id: quoteId, data: { note } }, {
       onSuccess: () => {
         setNote("");
+        setIsRevisionWarningOpen(false);
         toast({ title: "Update added", description: "The revision log has been updated." });
         queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+        queryClient.invalidateQueries({ queryKey: getListQuotesQueryKey() });
       },
       onError: () => {
         toast({ title: "Error", description: "Failed to add update.", variant: "destructive" });
@@ -314,6 +332,8 @@ export default function QuoteDetailPage() {
       specs: quote.specs ? {
         window: quote.specs.window || {},
         door: quote.specs.door || {},
+        interiorDoor: quote.specs.interiorDoor || {},
+        exteriorDoor: quote.specs.exteriorDoor || {},
         trimDescription: quote.specs.trimDescription || "",
         millworkDescription: quote.specs.millworkDescription || "",
       } as any : {},
@@ -461,8 +481,8 @@ export default function QuoteDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        <div className="lg:col-span-3 space-y-8">
           {isEditing ? (
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <Card>
@@ -524,7 +544,11 @@ export default function QuoteDetailPage() {
                   <div className="space-y-4 pt-4 border-t-2 border-border">
                     <Label className="text-lg">Product Categories</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {CATEGORIES.map(category => (
+                      {/* Legacy "Doors" stays selectable only on quotes that already use it. */}
+                      {(quote.categories.includes("doors")
+                        ? [{ id: "doors", label: "Doors (Legacy)" } as const, ...CATEGORIES]
+                        : [...CATEGORIES]
+                      ).map(category => (
                         <Controller
                           key={category.id}
                           name="categories"
@@ -577,23 +601,29 @@ export default function QuoteDetailPage() {
                 </Card>
               )}
 
-              {selectedCategories.includes("doors") && (
-                <Card>
-                  <CardContent className="p-6 sm:p-8 space-y-6">
-                    <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">Door Specifications</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {["brand", "seriesStyle", "materialSpecies", "exteriorColor", "interiorFinish", "jambDepth", "hardwareFinish", "glassLiteOptions"].map((field) => (
-                        <div key={field} className="space-y-2">
-                          <Label htmlFor={`door.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
-                          <Input 
-                            id={`door.${field}`} 
-                            {...form.register(`specs.door.${field}` as any)} 
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+              {([
+                ["interiorDoors", "interiorDoor", "Interior Door Specifications"],
+                ["exteriorDoors", "exteriorDoor", "Exterior Door Specifications"],
+                ["doors", "door", "Door Specifications (Legacy)"],
+              ] as const).map(([category, specKey, title]) =>
+                selectedCategories.includes(category) && (
+                  <Card key={category}>
+                    <CardContent className="p-6 sm:p-8 space-y-6">
+                      <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">{title}</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {DOOR_SPEC_FIELDS.map((field) => (
+                          <div key={field} className="space-y-2">
+                            <Label htmlFor={`${specKey}.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
+                            <Input 
+                              id={`${specKey}.${field}`} 
+                              {...form.register(`specs.${specKey}.${field}` as any)} 
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
               )}
 
               {selectedCategories.includes("trim") && (
@@ -671,6 +701,22 @@ export default function QuoteDetailPage() {
                     </div>
                   </div>
                 )}
+                {quote.categories.includes("interiorDoors") && (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-serif font-bold text-primary bg-primary/5 px-3 py-1 rounded">Interior Doors</h3>
+                    <div className="px-3">
+                      {renderSpecGrid(quote.specs?.interiorDoor)}
+                    </div>
+                  </div>
+                )}
+                {quote.categories.includes("exteriorDoors") && (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-serif font-bold text-primary bg-primary/5 px-3 py-1 rounded">Exterior Doors</h3>
+                    <div className="px-3">
+                      {renderSpecGrid(quote.specs?.exteriorDoor)}
+                    </div>
+                  </div>
+                )}
                 {quote.categories.includes("doors") && (
                   <div className="space-y-3">
                     <h3 className="text-lg font-serif font-bold text-primary bg-primary/5 px-3 py-1 rounded">Doors</h3>
@@ -708,7 +754,7 @@ export default function QuoteDetailPage() {
           )}
         </div>
 
-        <div className="space-y-8">
+        <div className="lg:col-span-2 space-y-8">
           {quote.archived && (
             <Card className="border-border bg-muted/40">
               <CardContent className="p-6 space-y-2">
@@ -754,7 +800,7 @@ export default function QuoteDetailPage() {
                 Revision Log
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 flex flex-col h-[500px]">
+            <CardContent className="pt-0 flex flex-col h-[720px]">
               <div className="flex-1 overflow-y-auto pr-2 space-y-6 mb-4">
                 {revisions.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground font-medium">
@@ -765,12 +811,12 @@ export default function QuoteDetailPage() {
                     {revisions.map(rev => (
                       <div key={rev.id} className="relative">
                         <div className="absolute -left-[35px] top-1 w-4 h-4 rounded-full bg-secondary ring-4 ring-card"></div>
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="font-bold text-foreground text-sm">{rev.authorName}</span>
+                            <span className="font-bold text-foreground">{rev.authorName}</span>
                             <span className="text-xs text-muted-foreground font-bold shrink-0">{format(new Date(rev.createdAt), "MMM d, h:mm a")}</span>
                           </div>
-                          <p className="text-foreground font-medium bg-muted/30 p-3 rounded-md border-2 border-border/50 text-sm whitespace-pre-wrap">
+                          <p className="text-foreground font-medium bg-muted/30 p-4 rounded-md border-2 border-border/50 text-[15px] leading-relaxed whitespace-pre-wrap">
                             {rev.note}
                           </p>
                         </div>
@@ -786,8 +832,8 @@ export default function QuoteDetailPage() {
                   id="note"
                   value={note}
                   onChange={e => setNote(e.target.value)}
-                  placeholder="Log a change, conversation, or decision..."
-                  className="min-h-[100px] resize-none"
+                  placeholder="Log a change, conversation, or decision... (multi-line notes welcome)"
+                  className="min-h-[320px] resize-y text-base leading-relaxed p-4"
                   disabled={isEditing || quote.archived}
                 />
                 <Button type="submit" className="w-full" disabled={createRevision.isPending || !note.trim() || isEditing || quote.archived}>
@@ -823,6 +869,25 @@ export default function QuoteDetailPage() {
             <Button variant="outline" onClick={() => setIsArchiveDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleArchive} disabled={archiveQuote.isPending || !archiveReason.trim()}>
               {archiveQuote.isPending ? "Archiving..." : "Archive Quote"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isRevisionWarningOpen} onOpenChange={setIsRevisionWarningOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" /> Warning: Signature Removal
+            </DialogTitle>
+            <DialogDescription className="text-base text-foreground mt-4">
+              This quote is already signed. Adding a new revision will remove the customer's signature, and the quote will need to be signed off again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={() => setIsRevisionWarningOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={executeAddUpdate} disabled={createRevision.isPending}>
+              {createRevision.isPending ? "Saving..." : "Remove Signature & Add Update"}
             </Button>
           </DialogFooter>
         </DialogContent>

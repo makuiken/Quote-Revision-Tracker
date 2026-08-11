@@ -170,6 +170,8 @@ export interface DoorSpec {
 export interface QuoteSpecs {
   window?: WindowSpec | null;
   door?: DoorSpec | null;
+  interiorDoor?: DoorSpec | null;
+  exteriorDoor?: DoorSpec | null;
   /** @nullable */
   trimDescription?: string | null;
   /** @nullable */
@@ -181,6 +183,8 @@ export type QuoteCategoriesItem = typeof QuoteCategoriesItem[keyof typeof QuoteC
 
 export const QuoteCategoriesItem = {
   doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
   windows: 'windows',
   trim: 'trim',
   millwork: 'millwork',
@@ -219,6 +223,7 @@ export interface Revision {
   quoteId: number;
   authorName: string;
   note: string;
+  excludedFromSignoff: boolean;
   createdAt: string;
 }
 
@@ -243,6 +248,8 @@ export interface QuoteDetail {
   quote: Quote;
   revisions: Revision[];
   signoff?: Signoff | null;
+  /** Opaque version of the signoff document content; must be echoed back when signing */
+  documentVersion: string;
 }
 
 export interface ArchiveQuoteInput {
@@ -258,6 +265,8 @@ export type QuoteInputCategoriesItem = typeof QuoteInputCategoriesItem[keyof typ
 
 export const QuoteInputCategoriesItem = {
   doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
   windows: 'windows',
   trim: 'trim',
   millwork: 'millwork',
@@ -287,6 +296,8 @@ export type QuoteUpdateCategoriesItem = typeof QuoteUpdateCategoriesItem[keyof t
 
 export const QuoteUpdateCategoriesItem = {
   doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
   windows: 'windows',
   trim: 'trim',
   millwork: 'millwork',
@@ -316,6 +327,11 @@ export interface RevisionInput {
   note: string;
 }
 
+export interface RevisionExclusionInput {
+  /** Hide (true) or show (false) this revision on the signoff document only */
+  excludedFromSignoff: boolean;
+}
+
 export type SignoffInputSignatureType = typeof SignoffInputSignatureType[keyof typeof SignoffInputSignatureType];
 
 
@@ -330,6 +346,11 @@ export interface SignoffInput {
   signatureType: SignoffInputSignatureType;
   /** @minLength 1 */
   signatureData: string;
+  /**
+     * The documentVersion the signer loaded; signing is rejected if the document has changed since
+     * @minLength 1
+     */
+  documentVersion: string;
 }
 
 export interface DashboardSummary {

@@ -51,19 +51,28 @@ export default function PublicSignoffPage() {
     savePublicSignoff.mutate(
       {
         token: token!,
-        data: { customerName: quote.customerName, signatureType: type, signatureData: data },
+        data: {
+          customerName: quote.customerName,
+          signatureType: type,
+          signatureData: data,
+          documentVersion: detail.documentVersion,
+        },
       },
       {
         onSuccess: () => {
           toast({ title: "Thank You!", description: "Your signature has been recorded." });
           queryClient.invalidateQueries({ queryKey: getGetPublicSignoffQueryKey(token!) });
         },
-        onError: () => {
+        onError: (err: any) => {
+          const stale = err?.status === 409;
           toast({
-            title: "Error",
-            description: "We couldn't save your signature. Please try again.",
+            title: stale ? "Document Updated" : "Error",
+            description: stale
+              ? "This document was updated since you opened it. It has been refreshed — please review the latest version and sign again."
+              : "We couldn't save your signature. Please try again.",
             variant: "destructive",
           });
+          if (stale) queryClient.invalidateQueries({ queryKey: getGetPublicSignoffQueryKey(token!) });
         },
       },
     );

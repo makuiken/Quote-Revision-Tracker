@@ -5,6 +5,7 @@ import {
   timestamp,
   jsonb,
   integer,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -33,7 +34,10 @@ export type DoorSpec = {
 
 export type QuoteSpecs = {
   window?: WindowSpec | null;
+  /** Legacy single-door specs (quotes created before the interior/exterior split). */
   door?: DoorSpec | null;
+  interiorDoor?: DoorSpec | null;
+  exteriorDoor?: DoorSpec | null;
   trimDescription?: string | null;
   millworkDescription?: string | null;
 };
@@ -86,6 +90,8 @@ export const revisionsTable = pgTable("revisions", {
   authorId: text("author_id").notNull(),
   authorName: text("author_name").notNull(),
   note: text("note").notNull(),
+  // Hides the entry on the signoff document only; the revision log itself is immutable.
+  excludedFromSignoff: boolean("excluded_from_signoff").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

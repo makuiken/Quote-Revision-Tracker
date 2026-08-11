@@ -11,6 +11,8 @@ export type QuoteInputCategoriesItem = typeof QuoteInputCategoriesItem[keyof typ
 
 export const QuoteInputCategoriesItem = {
   doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
   windows: 'windows',
   trim: 'trim',
   millwork: 'millwork',

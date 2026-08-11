@@ -61,7 +61,7 @@ export const ListQuotesResponseItem = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -74,6 +74,26 @@ export const ListQuotesResponseItem = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -117,7 +137,7 @@ export const CreateQuoteBody = zod.object({
   "customerName": zod.string().min(1),
   "projectName": zod.string().min(1),
   "jobAddress": zod.string().min(1),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])).min(1),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -130,6 +150,26 @@ export const CreateQuoteBody = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -152,7 +192,7 @@ export const CreateQuoteResponse = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -165,6 +205,26 @@ export const CreateQuoteResponse = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -207,7 +267,7 @@ export const GetQuoteResponse = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -220,6 +280,26 @@ export const GetQuoteResponse = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -250,6 +330,7 @@ export const GetQuoteResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })),
   "signoff": zod.union([zod.object({
@@ -259,7 +340,8 @@ export const GetQuoteResponse = zod.object({
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing')
 })
 
 
@@ -282,7 +364,7 @@ export const UpdateQuoteBody = zod.object({
   "customerName": zod.string().min(1).optional(),
   "projectName": zod.string().min(1).optional(),
   "jobAddress": zod.string().min(1).optional(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])).min(1).optional(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).optional(),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -295,6 +377,26 @@ export const UpdateQuoteBody = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -317,7 +419,7 @@ export const UpdateQuoteResponse = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -330,6 +432,26 @@ export const UpdateQuoteResponse = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -388,7 +510,7 @@ export const ArchiveQuoteResponse = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -401,6 +523,26 @@ export const ArchiveQuoteResponse = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -442,7 +584,7 @@ export const UnarchiveQuoteResponse = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -455,6 +597,26 @@ export const UnarchiveQuoteResponse = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -494,6 +656,7 @@ export const ListRevisionsResponseItem = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
 export const ListRevisionsResponse = zod.array(ListRevisionsResponseItem)
@@ -518,6 +681,29 @@ export const CreateRevisionResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "excludedFromSignoff": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Exclude or re-include a revision on the signoff document (log itself is untouched)
+ */
+export const SetRevisionSignoffExclusionParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "revisionId": zod.coerce.number().int()
+})
+
+export const SetRevisionSignoffExclusionBody = zod.object({
+  "excludedFromSignoff": zod.boolean().describe('Hide (true) or show (false) this revision on the signoff document only')
+})
+
+export const SetRevisionSignoffExclusionResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "authorName": zod.string(),
+  "note": zod.string(),
+  "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
 
@@ -550,10 +736,12 @@ export const SaveSignoffParams = zod.object({
 
 
 
+
 export const SaveSignoffBody = zod.object({
   "customerName": zod.string().min(1),
   "signatureType": zod.enum(['typed', 'drawn']),
-  "signatureData": zod.string().min(1)
+  "signatureData": zod.string().min(1),
+  "documentVersion": zod.string().min(1).describe('The documentVersion the signer loaded; signing is rejected if the document has changed since')
 })
 
 export const SaveSignoffResponse = zod.object({
@@ -603,7 +791,7 @@ export const GetPublicSignoffResponse = zod.object({
   "projectName": zod.string(),
   "jobAddress": zod.string(),
   "displayName": zod.string(),
-  "categories": zod.array(zod.enum(['doors', 'windows', 'trim', 'millwork'])),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "specs": zod.object({
   "window": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -616,6 +804,26 @@ export const GetPublicSignoffResponse = zod.object({
   "screenColor": zod.string().nullish()
 }),zod.null()]).optional(),
   "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
   "seriesStyle": zod.string().nullish(),
   "materialSpecies": zod.string().nullish(),
@@ -646,6 +854,7 @@ export const GetPublicSignoffResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })),
   "signoff": zod.union([zod.object({
@@ -655,7 +864,8 @@ export const GetPublicSignoffResponse = zod.object({
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
-}),zod.null()]).optional()
+}),zod.null()]).optional(),
+  "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing')
 })
 
 
@@ -670,10 +880,12 @@ export const SavePublicSignoffParams = zod.object({
 
 
 
+
 export const SavePublicSignoffBody = zod.object({
   "customerName": zod.string().min(1),
   "signatureType": zod.enum(['typed', 'drawn']),
-  "signatureData": zod.string().min(1)
+  "signatureData": zod.string().min(1),
+  "documentVersion": zod.string().min(1).describe('The documentVersion the signer loaded; signing is rejected if the document has changed since')
 })
 
 export const SavePublicSignoffResponse = zod.object({

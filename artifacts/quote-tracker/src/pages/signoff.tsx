@@ -9,6 +9,8 @@ import {
   useGetShareInfo,
   getGetShareInfoQueryKey,
   useCreateShareLink,
+  useSetRevisionSignoffExclusion,
+  type Revision,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 
 function ShareDialog({
@@ -179,7 +182,44 @@ export default function SignoffPage() {
   });
   
   const saveSignoff = useSaveSignoff();
+  const setExclusion = useSetRevisionSignoffExclusion();
   const [shareOpen, setShareOpen] = useState(false);
+  const [pendingToggle, setPendingToggle] = useState<Revision | null>(null);
+
+  const toggleExclude = (revision: Revision) => {
+    // Changing what appears on a signed document invalidates the signature —
+    // confirm with the user before proceeding.
+    if (detail?.quote.signed) {
+      setPendingToggle(revision);
+      return;
+    }
+    executeToggle(revision);
+  };
+
+  const executeToggle = (revision: Revision) => {
+    setExclusion.mutate(
+      {
+        id: quoteId,
+        revisionId: revision.id,
+        data: { excludedFromSignoff: !revision.excludedFromSignoff },
+      },
+      {
+        onSuccess: (updated) => {
+          setPendingToggle(null);
+          queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+          toast({
+            title: updated.excludedFromSignoff ? "Hidden from signoff" : "Included on signoff",
+            description: updated.excludedFromSignoff
+              ? "The revision stays in the full log but won't appear on the signoff document."
+              : "The revision will appear on the signoff document again.",
+          });
+        },
+        onError: () => {
+          toast({ title: "Error", description: "Failed to update the revision.", variant: "destructive" });
+        },
+      },
+    );
+  };
 
   if (isLoading) {
     return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
@@ -194,14 +234,27 @@ export default function SignoffPage() {
   const submitSignoff = (type: "typed" | "drawn", data: string) => {
     saveSignoff.mutate({ 
       id: quoteId, 
-      data: { customerName: quote.customerName, signatureType: type, signatureData: data } 
+      data: {
+        customerName: quote.customerName,
+        signatureType: type,
+        signatureData: data,
+        documentVersion: detail.documentVersion,
+      } 
     }, {
       onSuccess: () => {
         toast({ title: "Signoff Saved", description: "The document has been successfully signed." });
         queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
       },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to save signoff.", variant: "destructive" });
+      onError: (err: any) => {
+        const stale = err?.status === 409;
+        toast({
+          title: stale ? "Document Changed" : "Error",
+          description: stale
+            ? "This document was updated since it was loaded. It has been refreshed — please review and sign again."
+            : "Failed to save signoff.",
+          variant: "destructive",
+        });
+        if (stale) queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
       }
     });
   };
@@ -236,6 +289,7 @@ export default function SignoffPage() {
           revisions={revisions}
           signoff={signoff ?? null}
           onSubmit={submitSignoff}
+          onToggleExclude={toggleExclude}
         />
       </div>
 
@@ -246,6 +300,27 @@ export default function SignoffPage() {
         quoteNumber={quote.quoteNumber}
         customerName={quote.customerName}
       />
+
+      <Dialog open={!!pendingToggle} onOpenChange={(open) => !open && setPendingToggle(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Warning: Signature Removal</DialogTitle>
+            <DialogDescription className="text-base text-foreground mt-4">
+              This quote is already signed. Changing which revisions appear on the signoff document will remove the customer's signature, and the quote will need to be signed off again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={() => setPendingToggle(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => pendingToggle && executeToggle(pendingToggle)}
+              disabled={setExclusion.isPending}
+            >
+              {setExclusion.isPending ? "Saving..." : "Remove Signature & Continue"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -11,5 +11,6 @@ export interface Revision {
   quoteId: number;
   authorName: string;
   note: string;
+  excludedFromSignoff: boolean;
   createdAt: Date;
 }

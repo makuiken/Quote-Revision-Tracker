@@ -125,7 +125,149 @@ test.describe.serial("quote-to-signoff flow", () => {
       page.getByRole("button", { name: /draw signature/i }),
     ).toBeVisible();
   });
+
+  test("adding a revision to a signed quote warns and clears the signature", async ({ page }) => {
+    await signTyped(page);
+
+    await page.goto(quoteUrl);
+    await page.locator("#note").fill("New revision after signing");
+    await page.getByRole("button", { name: /add update/i }).click();
+    // Warning dialog: confirm signature removal.
+    await page
+      .getByRole("button", { name: /remove signature & add update/i })
+      .click();
+    await expect(page.getByText("New revision after signing")).toBeVisible();
+
+    await page.goto(`${quoteUrl}/signoff`);
+    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
+  });
+
+  test("hiding a revision on a signed quote warns and clears the signature", async ({ page }) => {
+    await signTyped(page);
+
+    await page.goto(`${quoteUrl}/signoff`);
+    await page
+      .getByRole("button", { name: /hide from signoff/i })
+      .first()
+      .click();
+    // Warning dialog: confirm signature removal.
+    await page
+      .getByRole("button", { name: /remove signature & continue/i })
+      .click();
+    await expect(
+      page.getByRole("button", { name: /include on signoff/i }).first(),
+    ).toBeVisible();
+    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
+
+    // Re-include so the document returns to full content.
+    await page
+      .getByRole("button", { name: /include on signoff/i })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("button", { name: /include on signoff/i }),
+    ).not.toBeVisible();
+  });
+
+  test("signing with a stale document version is rejected", async ({ page }) => {
+    await page.goto(`${quoteUrl}/signoff`);
+    await expect(page.getByRole("button", { name: /type name/i })).toBeVisible();
+    const quoteId = quoteUrl.split("/").pop();
+    const status = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/signoff`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: "Stale Signer",
+          signatureType: "typed",
+          signatureData: "Stale Signer",
+          documentVersion: "0000000000000000000000000000000000000000",
+        }),
+      });
+      return res.status;
+    }, quoteId);
+    expect(status).toBe(409);
+    // No signature was stored.
+    await page.reload();
+    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
+  });
+
+  test("archiving and restoring a signed quote clears the signature and blocks archived exclusion edits", async ({ page }) => {
+    await signTyped(page);
+    const quoteId = quoteUrl.split("/").pop();
+
+    // Archive the signed quote via the API (auth cookies from the page context).
+    const archive = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "E2E archive test" }),
+      });
+      return res.status;
+    }, quoteId);
+    expect(archive).toBe(200);
+
+    // Exclusion toggles are rejected while archived.
+    const excluded = await page.evaluate(async (id) => {
+      const list = await fetch(`/api/quotes/${id}`).then((r) => r.json());
+      const revisionId = list.revisions[0].id;
+      const res = await fetch(
+        `/api/quotes/${id}/revisions/${revisionId}/signoff-exclusion`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ excludedFromSignoff: true }),
+        },
+      );
+      return res.status;
+    }, quoteId);
+    expect(excluded).toBe(400);
+
+    // New revisions are also rejected while archived (the create-revision
+    // transaction re-validates archive state under the quote-row lock, so
+    // this holds even when the archive commits mid-request).
+    const revisionWhileArchived = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/revisions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: "Should be rejected" }),
+      });
+      return res.status;
+    }, quoteId);
+    expect(revisionWhileArchived).toBe(400);
+
+    // Attachment deletion is also rejected while archived (checked under the
+    // quote-row lock before the attachment is even looked up).
+    const attachmentDeleteWhileArchived = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/attachments/999999`, {
+        method: "DELETE",
+      });
+      return res.status;
+    }, quoteId);
+    expect(attachmentDeleteWhileArchived).toBe(400);
+
+    // Restore, then verify the quote is no longer signed: the archive/restore
+    // entries changed the revision log, so the old signature is invalid.
+    const restore = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/unarchive`, { method: "POST" });
+      return res.status;
+    }, quoteId);
+    expect(restore).toBe(200);
+
+    await page.goto(`${quoteUrl}/signoff`);
+    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
+    await expect(page.getByRole("button", { name: /type name/i })).toBeVisible();
+  });
 });
+
+/** Sign the quote with a typed signature (from an unsigned state). */
+async function signTyped(page: Page): Promise<void> {
+  await page.goto(`${quoteUrl}/signoff`);
+  await page.getByRole("button", { name: /type name/i }).click();
+  await page.locator("#typedName").fill(customerName);
+  await page.getByRole("button", { name: /confirm signature/i }).click();
+  await expect(page.getByText(/electronically signed/i)).toBeVisible();
+}
 
 /** Edit the quote via the detail page, accepting the signature-removal warning if shown. */
 async function editQuoteNotes(page: Page, notes: string): Promise<void> {

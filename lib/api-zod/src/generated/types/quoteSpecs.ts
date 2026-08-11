@@ -11,6 +11,8 @@ import type { WindowSpec } from './windowSpec';
 export interface QuoteSpecs {
   window?: WindowSpec | null;
   door?: DoorSpec | null;
+  interiorDoor?: DoorSpec | null;
+  exteriorDoor?: DoorSpec | null;
   /** @nullable */
   trimDescription?: string | null;
   /** @nullable */
