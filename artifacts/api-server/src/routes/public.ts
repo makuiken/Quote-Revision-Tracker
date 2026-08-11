@@ -8,6 +8,7 @@ import {
   SavePublicSignoffBody,
   SavePublicSignoffResponse,
 } from "@workspace/api-zod";
+import { publicSignoffWriteLimiter } from "../lib/rateLimiters";
 import { quoteStats, serializeQuote } from "./quotes";
 
 // Public, token-gated routes. No login required — access is granted by
@@ -70,7 +71,13 @@ function rejectIfArchived(
   return false;
 }
 
-router.put("/public/signoff/:token", async (req, res): Promise<void> => {
+// The 500 KB JSON body limit for this route is enforced in app.ts by mounting
+// a tighter parser before the global 2 MB one. Route-level middleware here
+// applies only the per-IP rate limit.
+router.put(
+  "/public/signoff/:token",
+  publicSignoffWriteLimiter,
+  async (req, res): Promise<void> => {
   const params = SavePublicSignoffParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

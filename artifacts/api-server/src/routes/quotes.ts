@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Router, type IRouter, type Response } from "express";
-import { and, desc, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   db,
   quotesTable,
@@ -105,11 +105,13 @@ export async function quoteStats(quoteIds: number[]) {
       last: sql<Date>`max(${revisionsTable.createdAt})`,
     })
     .from(revisionsTable)
+    .where(inArray(revisionsTable.quoteId, quoteIds))
     .groupBy(revisionsTable.quoteId);
 
   const signed = await db
     .select({ quoteId: signoffsTable.quoteId })
-    .from(signoffsTable);
+    .from(signoffsTable)
+    .where(inArray(signoffsTable.quoteId, quoteIds));
 
   const map = new Map<
     number,
@@ -667,13 +669,27 @@ router.post("/quotes/:id/share-link", async (req, res): Promise<void> => {
   if (!quote) return;
   if (!guardNotArchived(quote, res)) return;
 
-  let token = quote.shareToken;
-  if (!token) {
-    token = randomBytes(24).toString("base64url");
-    await db
+  // Atomic: SELECT FOR UPDATE prevents two simultaneous requests from each
+  // generating a different token and overwriting each other.
+  const token = await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ shareToken: quotesTable.shareToken })
+      .from(quotesTable)
+      .where(eq(quotesTable.id, quote.id))
+      .for("update");
+    if (!locked) return null;
+    if (locked.shareToken) return locked.shareToken;
+    const newToken = randomBytes(24).toString("base64url");
+    await tx
       .update(quotesTable)
-      .set({ shareToken: token })
+      .set({ shareToken: newToken })
       .where(eq(quotesTable.id, quote.id));
+    return newToken;
+  });
+
+  if (!token) {
+    res.status(404).json({ error: "Quote not found" });
+    return;
   }
 
   res.json(CreateShareLinkResponse.parse({ token }));
