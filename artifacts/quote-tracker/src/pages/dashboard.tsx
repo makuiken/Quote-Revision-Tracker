@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Search, Plus, FileText, ArrowRight, User } from "lucide-react";
+import { Search, Plus, FileText, ArrowRight, User, ChevronLeft, ChevronRight } from "lucide-react";
 import { 
   useListQuotes, 
+  getListQuotesQueryKey,
   useGetRecentActivity,
   useListTeamMembers,
   useGetCurrentUser,
+  type ListQuotesParams,
 } from "@workspace/api-client-react";
 import { Shell } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type StatusFilter = "all" | "awaiting" | "signed" | "archived";
 type CategoryFilter = "all" | "interiorDoors" | "exteriorDoors" | "windows" | "trim" | "millwork";
+const PAGE_SIZE = 25;
 const categoryLabel: Record<CategoryFilter, string> = { all: "All", interiorDoors: "Int. Doors", exteriorDoors: "Ext. Doors", windows: "Windows", trim: "Trim", millwork: "Misc." };
 // Display labels for category badges (legacy "doors" quotes still render).
 const badgeLabel: Record<string, string> = { doors: "Doors", interiorDoors: "Interior Doors", exteriorDoors: "Exterior Doors", windows: "Windows", trim: "Trim", millwork: "Millwork" };
@@ -26,11 +29,18 @@ export default function DashboardPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  // Filter by immutable user ID ("all" = no filter).
   const [userFilter, setUserFilter] = useState<string>("all");
   // Default to showing only the viewer's own quotes; collaboration is infrequent.
   const [viewScope, setViewScope] = useState<"mine" | "everyone">("mine");
+  const [page, setPage] = useState(0);
 
   const searchTimerRef = useRef<number | null>(null);
+
+  // Any filter change restarts pagination from the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, statusFilter, categoryFilter, userFilter, viewScope]);
 
   useEffect(() => {
     if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
@@ -42,39 +52,40 @@ export default function DashboardPage() {
     };
   }, [searchTerm]);
 
-  const { data: quotes, isLoading: isLoadingQuotes } = useListQuotes({ search: debouncedSearch || undefined });
+  const { data: teamMembers } = useListTeamMembers();
+  const { data: me } = useGetCurrentUser();
+
+  // All filtering happens server-side. "My Quotes" filters by the viewer's
+  // immutable user ID; in "Everyone" scope an explicit user can be picked.
+  const createdById =
+    viewScope === "mine" ? me?.id : userFilter !== "all" ? userFilter : undefined;
+
+  // Until the profile loads, hold the query so "My Quotes" never flashes a
+  // wrong list.
+  const canQuery = viewScope !== "mine" || !!me;
+  const quoteListParams: ListQuotesParams = {
+    search: debouncedSearch || undefined,
+    // "All Status" still hides archived quotes; they live under Archived.
+    status: statusFilter === "all" ? "active" : statusFilter,
+    category: categoryFilter !== "all" ? categoryFilter : undefined,
+    createdById,
+    offset: page * PAGE_SIZE,
+    limit: PAGE_SIZE,
+  };
+  const { data: quotePage, isLoading: isLoadingQuotes } = useListQuotes(
+    quoteListParams,
+    { query: { enabled: canQuery, queryKey: getListQuotesQueryKey(quoteListParams) } },
+  );
   // "My Quotes" scope is applied server-side for activity, by creator ID.
   const { data: activity } = useGetRecentActivity({
     limit: 5,
     mine: viewScope === "mine" ? true : undefined,
   });
-  const { data: teamMembers } = useListTeamMembers();
-  const { data: me } = useGetCurrentUser();
 
-  // Match by immutable user ID, never display name. Until the profile
-  // loads, quotes stay in the loading state rather than flashing a wrong list.
-  const isMine = (createdById: string) => createdById === me?.id;
-  const isLoadingList = isLoadingQuotes || (viewScope === "mine" && !me);
-
-  const filteredQuotes = quotes?.filter(q => {
-    if (viewScope === "mine" && !isMine(q.createdById)) return false;
-    // Archived quotes only appear under the Archived filter.
-    if (statusFilter === "archived") {
-      if (!q.archived) return false;
-    } else if (q.archived) {
-      return false;
-    }
-    if (statusFilter === "awaiting" && q.signed) return false;
-    if (statusFilter === "signed" && !q.signed) return false;
-    
-    if (categoryFilter !== "all" && !q.categories.includes(categoryFilter as any)) return false;
-
-    if (userFilter !== "all" && q.createdByName !== userFilter) return false;
-
-    return true;
-  });
-
-  const userNames = Array.from(new Set(teamMembers?.map(m => m.name) ?? []));
+  const isLoadingList = isLoadingQuotes || !canQuery;
+  const filteredQuotes = quotePage?.items;
+  const totalQuotes = quotePage?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalQuotes / PAGE_SIZE));
 
   const visibleActivity = activity ?? [];
 
@@ -172,8 +183,8 @@ export default function DashboardPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All users</SelectItem>
-                  {userNames.map(name => (
-                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  {teamMembers?.map(member => (
+                    <SelectItem key={member.id} value={member.userId}>{member.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -236,6 +247,37 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
+
+          {!isLoadingList && totalQuotes > PAGE_SIZE && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground font-medium">
+                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalQuotes)} of {totalQuotes} quotes
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page === 0}
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground font-medium">
+                  Page {page + 1} of {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page + 1 >= pageCount}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">

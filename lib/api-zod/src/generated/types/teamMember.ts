@@ -8,5 +8,7 @@
 
 export interface TeamMember {
   id: number;
+  /** The member's user ID as stored on quotes' createdById */
+  userId: string;
   name: string;
 }

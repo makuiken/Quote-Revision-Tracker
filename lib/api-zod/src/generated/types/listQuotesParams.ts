@@ -5,10 +5,35 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListQuotesCategory } from './listQuotesCategory';
+import type { ListQuotesStatus } from './listQuotesStatus';
 
 export type ListQuotesParams = {
 /**
  * Match against quote number or customer name
  */
 search?: string;
+/**
+ * Filter by status. "active" = not archived; "awaiting" = active and not signed; "signed" = active and signed; "archived" = archived only. Omitted = all quotes including archived.
+ */
+status?: ListQuotesStatus;
+/**
+ * Only quotes that include this category
+ */
+category?: ListQuotesCategory;
+/**
+ * Only quotes created by this user ID
+ */
+createdById?: string;
+/**
+ * Number of quotes to skip (for pagination)
+ * @minimum 0
+ */
+offset?: number;
+/**
+ * Maximum number of quotes to return
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };

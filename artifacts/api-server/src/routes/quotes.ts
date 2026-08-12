@@ -1,6 +1,20 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Router, type IRouter, type Response } from "express";
-import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  desc,
+  eq,
+  exists,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  not,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   db,
   quotesTable,
@@ -95,7 +109,11 @@ router.use(requireApproved);
 
 router.get("/users", async (_req, res): Promise<void> => {
   const rows = await db
-    .select({ id: usersTable.id, name: usersTable.name })
+    .select({
+      id: usersTable.id,
+      userId: usersTable.clerkUserId,
+      name: usersTable.name,
+    })
     .from(usersTable)
     .where(eq(usersTable.status, "approved"))
     .orderBy(usersTable.name);
@@ -248,26 +266,63 @@ router.get("/share-info", async (_req, res): Promise<void> => {
 
 router.get("/quotes", async (req, res): Promise<void> => {
   const query = ListQuotesQueryParams.safeParse(req.query);
-  const search = query.success ? query.data.search : undefined;
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  const { search, status, category, createdById, offset, limit } = query.data;
+
+  const conditions: SQL[] = [];
+
+  if (search) {
+    conditions.push(
+      or(
+        ilike(quotesTable.quoteNumber, `%${search}%`),
+        ilike(quotesTable.customerName, `%${search}%`),
+        ilike(quotesTable.projectName, `%${search}%`),
+        ilike(quotesTable.jobAddress, `%${search}%`),
+      )!,
+    );
+  }
+  if (category) conditions.push(arrayContains(quotesTable.categories, [category]));
+  if (createdById) conditions.push(eq(quotesTable.createdById, createdById));
+
+  if (status === "archived") {
+    conditions.push(isNotNull(quotesTable.archivedAt));
+  } else if (status) {
+    conditions.push(isNull(quotesTable.archivedAt));
+  }
+  // "signed" means a signoff record exists for the quote.
+  const signedExists = exists(
+    db
+      .select({ one: sql`1` })
+      .from(signoffsTable)
+      .where(eq(signoffsTable.quoteId, quotesTable.id)),
+  );
+  if (status === "signed") conditions.push(signedExists);
+  if (status === "awaiting") conditions.push(not(signedExists));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [countRow] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(quotesTable)
+    .where(where);
 
   const rows = await db
     .select()
     .from(quotesTable)
-    .where(
-      search
-        ? or(
-            ilike(quotesTable.quoteNumber, `%${search}%`),
-            ilike(quotesTable.customerName, `%${search}%`),
-            ilike(quotesTable.projectName, `%${search}%`),
-            ilike(quotesTable.jobAddress, `%${search}%`),
-          )
-        : undefined,
-    )
-    .orderBy(desc(quotesTable.createdAt));
+    .where(where)
+    .orderBy(desc(quotesTable.createdAt), desc(quotesTable.id))
+    .limit(limit)
+    .offset(offset);
 
   const stats = await quoteStats(rows.map((r) => r.id));
   res.json(
-    ListQuotesResponse.parse(rows.map((r) => serializeQuote(r, stats.get(r.id)))),
+    ListQuotesResponse.parse({
+      items: rows.map((r) => serializeQuote(r, stats.get(r.id))),
+      total: countRow?.total ?? 0,
+    }),
   );
 });
 

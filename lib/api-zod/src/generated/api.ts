@@ -42,19 +42,34 @@ export const GetCurrentUserResponse = zod.object({
  */
 export const ListTeamMembersResponseItem = zod.object({
   "id": zod.int(),
+  "userId": zod.string().describe('The member\'s user ID as stored on quotes\' createdById'),
   "name": zod.string()
 })
 export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem)
 
 
 /**
- * @summary List quotes, newest first
+ * @summary List quotes, newest first (filtered and paginated server-side)
  */
+export const listQuotesQueryOffsetDefault = 0;
+export const listQuotesQueryOffsetMin = 0;
+
+export const listQuotesQueryLimitDefault = 50;
+export const listQuotesQueryLimitMax = 100;
+
+
+
 export const ListQuotesQueryParams = zod.object({
-  "search": zod.coerce.string().optional().describe('Match against quote number or customer name')
+  "search": zod.coerce.string().optional().describe('Match against quote number or customer name'),
+  "status": zod.enum(['active', 'awaiting', 'signed', 'archived']).optional().describe('Filter by status. \"active\" = not archived; \"awaiting\" = active and not signed; \"signed\" = active and signed; \"archived\" = archived only. Omitted = all quotes including archived.\n'),
+  "category": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']).optional().describe('Only quotes that include this category'),
+  "createdById": zod.coerce.string().optional().describe('Only quotes created by this user ID'),
+  "offset": zod.coerce.number().int().min(listQuotesQueryOffsetMin).default(listQuotesQueryOffsetDefault).describe('Number of quotes to skip (for pagination)'),
+  "limit": zod.coerce.number().int().min(1).max(listQuotesQueryLimitMax).default(listQuotesQueryLimitDefault).describe('Maximum number of quotes to return')
 })
 
-export const ListQuotesResponseItem = zod.object({
+export const ListQuotesResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.int(),
   "quoteNumber": zod.string(),
   "customerName": zod.string(),
@@ -118,8 +133,9 @@ export const ListQuotesResponseItem = zod.object({
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
   "archivedByName": zod.string().nullish()
+})),
+  "total": zod.int().describe('Total number of quotes matching the filters (ignoring pagination)')
 })
-export const ListQuotesResponse = zod.array(ListQuotesResponseItem)
 
 
 /**

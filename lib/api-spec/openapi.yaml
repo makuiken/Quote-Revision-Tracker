@@ -86,7 +86,7 @@ paths:
     get:
       operationId: listQuotes
       tags: [quotes]
-      summary: List quotes, newest first
+      summary: List quotes, newest first (filtered and paginated server-side)
       parameters:
         - name: search
           in: query
@@ -94,15 +94,59 @@ paths:
           schema:
             type: string
           description: Match against quote number or customer name
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, awaiting, signed, archived]
+          description: >
+            Filter by status. "active" = not archived; "awaiting" = active and
+            not signed; "signed" = active and signed; "archived" = archived
+            only. Omitted = all quotes including archived.
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+          description: Only quotes that include this category
+        - name: createdById
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Only quotes created by this user ID
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of quotes to skip (for pagination)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Maximum number of quotes to return
       responses:
         "200":
-          description: Quotes
+          description: A page of quotes plus the total match count
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Quote"
+                $ref: "#/components/schemas/QuoteList"
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       operationId: createQuote
       tags: [quotes]
@@ -1007,8 +1051,11 @@ components:
       type: object
       properties:
         id: { type: integer }
+        userId:
+          type: string
+          description: The member's user ID as stored on quotes' createdById
         name: { type: string }
-      required: [id, name]
+      required: [id, userId, name]
     UserRoleInput:
       type: object
       properties:
@@ -1059,6 +1106,17 @@ components:
             - type: "null"
         trimDescription: { type: ["string", "null"] }
         millworkDescription: { type: ["string", "null"] }
+    QuoteList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Quote"
+        total:
+          type: integer
+          description: Total number of quotes matching the filters (ignoring pagination)
+      required: [items, total]
     Quote:
       type: object
       properties:

@@ -114,6 +114,8 @@ export interface AppUser {
 
 export interface TeamMember {
   id: number;
+  /** The member's user ID as stored on quotes' createdById */
+  userId: string;
   name: string;
 }
 
@@ -216,6 +218,12 @@ export interface Quote {
   archiveReason?: string | null;
   /** @nullable */
   archivedByName?: string | null;
+}
+
+export interface QuoteList {
+  items: Quote[];
+  /** Total number of quotes matching the filters (ignoring pagination) */
+  total: number;
 }
 
 export interface Revision {
@@ -393,7 +401,52 @@ export type ListQuotesParams = {
  * Match against quote number or customer name
  */
 search?: string;
+/**
+ * Filter by status. "active" = not archived; "awaiting" = active and not signed; "signed" = active and signed; "archived" = archived only. Omitted = all quotes including archived.
+ */
+status?: ListQuotesStatus;
+/**
+ * Only quotes that include this category
+ */
+category?: ListQuotesCategory;
+/**
+ * Only quotes created by this user ID
+ */
+createdById?: string;
+/**
+ * Number of quotes to skip (for pagination)
+ * @minimum 0
+ */
+offset?: number;
+/**
+ * Maximum number of quotes to return
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
+
+export type ListQuotesStatus = typeof ListQuotesStatus[keyof typeof ListQuotesStatus];
+
+
+export const ListQuotesStatus = {
+  active: 'active',
+  awaiting: 'awaiting',
+  signed: 'signed',
+  archived: 'archived',
+} as const;
+
+export type ListQuotesCategory = typeof ListQuotesCategory[keyof typeof ListQuotesCategory];
+
+
+export const ListQuotesCategory = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
 
 export type GetRecentActivityParams = {
 limit?: number;

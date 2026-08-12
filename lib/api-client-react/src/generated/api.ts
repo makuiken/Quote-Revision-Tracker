@@ -34,6 +34,7 @@ import type {
   Quote,
   QuoteDetail,
   QuoteInput,
+  QuoteList,
   QuoteUpdate,
   Revision,
   RevisionDraft,
@@ -403,11 +404,11 @@ export const getListQuotesUrl = (params?: ListQuotesParams,) => {
 }
 
 /**
- * @summary List quotes, newest first
+ * @summary List quotes, newest first (filtered and paginated server-side)
  */
-export const listQuotes = async (params?: ListQuotesParams, options?: Parameters<typeof customFetch>[1]): Promise<Quote[]> => {
+export const listQuotes = async (params?: ListQuotesParams, options?: Parameters<typeof customFetch>[1]): Promise<QuoteList> => {
 
-  return customFetch<Quote[]>(getListQuotesUrl(params),
+  return customFetch<QuoteList>(getListQuotesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -427,7 +428,7 @@ export const getListQuotesQueryKey = (params?: ListQuotesParams,) => {
     }
 
 
-export const getListQuotesQueryOptions = <TData = Awaited<ReturnType<typeof listQuotes>>, TError = ErrorType<unknown>>(params?: ListQuotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listQuotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListQuotesQueryOptions = <TData = Awaited<ReturnType<typeof listQuotes>>, TError = ErrorType<ErrorResponse>>(params?: ListQuotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listQuotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -446,14 +447,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListQuotesQueryResult = NonNullable<Awaited<ReturnType<typeof listQuotes>>>
-export type ListQuotesQueryError = ErrorType<unknown>
+export type ListQuotesQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary List quotes, newest first
+ * @summary List quotes, newest first (filtered and paginated server-side)
  */
 
-export function useListQuotes<TData = Awaited<ReturnType<typeof listQuotes>>, TError = ErrorType<unknown>>(
+export function useListQuotes<TData = Awaited<ReturnType<typeof listQuotes>>, TError = ErrorType<ErrorResponse>>(
  params?: ListQuotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listQuotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
