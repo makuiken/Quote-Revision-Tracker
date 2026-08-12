@@ -82,6 +82,85 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TeamMember"
+  /field-options:
+    get:
+      operationId: listFieldOptions
+      tags: [quotes]
+      summary: List admin-configured dropdown options for product spec fields
+      responses:
+        "200":
+          description: All configured field option lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldOptions"
+  /admin/field-options/{category}/{field}:
+    put:
+      operationId: setFieldOptions
+      tags: [admin]
+      summary: Create or replace the option list for a spec field (admin only)
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [window, interiorDoor, exteriorDoor]
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldOptionsInput"
+      responses:
+        "200":
+          description: Saved option list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldOptions"
+        "400":
+          description: Invalid category, field, or values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteFieldOptions
+      tags: [admin]
+      summary: Remove the option list for a spec field so it reverts to free text (admin only)
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [window, interiorDoor, exteriorDoor]
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "204":
+          description: Removed (no-op if none existed)
+        "400":
+          description: Invalid category or field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /quotes:
     get:
       operationId: listQuotes
@@ -1010,6 +1089,25 @@ components:
           type: string
       required:
         - publicOrigin
+    FieldOptions:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [window, interiorDoor, exteriorDoor]
+        field: { type: string }
+        values:
+          type: array
+          items: { type: string }
+      required: [category, field, values]
+    FieldOptionsInput:
+      type: object
+      properties:
+        values:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 120 }
+      required: [values]
     ErrorResponse:
       type: object
       properties:

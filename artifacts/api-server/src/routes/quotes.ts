@@ -23,9 +23,11 @@ import {
   revisionDraftsTable,
   attachmentsTable,
   usersTable,
+  fieldOptionsTable,
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
+  ListFieldOptionsResponse,
   ListTeamMembersResponse,
   GetShareInfoResponse,
   ListQuotesQueryParams,
@@ -118,6 +120,20 @@ router.get("/users", async (_req, res): Promise<void> => {
     .where(eq(usersTable.status, "approved"))
     .orderBy(usersTable.name);
   res.json(ListTeamMembersResponse.parse(rows));
+});
+
+// Readable by any approved user so the quote forms can render dropdowns;
+// writes are admin-only and live on the /admin router.
+router.get("/field-options", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      category: fieldOptionsTable.category,
+      field: fieldOptionsTable.field,
+      values: fieldOptionsTable.values,
+    })
+    .from(fieldOptionsTable)
+    .orderBy(fieldOptionsTable.category, fieldOptionsTable.field);
+  res.json(ListFieldOptionsResponse.parse(rows));
 });
 
 type QuoteRow = typeof quotesTable.$inferSelect;

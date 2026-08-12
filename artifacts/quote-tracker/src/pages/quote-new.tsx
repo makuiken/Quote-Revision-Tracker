@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toaster";
 import { INTERIOR_DOOR_FIELDS, EXTERIOR_DOOR_FIELDS } from "@/lib/spec-fields";
+import { SpecInput, useFieldOptions } from "@/components/spec-input";
 
 const doorSpecSchema = z.object({
   brand: z.string().optional(),
@@ -65,6 +66,7 @@ export default function NewQuotePage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createQuote = useCreateQuote();
+  const { optionsFor } = useFieldOptions();
 
   const form = useForm<QuoteFormValues>({
     resolver: zodResolver(quoteSchema),
@@ -208,8 +210,9 @@ export default function NewQuotePage() {
                 {["brand", "series", "exteriorColor", "interiorColor", "jambDepth", "dividedLites", "hardwareFinish", "screenColor"].map((field) => (
                   <div key={field} className="space-y-2">
                     <Label htmlFor={`window.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
-                    <Input 
+                    <SpecInput 
                       id={`window.${field}`} 
+                      options={optionsFor("window", field)}
                       {...form.register(`specs.window.${field}` as any)} 
                     />
                   </div>
@@ -231,8 +234,9 @@ export default function NewQuotePage() {
                   {fields.map((field) => (
                     <div key={field.key} className="space-y-2">
                       <Label htmlFor={`${specKey}.${field.key}`}>{field.label}</Label>
-                      <Input 
+                      <SpecInput 
                         id={`${specKey}.${field.key}`} 
+                        options={optionsFor(specKey, field.key)}
                         {...form.register(`specs.${specKey}.${field.key}` as any)} 
                       />
                     </div>

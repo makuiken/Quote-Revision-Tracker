@@ -56,6 +56,30 @@ export interface ShareInfo {
   publicOrigin: string;
 }
 
+export type FieldOptionsCategory = typeof FieldOptionsCategory[keyof typeof FieldOptionsCategory];
+
+
+export const FieldOptionsCategory = {
+  window: 'window',
+  interiorDoor: 'interiorDoor',
+  exteriorDoor: 'exteriorDoor',
+} as const;
+
+export interface FieldOptions {
+  category: FieldOptionsCategory;
+  field: string;
+  values: string[];
+}
+
+export interface FieldOptionsInput {
+  /**
+     * @maxItems 200
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  values: string[];
+}
+
 export interface ErrorResponse {
   error: string;
 }

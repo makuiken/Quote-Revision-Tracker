@@ -1,9 +1,13 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, fieldOptionsTable } from "@workspace/db";
 import {
   ListUsersResponse,
+  SetFieldOptionsParams,
+  SetFieldOptionsBody,
+  SetFieldOptionsResponse,
+  DeleteFieldOptionsParams,
   ApproveUserParams,
   ApproveUserResponse,
   SetUserRoleParams,
@@ -157,5 +161,75 @@ router.delete("/admin/users/:id", async (req: AuthedRequest, res): Promise<void>
   invalidateAppUserCache(target.clerkUserId);
   res.sendStatus(204);
 });
+
+// ---------- Field option lists (dropdowns for quote spec fields) ----------
+// Editing option lists never touches existing quotes: quote specs store plain
+// text values, so signatures and historical data are unaffected.
+
+router.put(
+  "/admin/field-options/:category/:field",
+  async (req, res): Promise<void> => {
+    const params = SetFieldOptionsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = SetFieldOptionsBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    // Dedupe while preserving order; trim whitespace.
+    const seen = new Set<string>();
+    const values: string[] = [];
+    for (const raw of body.data.values) {
+      const v = raw.trim();
+      if (!v || seen.has(v.toLowerCase())) continue;
+      seen.add(v.toLowerCase());
+      values.push(v);
+    }
+
+    const [row] = await db
+      .insert(fieldOptionsTable)
+      .values({
+        category: params.data.category,
+        field: params.data.field,
+        values,
+      })
+      .onConflictDoUpdate({
+        target: [fieldOptionsTable.category, fieldOptionsTable.field],
+        set: { values, updatedAt: new Date() },
+      })
+      .returning();
+
+    res.json(
+      SetFieldOptionsResponse.parse({
+        category: row!.category,
+        field: row!.field,
+        values: row!.values,
+      }),
+    );
+  },
+);
+
+router.delete(
+  "/admin/field-options/:category/:field",
+  async (req, res): Promise<void> => {
+    const params = DeleteFieldOptionsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    await db
+      .delete(fieldOptionsTable)
+      .where(
+        and(
+          eq(fieldOptionsTable.category, params.data.category),
+          eq(fieldOptionsTable.field, params.data.field),
+        ),
+      );
+    res.sendStatus(204);
+  },
+);
 
 export default router;

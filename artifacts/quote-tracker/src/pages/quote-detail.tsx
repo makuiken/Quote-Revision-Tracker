@@ -41,6 +41,7 @@ import { categoryLabel } from "@/lib/revision-categories";
 import { CopyButton } from "@/components/copy-button";
 import { formatRevisionsDigest } from "@/lib/copy-text";
 import { INTERIOR_DOOR_FIELDS, EXTERIOR_DOOR_FIELDS, LEGACY_DOOR_FIELDS, REMOVED_INTERIOR_DOOR_FIELDS } from "@/lib/spec-fields";
+import { SpecInput, useFieldOptions } from "@/components/spec-input";
 
 const sameTags = (a: string[], b: string[]) =>
   a.length === b.length && a.every((t) => b.includes(t));
@@ -258,6 +259,7 @@ export default function QuoteDetailPage() {
     query: { enabled: !!quoteId, queryKey: getGetQuoteQueryKey(quoteId) } 
   });
   const updateQuote = useUpdateQuote();
+  const { optionsFor } = useFieldOptions();
   const archiveQuote = useArchiveQuote();
   const unarchiveQuote = useUnarchiveQuote();
   const saveDraft = useSaveRevisionDraft();
@@ -806,8 +808,9 @@ export default function QuoteDetailPage() {
                       {["brand", "series", "exteriorColor", "interiorColor", "jambDepth", "dividedLites", "hardwareFinish", "screenColor"].map((field) => (
                         <div key={field} className="space-y-2">
                           <Label htmlFor={`window.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
-                          <Input 
+                          <SpecInput 
                             id={`window.${field}`} 
+                            options={optionsFor("window", field)}
                             {...form.register(`specs.window.${field}` as any)} 
                           />
                         </div>
@@ -830,8 +833,9 @@ export default function QuoteDetailPage() {
                         {fields.map((field) => (
                           <div key={field.key} className="space-y-2">
                             <Label htmlFor={`${specKey}.${field.key}`}>{field.label}</Label>
-                            <Input 
+                            <SpecInput 
                               id={`${specKey}.${field.key}`} 
+                              options={optionsFor(specKey, field.key)}
                               {...form.register(`specs.${specKey}.${field.key}` as any)} 
                             />
                           </div>

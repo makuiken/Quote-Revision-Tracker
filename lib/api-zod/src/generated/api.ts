@@ -49,6 +49,61 @@ export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem)
 
 
 /**
+ * @summary List admin-configured dropdown options for product spec fields
+ */
+export const ListFieldOptionsResponseItem = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.string(),
+  "values": zod.array(zod.string())
+})
+export const ListFieldOptionsResponse = zod.array(ListFieldOptionsResponseItem)
+
+
+/**
+ * @summary Create or replace the option list for a spec field (admin only)
+ */
+export const setFieldOptionsPathFieldMax = 64;
+
+
+
+export const SetFieldOptionsParams = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.coerce.string().min(1).max(setFieldOptionsPathFieldMax)
+})
+
+export const setFieldOptionsBodyValuesItemMax = 120;
+
+export const setFieldOptionsBodyValuesMax = 200;
+
+
+
+export const SetFieldOptionsBody = zod.object({
+  "values": zod.array(zod.string().min(1).max(setFieldOptionsBodyValuesItemMax)).max(setFieldOptionsBodyValuesMax)
+})
+
+export const SetFieldOptionsResponse = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.string(),
+  "values": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Remove the option list for a spec field so it reverts to free text (admin only)
+ */
+export const deleteFieldOptionsPathFieldMax = 64;
+
+
+
+export const DeleteFieldOptionsParams = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.coerce.string().min(1).max(deleteFieldOptionsPathFieldMax)
+})
+
+export const DeleteFieldOptionsResponse = zod.void()
+
+
+/**
  * @summary List quotes, newest first (filtered and paginated server-side)
  */
 export const listQuotesQueryOffsetDefault = 0;

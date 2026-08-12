@@ -28,6 +28,8 @@ import type {
   CurrentUser,
   DashboardSummary,
   ErrorResponse,
+  FieldOptions,
+  FieldOptionsInput,
   GetRecentActivityParams,
   HealthStatus,
   ListQuotesParams,
@@ -387,6 +389,230 @@ export function useListTeamMembers<TData = Awaited<ReturnType<typeof listTeamMem
 
 
 
+
+export const getListFieldOptionsUrl = () => {
+
+
+
+
+  return `/api/field-options`
+}
+
+/**
+ * @summary List admin-configured dropdown options for product spec fields
+ */
+export const listFieldOptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<FieldOptions[]> => {
+
+  return customFetch<FieldOptions[]>(getListFieldOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListFieldOptionsQueryKey = () => {
+    return [
+    `/api/field-options`
+    ] as const;
+    }
+
+
+export const getListFieldOptionsQueryOptions = <TData = Awaited<ReturnType<typeof listFieldOptions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFieldOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListFieldOptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFieldOptions>>> = ({ signal }) => listFieldOptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFieldOptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListFieldOptionsQueryResult = NonNullable<Awaited<ReturnType<typeof listFieldOptions>>>
+export type ListFieldOptionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List admin-configured dropdown options for product spec fields
+ */
+
+export function useListFieldOptions<TData = Awaited<ReturnType<typeof listFieldOptions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFieldOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListFieldOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetFieldOptionsUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,) => {
+
+
+
+
+  return `/api/admin/field-options/${category}/${field}`
+}
+
+/**
+ * @summary Create or replace the option list for a spec field (admin only)
+ */
+export const setFieldOptions = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,
+    fieldOptionsInput: FieldOptionsInput, options?: Parameters<typeof customFetch>[1]): Promise<FieldOptions> => {
+
+  return customFetch<FieldOptions>(getSetFieldOptionsUrl(category,field),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(fieldOptionsInput)
+  }
+);}
+
+
+
+
+
+export const getSetFieldOptionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<FieldOptionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<FieldOptionsInput>}, TContext> => {
+
+const mutationKey = ['setFieldOptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setFieldOptions>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<FieldOptionsInput>}> = (props) => {
+          const {category,field,data} = props ?? {};
+
+          return  setFieldOptions(category,field,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetFieldOptionsMutationResult = NonNullable<Awaited<ReturnType<typeof setFieldOptions>>>
+    export type SetFieldOptionsMutationBody = BodyType<FieldOptionsInput>
+    export type SetFieldOptionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create or replace the option list for a spec field (admin only)
+ */
+export const useSetFieldOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<FieldOptionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setFieldOptions>>,
+        TError,
+        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<FieldOptionsInput>},
+        TContext
+      > => {
+      return useMutation(getSetFieldOptionsMutationOptions(options));
+    }
+
+export const getDeleteFieldOptionsUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,) => {
+
+
+
+
+  return `/api/admin/field-options/${category}/${field}`
+}
+
+/**
+ * @summary Remove the option list for a spec field so it reverts to free text (admin only)
+ */
+export const deleteFieldOptions = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteFieldOptionsUrl(category,field),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteFieldOptionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}, TContext> => {
+
+const mutationKey = ['deleteFieldOptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteFieldOptions>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}> = (props) => {
+          const {category,field} = props ?? {};
+
+          return  deleteFieldOptions(category,field,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteFieldOptionsMutationResult = NonNullable<Awaited<ReturnType<typeof deleteFieldOptions>>>
+
+    export type DeleteFieldOptionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove the option list for a spec field so it reverts to free text (admin only)
+ */
+export const useDeleteFieldOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteFieldOptions>>,
+        TError,
+        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string},
+        TContext
+      > => {
+      return useMutation(getDeleteFieldOptionsMutationOptions(options));
+    }
 
 export const getListQuotesUrl = (params?: ListQuotesParams,) => {
   const normalizedParams = new URLSearchParams();

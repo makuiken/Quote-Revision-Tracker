@@ -164,6 +164,26 @@ export const attachmentsTable = pgTable("attachments", {
     .defaultNow(),
 });
 
+// Admin-managed dropdown option lists for product spec fields, keyed by spec
+// section (window/interiorDoor/exteriorDoor) + field name. A field with a row
+// here renders as a combobox in quote forms; fields without stay free text.
+export const fieldOptionsTable = pgTable(
+  "field_options",
+  {
+    id: serial("id").primaryKey(),
+    category: text("category").notNull(),
+    field: text("field").notNull(),
+    values: text("values").array().notNull().default([]),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("field_options_category_field_unique").on(table.category, table.field),
+  ],
+);
+
 export const insertQuoteSchema = createInsertSchema(quotesTable).omit({
   id: true,
   createdAt: true,
@@ -176,3 +196,4 @@ export type RevisionDraft = typeof revisionDraftsTable.$inferSelect;
 export type Signoff = typeof signoffsTable.$inferSelect;
 export type Attachment = typeof attachmentsTable.$inferSelect;
 export type AppUser = typeof usersTable.$inferSelect;
+export type FieldOptions = typeof fieldOptionsTable.$inferSelect;

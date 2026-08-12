@@ -57,6 +57,16 @@ const RECONCILIATION_STATEMENTS: string[] = [
   // null/empty means the entry applies to the whole quote.
   `ALTER TABLE revisions ADD COLUMN IF NOT EXISTS categories text[]`,
   `ALTER TABLE revision_drafts ADD COLUMN IF NOT EXISTS categories text[]`,
+
+  // Admin-managed dropdown option lists for product spec fields.
+  `CREATE TABLE IF NOT EXISTS field_options (
+    id serial PRIMARY KEY,
+    category text NOT NULL,
+    field text NOT NULL,
+    "values" text[] NOT NULL DEFAULT '{}',
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT field_options_category_field_unique UNIQUE (category, field)
+  )`,
 ];
 
 export async function ensureSchema(): Promise<void> {
