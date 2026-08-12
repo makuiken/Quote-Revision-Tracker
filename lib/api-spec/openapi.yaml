@@ -161,6 +161,112 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /admin/field-options/{category}/{field}/dependent:
+    put:
+      operationId: setDependentFieldOptions
+      tags: [admin]
+      summary: Create or replace the option list for a spec field scoped to a parent field value (admin only)
+      description: >
+        Declares/extends a one-level dependency: when the quote form's parent
+        field equals parentValue, the dependent field suggests these values.
+        Saving under a different parentField replaces the previous dependency
+        (all lists scoped to the old parent are removed).
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [window, interiorDoor, exteriorDoor]
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DependentFieldOptionsInput"
+      responses:
+        "200":
+          description: Saved scoped option list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldOptions"
+        "400":
+          description: Invalid category, field, parent, or values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/field-options/{category}/{field}/dependent/{parentValue}:
+    delete:
+      operationId: deleteDependentFieldOptions
+      tags: [admin]
+      summary: Remove the option list scoped to one parent value (admin only)
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [window, interiorDoor, exteriorDoor]
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: parentValue
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      responses:
+        "204":
+          description: Removed (no-op if none existed)
+        "400":
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/field-options/{category}/{field}/dependency:
+    delete:
+      operationId: clearFieldDependency
+      tags: [admin]
+      summary: Remove a field's dependency entirely (all parent-scoped lists) so it reverts to its flat list or free text (admin only)
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [window, interiorDoor, exteriorDoor]
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "204":
+          description: Dependency removed (no-op if none existed)
+        "400":
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /quotes:
     get:
       operationId: listQuotes
@@ -1096,10 +1202,26 @@ components:
           type: string
           enum: [window, interiorDoor, exteriorDoor]
         field: { type: string }
+        parentField:
+          type: string
+          description: Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).
+        parentValue:
+          type: string
+          description: Empty for a flat list; otherwise the parent field's value this list is scoped to (e.g. Andersen).
         values:
           type: array
           items: { type: string }
-      required: [category, field, values]
+      required: [category, field, parentField, parentValue, values]
+    DependentFieldOptionsInput:
+      type: object
+      properties:
+        parentField: { type: string, minLength: 1, maxLength: 64 }
+        parentValue: { type: string, minLength: 1, maxLength: 120 }
+        values:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 120 }
+      required: [parentField, parentValue, values]
     FieldOptionsInput:
       type: object
       properties:

@@ -167,12 +167,22 @@ export const attachmentsTable = pgTable("attachments", {
 // Admin-managed dropdown option lists for product spec fields, keyed by spec
 // section (window/interiorDoor/exteriorDoor) + field name. A field with a row
 // here renders as a combobox in quote forms; fields without stay free text.
+//
+// Dependent (parent-scoped) lists: a row with parentField/parentValue set
+// holds the options offered for `field` when the sibling `parentField` in the
+// same category currently equals `parentValue` (e.g. series options scoped to
+// brand "Andersen"). Flat lists use empty strings for both columns, so the
+// (category, field, parent_value) uniqueness works without NULL special cases.
 export const fieldOptionsTable = pgTable(
   "field_options",
   {
     id: serial("id").primaryKey(),
     category: text("category").notNull(),
     field: text("field").notNull(),
+    // '' = flat list; otherwise the sibling field this list is scoped by.
+    parentField: text("parent_field").notNull().default(""),
+    // '' = flat list; otherwise the parent field's value this list applies to.
+    parentValue: text("parent_value").notNull().default(""),
     values: text("values").array().notNull().default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -180,7 +190,11 @@ export const fieldOptionsTable = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    unique("field_options_category_field_unique").on(table.category, table.field),
+    unique("field_options_category_field_parent_value_unique").on(
+      table.category,
+      table.field,
+      table.parentValue,
+    ),
   ],
 );
 

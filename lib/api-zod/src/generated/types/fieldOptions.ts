@@ -10,5 +10,9 @@ import type { FieldOptionsCategory } from './fieldOptionsCategory';
 export interface FieldOptions {
   category: FieldOptionsCategory;
   field: string;
+  /** Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand). */
+  parentField: string;
+  /** Empty for a flat list; otherwise the parent field's value this list is scoped to (e.g. Andersen). */
+  parentValue: string;
   values: string[];
 }

@@ -212,7 +212,7 @@ export default function NewQuotePage() {
                     <Label htmlFor={`window.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
                     <SpecInput 
                       id={`window.${field}`} 
-                      options={optionsFor("window", field)}
+                      options={optionsFor("window", field, form.watch("specs.window"))}
                       {...form.register(`specs.window.${field}` as any)} 
                     />
                   </div>
@@ -236,7 +236,7 @@ export default function NewQuotePage() {
                       <Label htmlFor={`${specKey}.${field.key}`}>{field.label}</Label>
                       <SpecInput 
                         id={`${specKey}.${field.key}`} 
-                        options={optionsFor(specKey, field.key)}
+                        options={optionsFor(specKey, field.key, form.watch(`specs.${specKey}`))}
                         {...form.register(`specs.${specKey}.${field.key}` as any)} 
                       />
                     </div>

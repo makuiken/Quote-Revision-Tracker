@@ -3,4 +3,5 @@
 - [Express router guards](express-router-guards.md) — bare `router.use(guard)` in a root-mounted sub-router blocks the whole API for non-matching users; always scope guards to a path.
 - [Signoff document versioning](signoff-document-version.md) — signing must echo a documentVersion hash; all signoff-affecting mutations must clear signatures and change the hash.
 - [Draft/autosave write ordering](draft-write-ordering.md) — autosaved drafts need an ordered write queue + epoch drop; publish must carry the latest text in one server transaction.
+- [Field-options dependency model](field-options-dependency.md) — parent-scoped dropdown lists keyed with '' sentinels, not NULLs; one parent per field; parent rename doesn't cascade.
 - [E2E testing setup](e2e-testing.md) — Playwright suite in `e2e/`; Clerk headless sign-in needs ticket strategy, system chromium on NixOS, drizzle push needs a TTY.

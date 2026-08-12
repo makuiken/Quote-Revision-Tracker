@@ -54,6 +54,8 @@ export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem)
 export const ListFieldOptionsResponseItem = zod.object({
   "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
   "field": zod.string(),
+  "parentField": zod.string().describe('Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).'),
+  "parentValue": zod.string().describe('Empty for a flat list; otherwise the parent field\'s value this list is scoped to (e.g. Andersen).'),
   "values": zod.array(zod.string())
 })
 export const ListFieldOptionsResponse = zod.array(ListFieldOptionsResponseItem)
@@ -84,6 +86,8 @@ export const SetFieldOptionsBody = zod.object({
 export const SetFieldOptionsResponse = zod.object({
   "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
   "field": zod.string(),
+  "parentField": zod.string().describe('Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).'),
+  "parentValue": zod.string().describe('Empty for a flat list; otherwise the parent field\'s value this list is scoped to (e.g. Andersen).'),
   "values": zod.array(zod.string())
 })
 
@@ -101,6 +105,77 @@ export const DeleteFieldOptionsParams = zod.object({
 })
 
 export const DeleteFieldOptionsResponse = zod.void()
+
+
+/**
+ * Declares/extends a one-level dependency: when the quote form's parent field equals parentValue, the dependent field suggests these values. Saving under a different parentField replaces the previous dependency (all lists scoped to the old parent are removed).
+ * @summary Create or replace the option list for a spec field scoped to a parent field value (admin only)
+ */
+export const setDependentFieldOptionsPathFieldMax = 64;
+
+
+
+export const SetDependentFieldOptionsParams = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.coerce.string().min(1).max(setDependentFieldOptionsPathFieldMax)
+})
+
+export const setDependentFieldOptionsBodyParentFieldMax = 64;
+
+export const setDependentFieldOptionsBodyParentValueMax = 120;
+
+export const setDependentFieldOptionsBodyValuesItemMax = 120;
+
+export const setDependentFieldOptionsBodyValuesMax = 200;
+
+
+
+export const SetDependentFieldOptionsBody = zod.object({
+  "parentField": zod.string().min(1).max(setDependentFieldOptionsBodyParentFieldMax),
+  "parentValue": zod.string().min(1).max(setDependentFieldOptionsBodyParentValueMax),
+  "values": zod.array(zod.string().min(1).max(setDependentFieldOptionsBodyValuesItemMax)).max(setDependentFieldOptionsBodyValuesMax)
+})
+
+export const SetDependentFieldOptionsResponse = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.string(),
+  "parentField": zod.string().describe('Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).'),
+  "parentValue": zod.string().describe('Empty for a flat list; otherwise the parent field\'s value this list is scoped to (e.g. Andersen).'),
+  "values": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Remove the option list scoped to one parent value (admin only)
+ */
+export const deleteDependentFieldOptionsPathFieldMax = 64;
+
+export const deleteDependentFieldOptionsPathParentValueMax = 120;
+
+
+
+export const DeleteDependentFieldOptionsParams = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.coerce.string().min(1).max(deleteDependentFieldOptionsPathFieldMax),
+  "parentValue": zod.coerce.string().min(1).max(deleteDependentFieldOptionsPathParentValueMax)
+})
+
+export const DeleteDependentFieldOptionsResponse = zod.void()
+
+
+/**
+ * @summary Remove a field's dependency entirely (all parent-scoped lists) so it reverts to its flat list or free text (admin only)
+ */
+export const clearFieldDependencyPathFieldMax = 64;
+
+
+
+export const ClearFieldDependencyParams = zod.object({
+  "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
+  "field": zod.coerce.string().min(1).max(clearFieldDependencyPathFieldMax)
+})
+
+export const ClearFieldDependencyResponse = zod.void()
 
 
 /**

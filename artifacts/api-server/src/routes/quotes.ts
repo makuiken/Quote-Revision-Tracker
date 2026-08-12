@@ -129,10 +129,16 @@ router.get("/field-options", async (_req, res): Promise<void> => {
     .select({
       category: fieldOptionsTable.category,
       field: fieldOptionsTable.field,
+      parentField: fieldOptionsTable.parentField,
+      parentValue: fieldOptionsTable.parentValue,
       values: fieldOptionsTable.values,
     })
     .from(fieldOptionsTable)
-    .orderBy(fieldOptionsTable.category, fieldOptionsTable.field);
+    .orderBy(
+      fieldOptionsTable.category,
+      fieldOptionsTable.field,
+      fieldOptionsTable.parentValue,
+    );
   res.json(ListFieldOptionsResponse.parse(rows));
 });
 

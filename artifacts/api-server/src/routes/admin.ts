@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
 import { db, usersTable, fieldOptionsTable } from "@workspace/db";
 import {
@@ -8,6 +8,11 @@ import {
   SetFieldOptionsBody,
   SetFieldOptionsResponse,
   DeleteFieldOptionsParams,
+  SetDependentFieldOptionsParams,
+  SetDependentFieldOptionsBody,
+  SetDependentFieldOptionsResponse,
+  DeleteDependentFieldOptionsParams,
+  ClearFieldDependencyParams,
   ApproveUserParams,
   ApproveUserResponse,
   SetUserRoleParams,
@@ -179,25 +184,23 @@ router.put(
       res.status(400).json({ error: body.error.message });
       return;
     }
-    // Dedupe while preserving order; trim whitespace.
-    const seen = new Set<string>();
-    const values: string[] = [];
-    for (const raw of body.data.values) {
-      const v = raw.trim();
-      if (!v || seen.has(v.toLowerCase())) continue;
-      seen.add(v.toLowerCase());
-      values.push(v);
-    }
+    const values = dedupeValues(body.data.values);
 
     const [row] = await db
       .insert(fieldOptionsTable)
       .values({
         category: params.data.category,
         field: params.data.field,
+        parentField: "",
+        parentValue: "",
         values,
       })
       .onConflictDoUpdate({
-        target: [fieldOptionsTable.category, fieldOptionsTable.field],
+        target: [
+          fieldOptionsTable.category,
+          fieldOptionsTable.field,
+          fieldOptionsTable.parentValue,
+        ],
         set: { values, updatedAt: new Date() },
       })
       .returning();
@@ -206,6 +209,8 @@ router.put(
       SetFieldOptionsResponse.parse({
         category: row!.category,
         field: row!.field,
+        parentField: row!.parentField,
+        parentValue: row!.parentValue,
         values: row!.values,
       }),
     );
@@ -220,12 +225,150 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
+    // Only removes the flat list; parent-scoped (dependent) lists are managed
+    // via the /dependent and /dependency endpoints.
     await db
       .delete(fieldOptionsTable)
       .where(
         and(
           eq(fieldOptionsTable.category, params.data.category),
           eq(fieldOptionsTable.field, params.data.field),
+          eq(fieldOptionsTable.parentValue, ""),
+        ),
+      );
+    res.sendStatus(204);
+  },
+);
+
+// Dedupe while preserving order; trim whitespace.
+function dedupeValues(raw: string[]): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const item of raw) {
+    const v = item.trim();
+    if (!v || seen.has(v.toLowerCase())) continue;
+    seen.add(v.toLowerCase());
+    values.push(v);
+  }
+  return values;
+}
+
+// ---------- Dependent (parent-scoped) option lists ----------
+// One level only: `field` in a category depends on sibling `parentField`;
+// each parentValue gets its own option list. Quote forms filter suggestions
+// by the currently selected parent value. Existing quotes are never touched.
+
+router.put(
+  "/admin/field-options/:category/:field/dependent",
+  async (req, res): Promise<void> => {
+    const params = SetDependentFieldOptionsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = SetDependentFieldOptionsBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+    const parentField = body.data.parentField.trim();
+    const parentValue = body.data.parentValue.trim();
+    if (!parentField || !parentValue) {
+      res.status(400).json({ error: "parentField and parentValue are required" });
+      return;
+    }
+    if (parentField === params.data.field) {
+      res.status(400).json({ error: "A field cannot depend on itself" });
+      return;
+    }
+    const values = dedupeValues(body.data.values);
+    if (values.length === 0) {
+      res.status(400).json({ error: "values must contain at least one option" });
+      return;
+    }
+
+    const row = await db.transaction(async (tx) => {
+      // A field has at most one parent: saving under a new parentField
+      // replaces the previous dependency entirely.
+      await tx
+        .delete(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.field, params.data.field),
+            ne(fieldOptionsTable.parentValue, ""),
+            ne(fieldOptionsTable.parentField, parentField),
+          ),
+        );
+      const [saved] = await tx
+        .insert(fieldOptionsTable)
+        .values({
+          category: params.data.category,
+          field: params.data.field,
+          parentField,
+          parentValue,
+          values,
+        })
+        .onConflictDoUpdate({
+          target: [
+            fieldOptionsTable.category,
+            fieldOptionsTable.field,
+            fieldOptionsTable.parentValue,
+          ],
+          set: { parentField, values, updatedAt: new Date() },
+        })
+        .returning();
+      return saved!;
+    });
+
+    res.json(
+      SetDependentFieldOptionsResponse.parse({
+        category: row.category,
+        field: row.field,
+        parentField: row.parentField,
+        parentValue: row.parentValue,
+        values: row.values,
+      }),
+    );
+  },
+);
+
+router.delete(
+  "/admin/field-options/:category/:field/dependent/:parentValue",
+  async (req, res): Promise<void> => {
+    const params = DeleteDependentFieldOptionsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    await db
+      .delete(fieldOptionsTable)
+      .where(
+        and(
+          eq(fieldOptionsTable.category, params.data.category),
+          eq(fieldOptionsTable.field, params.data.field),
+          eq(fieldOptionsTable.parentValue, params.data.parentValue),
+        ),
+      );
+    res.sendStatus(204);
+  },
+);
+
+router.delete(
+  "/admin/field-options/:category/:field/dependency",
+  async (req, res): Promise<void> => {
+    const params = ClearFieldDependencyParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    await db
+      .delete(fieldOptionsTable)
+      .where(
+        and(
+          eq(fieldOptionsTable.category, params.data.category),
+          eq(fieldOptionsTable.field, params.data.field),
+          ne(fieldOptionsTable.parentValue, ""),
         ),
       );
     res.sendStatus(204);

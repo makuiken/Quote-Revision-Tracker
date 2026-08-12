@@ -810,7 +810,7 @@ export default function QuoteDetailPage() {
                           <Label htmlFor={`window.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
                           <SpecInput 
                             id={`window.${field}`} 
-                            options={optionsFor("window", field)}
+                            options={optionsFor("window", field, form.watch("specs.window" as any) as any)}
                             {...form.register(`specs.window.${field}` as any)} 
                           />
                         </div>
@@ -835,7 +835,7 @@ export default function QuoteDetailPage() {
                             <Label htmlFor={`${specKey}.${field.key}`}>{field.label}</Label>
                             <SpecInput 
                               id={`${specKey}.${field.key}`} 
-                              options={optionsFor(specKey, field.key)}
+                              options={optionsFor(specKey, field.key, form.watch(`specs.${specKey}` as any) as any)}
                               {...form.register(`specs.${specKey}.${field.key}` as any)} 
                             />
                           </div>

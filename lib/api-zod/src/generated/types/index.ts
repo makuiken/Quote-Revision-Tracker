@@ -17,6 +17,7 @@ export * from './currentUser';
 export * from './currentUserRole';
 export * from './currentUserStatus';
 export * from './dashboardSummary';
+export * from './dependentFieldOptionsInput';
 export * from './doorSpec';
 export * from './errorResponse';
 export * from './fieldOptions';

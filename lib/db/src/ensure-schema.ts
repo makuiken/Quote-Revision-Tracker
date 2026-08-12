@@ -67,6 +67,15 @@ const RECONCILIATION_STATEMENTS: string[] = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT field_options_category_field_unique UNIQUE (category, field)
   )`,
+
+  // Dependent dropdowns: option lists can be scoped to a parent field+value
+  // (e.g. Series options per Brand). Flat lists keep '' in both columns, so
+  // uniqueness moves from (category, field) to (category, field, parent_value).
+  `ALTER TABLE field_options ADD COLUMN IF NOT EXISTS parent_field text NOT NULL DEFAULT ''`,
+  `ALTER TABLE field_options ADD COLUMN IF NOT EXISTS parent_value text NOT NULL DEFAULT ''`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS field_options_category_field_parent_value_unique
+    ON field_options (category, field, parent_value)`,
+  `ALTER TABLE field_options DROP CONSTRAINT IF EXISTS field_options_category_field_unique`,
 ];
 
 export async function ensureSchema(): Promise<void> {

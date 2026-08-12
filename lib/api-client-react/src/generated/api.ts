@@ -27,6 +27,7 @@ import type {
   AttachmentInput,
   CurrentUser,
   DashboardSummary,
+  DependentFieldOptionsInput,
   ErrorResponse,
   FieldOptions,
   FieldOptionsInput,
@@ -612,6 +613,229 @@ export const useDeleteFieldOptions = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getDeleteFieldOptionsMutationOptions(options));
+    }
+
+export const getSetDependentFieldOptionsUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,) => {
+
+
+
+
+  return `/api/admin/field-options/${category}/${field}/dependent`
+}
+
+/**
+ * Declares/extends a one-level dependency: when the quote form's parent field equals parentValue, the dependent field suggests these values. Saving under a different parentField replaces the previous dependency (all lists scoped to the old parent are removed).
+ * @summary Create or replace the option list for a spec field scoped to a parent field value (admin only)
+ */
+export const setDependentFieldOptions = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,
+    dependentFieldOptionsInput: DependentFieldOptionsInput, options?: Parameters<typeof customFetch>[1]): Promise<FieldOptions> => {
+
+  return customFetch<FieldOptions>(getSetDependentFieldOptionsUrl(category,field),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(dependentFieldOptionsInput)
+  }
+);}
+
+
+
+
+
+export const getSetDependentFieldOptionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<DependentFieldOptionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<DependentFieldOptionsInput>}, TContext> => {
+
+const mutationKey = ['setDependentFieldOptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setDependentFieldOptions>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<DependentFieldOptionsInput>}> = (props) => {
+          const {category,field,data} = props ?? {};
+
+          return  setDependentFieldOptions(category,field,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetDependentFieldOptionsMutationResult = NonNullable<Awaited<ReturnType<typeof setDependentFieldOptions>>>
+    export type SetDependentFieldOptionsMutationBody = BodyType<DependentFieldOptionsInput>
+    export type SetDependentFieldOptionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create or replace the option list for a spec field scoped to a parent field value (admin only)
+ */
+export const useSetDependentFieldOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<DependentFieldOptionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setDependentFieldOptions>>,
+        TError,
+        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;data: BodyType<DependentFieldOptionsInput>},
+        TContext
+      > => {
+      return useMutation(getSetDependentFieldOptionsMutationOptions(options));
+    }
+
+export const getDeleteDependentFieldOptionsUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,
+    parentValue: string,) => {
+
+
+
+
+  return `/api/admin/field-options/${category}/${field}/dependent/${parentValue}`
+}
+
+/**
+ * @summary Remove the option list scoped to one parent value (admin only)
+ */
+export const deleteDependentFieldOptions = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,
+    parentValue: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteDependentFieldOptionsUrl(category,field,parentValue),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteDependentFieldOptionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}, TContext> => {
+
+const mutationKey = ['deleteDependentFieldOptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}> = (props) => {
+          const {category,field,parentValue} = props ?? {};
+
+          return  deleteDependentFieldOptions(category,field,parentValue,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDependentFieldOptionsMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDependentFieldOptions>>>
+
+    export type DeleteDependentFieldOptionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove the option list scoped to one parent value (admin only)
+ */
+export const useDeleteDependentFieldOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDependentFieldOptions>>,
+        TError,
+        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string},
+        TContext
+      > => {
+      return useMutation(getDeleteDependentFieldOptionsMutationOptions(options));
+    }
+
+export const getClearFieldDependencyUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string,) => {
+
+
+
+
+  return `/api/admin/field-options/${category}/${field}/dependency`
+}
+
+/**
+ * @summary Remove a field's dependency entirely (all parent-scoped lists) so it reverts to its flat list or free text (admin only)
+ */
+export const clearFieldDependency = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
+    field: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getClearFieldDependencyUrl(category,field),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getClearFieldDependencyMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearFieldDependency>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearFieldDependency>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}, TContext> => {
+
+const mutationKey = ['clearFieldDependency'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearFieldDependency>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}> = (props) => {
+          const {category,field} = props ?? {};
+
+          return  clearFieldDependency(category,field,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearFieldDependencyMutationResult = NonNullable<Awaited<ReturnType<typeof clearFieldDependency>>>
+
+    export type ClearFieldDependencyMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove a field's dependency entirely (all parent-scoped lists) so it reverts to its flat list or free text (admin only)
+ */
+export const useClearFieldDependency = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearFieldDependency>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearFieldDependency>>,
+        TError,
+        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string},
+        TContext
+      > => {
+      return useMutation(getClearFieldDependencyMutationOptions(options));
     }
 
 export const getListQuotesUrl = (params?: ListQuotesParams,) => {

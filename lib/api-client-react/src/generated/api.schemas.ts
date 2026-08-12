@@ -68,6 +68,29 @@ export const FieldOptionsCategory = {
 export interface FieldOptions {
   category: FieldOptionsCategory;
   field: string;
+  /** Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand). */
+  parentField: string;
+  /** Empty for a flat list; otherwise the parent field's value this list is scoped to (e.g. Andersen). */
+  parentValue: string;
+  values: string[];
+}
+
+export interface DependentFieldOptionsInput {
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  parentField: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  parentValue: string;
+  /**
+     * @maxItems 200
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
   values: string[];
 }
 
