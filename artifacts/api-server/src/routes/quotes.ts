@@ -199,10 +199,17 @@ export function serializeQuote(
 }
 
 /**
+ * Version of the static signoff document content (terms & conditions,
+ * approval disclaimer, etc.). Bump whenever that boilerplate text changes so
+ * already-open documents become stale and must be reloaded before signing.
+ */
+export const SIGNOFF_CONTENT_VERSION = 2;
+
+/**
  * Opaque fingerprint of the signoff document content: the quote's last edit
- * plus the exact set of revisions shown to the signer. Signing requires the
- * client to echo this back, so a stale, already-open document can never be
- * signed after the content changes.
+ * plus the exact set of revisions shown to the signer, plus the static
+ * content version. Signing requires the client to echo this back, so a
+ * stale, already-open document can never be signed after the content changes.
  */
 export function computeDocumentVersion(
   quote: Pick<QuoteRow, "updatedAt">,
@@ -210,7 +217,7 @@ export function computeDocumentVersion(
 ): string {
   return createHash("sha1")
     .update(
-      `${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}`,
+      `v${SIGNOFF_CONTENT_VERSION}|${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}`,
     )
     .digest("hex");
 }

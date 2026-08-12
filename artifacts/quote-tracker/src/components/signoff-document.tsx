@@ -276,8 +276,23 @@ export function SignoffDocument({
         })()}
       </div>
 
+      <div className="mb-12 break-inside-avoid">
+        <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2 mb-4">Terms &amp; Conditions</h2>
+        <ul className="list-disc pl-6 text-sm space-y-2 text-gray-800">
+          <li>It is the responsibility of the purchaser to ensure all measurements, colors, specifications, hardware, etc. are correct.</li>
+          <li>Prior to Kuiken Brothers placing the order, a signature along with a 50% deposit will be required.</li>
+          <li>Cancellation or changes requested once the order has been submitted may not be possible and will incur additional fees.</li>
+          <li>Units may not be returned for credit.</li>
+          <li>Once received by Kuiken Brothers, windows stored for more than 2 weeks will incur a storage fee.</li>
+        </ul>
+      </div>
+
       <div className="border-t-2 border-black pt-8 break-inside-avoid">
         <h2 className="text-xl font-bold uppercase tracking-widest mb-6">Customer Approval</h2>
+
+        <p className="text-sm text-gray-700 mb-6 italic">
+          I have reviewed all quoted line-item in detail and agree that the product specifications, unit handing, divided lite patterns, and pricing are accurate, and I approve the project for order. I acknowledge that additional charges, tax or Terms and Conditions may apply.
+        </p>
 
         {quote.signed && signoff ? (
           <div className="bg-gray-50 border border-gray-200 p-6 rounded-lg text-center flex flex-col items-center">
