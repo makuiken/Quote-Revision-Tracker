@@ -204,7 +204,7 @@ export function SignoffDocument({
           )}
           {quote.categories.includes("trim") && (
             <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
-              <h3 className="font-bold uppercase mb-2">Trim</h3>
+              <h3 className="font-bold uppercase mb-2">Moulding</h3>
               <p className="text-sm whitespace-pre-wrap">{capitalize(quote.specs?.trimDescription || "") || "No specific details."}</p>
             </div>
           )}

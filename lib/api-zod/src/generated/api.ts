@@ -96,7 +96,8 @@ export const ListQuotesResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -106,7 +107,8 @@ export const ListQuotesResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -116,7 +118,8 @@ export const ListQuotesResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -173,7 +176,8 @@ export const CreateQuoteBody = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -183,7 +187,8 @@ export const CreateQuoteBody = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -193,7 +198,8 @@ export const CreateQuoteBody = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -228,7 +234,8 @@ export const CreateQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -238,7 +245,8 @@ export const CreateQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -248,7 +256,8 @@ export const CreateQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -303,7 +312,8 @@ export const GetQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -313,7 +323,8 @@ export const GetQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -323,7 +334,8 @@ export const GetQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -401,7 +413,8 @@ export const UpdateQuoteBody = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -411,7 +424,8 @@ export const UpdateQuoteBody = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -421,7 +435,8 @@ export const UpdateQuoteBody = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -456,7 +471,8 @@ export const UpdateQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -466,7 +482,8 @@ export const UpdateQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -476,7 +493,8 @@ export const UpdateQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -547,7 +565,8 @@ export const ArchiveQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -557,7 +576,8 @@ export const ArchiveQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -567,7 +587,8 @@ export const ArchiveQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -621,7 +642,8 @@ export const UnarchiveQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -631,7 +653,8 @@ export const UnarchiveQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -641,7 +664,8 @@ export const UnarchiveQuoteResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()
@@ -912,7 +936,8 @@ export const GetPublicSignoffResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "interiorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -922,7 +947,8 @@ export const GetPublicSignoffResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "exteriorDoor": zod.union([zod.object({
   "brand": zod.string().nullish(),
@@ -932,7 +958,8 @@ export const GetPublicSignoffResponse = zod.object({
   "interiorFinish": zod.string().nullish(),
   "jambDepth": zod.string().nullish(),
   "hardwareFinish": zod.string().nullish(),
-  "glassLiteOptions": zod.string().nullish()
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
 }),zod.null()]).optional(),
   "trimDescription": zod.string().nullish(),
   "millworkDescription": zod.string().nullish()

@@ -5,7 +5,8 @@ export const CATEGORY_LABELS: Record<string, string> = {
   interiorDoors: "Interior Doors",
   exteriorDoors: "Exterior Doors",
   windows: "Windows",
-  trim: "Trim",
+  // Display label renamed to "Moulding"; the stored key stays `trim`.
+  trim: "Moulding",
   millwork: "Millwork",
 };
 

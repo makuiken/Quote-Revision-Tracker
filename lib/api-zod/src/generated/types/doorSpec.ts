@@ -23,4 +23,6 @@ export interface DoorSpec {
   hardwareFinish?: string | null;
   /** @nullable */
   glassLiteOptions?: string | null;
+  /** @nullable */
+  lockPrep?: string | null;
 }

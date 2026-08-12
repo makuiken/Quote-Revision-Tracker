@@ -1085,6 +1085,7 @@ components:
         jambDepth: { type: ["string", "null"] }
         hardwareFinish: { type: ["string", "null"] }
         glassLiteOptions: { type: ["string", "null"] }
+        lockPrep: { type: ["string", "null"] }
     QuoteSpecs:
       type: object
       properties:

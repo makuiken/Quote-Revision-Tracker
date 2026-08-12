@@ -31,6 +31,8 @@ export type DoorSpec = {
   jambDepth?: string | null;
   hardwareFinish?: string | null;
   glassLiteOptions?: string | null;
+  /** Exterior doors only. */
+  lockPrep?: string | null;
 };
 
 export type QuoteSpecs = {

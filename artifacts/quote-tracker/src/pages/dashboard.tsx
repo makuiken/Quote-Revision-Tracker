@@ -20,9 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 type StatusFilter = "all" | "awaiting" | "signed" | "archived";
 type CategoryFilter = "all" | "interiorDoors" | "exteriorDoors" | "windows" | "trim" | "millwork";
 const PAGE_SIZE = 25;
-const categoryLabel: Record<CategoryFilter, string> = { all: "All", interiorDoors: "Int. Doors", exteriorDoors: "Ext. Doors", windows: "Windows", trim: "Trim", millwork: "Misc." };
+const categoryLabel: Record<CategoryFilter, string> = { all: "All", interiorDoors: "Int. Doors", exteriorDoors: "Ext. Doors", windows: "Windows", trim: "Moulding", millwork: "Misc." };
 // Display labels for category badges (legacy "doors" quotes still render).
-const badgeLabel: Record<string, string> = { doors: "Doors", interiorDoors: "Interior Doors", exteriorDoors: "Exterior Doors", windows: "Windows", trim: "Trim", millwork: "Millwork" };
+const badgeLabel: Record<string, string> = { doors: "Doors", interiorDoors: "Interior Doors", exteriorDoors: "Exterior Doors", windows: "Windows", trim: "Moulding", millwork: "Millwork" };
 
 export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");

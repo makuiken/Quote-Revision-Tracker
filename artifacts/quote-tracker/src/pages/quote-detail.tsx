@@ -40,6 +40,7 @@ import type { RevisionCategoriesItem } from "@workspace/api-client-react";
 import { categoryLabel } from "@/lib/revision-categories";
 import { CopyButton } from "@/components/copy-button";
 import { formatRevisionsDigest } from "@/lib/copy-text";
+import { INTERIOR_DOOR_FIELDS, EXTERIOR_DOOR_FIELDS, LEGACY_DOOR_FIELDS, REMOVED_INTERIOR_DOOR_FIELDS } from "@/lib/spec-fields";
 
 const sameTags = (a: string[], b: string[]) =>
   a.length === b.length && a.every((t) => b.includes(t));
@@ -53,6 +54,7 @@ const doorSpecSchema = z.object({
   jambDepth: z.string().optional(),
   hardwareFinish: z.string().optional(),
   glassLiteOptions: z.string().optional(),
+  lockPrep: z.string().optional(),
 }).optional();
 
 const quoteSchema = z.object({
@@ -241,11 +243,9 @@ const CATEGORIES = [
   { id: "interiorDoors", label: "Interior Doors" },
   { id: "exteriorDoors", label: "Exterior Doors" },
   { id: "windows", label: "Windows" },
-  { id: "trim", label: "Trim" },
+  { id: "trim", label: "Moulding" },
   { id: "millwork", label: "Misc. Millwork" },
 ] as const;
-
-const DOOR_SPEC_FIELDS = ["brand", "seriesStyle", "materialSpecies", "exteriorColor", "interiorFinish", "jambDepth", "hardwareFinish", "glassLiteOptions"] as const;
 
 export default function QuoteDetailPage() {
   const { id } = useParams();
@@ -818,25 +818,50 @@ export default function QuoteDetailPage() {
               )}
 
               {([
-                ["interiorDoors", "interiorDoor", "Interior Door Specifications"],
-                ["exteriorDoors", "exteriorDoor", "Exterior Door Specifications"],
-                ["doors", "door", "Door Specifications (Legacy)"],
-              ] as const).map(([category, specKey, title]) =>
+                ["interiorDoors", "interiorDoor", "Interior Door Specifications", INTERIOR_DOOR_FIELDS],
+                ["exteriorDoors", "exteriorDoor", "Exterior Door Specifications", EXTERIOR_DOOR_FIELDS],
+                ["doors", "door", "Door Specifications (Legacy)", LEGACY_DOOR_FIELDS],
+              ] as const).map(([category, specKey, title, fields]) =>
                 selectedCategories.includes(category) && (
                   <Card key={category}>
                     <CardContent className="p-6 sm:p-8 space-y-6">
                       <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">{title}</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {DOOR_SPEC_FIELDS.map((field) => (
-                          <div key={field} className="space-y-2">
-                            <Label htmlFor={`${specKey}.${field}`}>{field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</Label>
+                        {fields.map((field) => (
+                          <div key={field.key} className="space-y-2">
+                            <Label htmlFor={`${specKey}.${field.key}`}>{field.label}</Label>
                             <Input 
-                              id={`${specKey}.${field}`} 
-                              {...form.register(`specs.${specKey}.${field}` as any)} 
+                              id={`${specKey}.${field.key}`} 
+                              {...form.register(`specs.${specKey}.${field.key}` as any)} 
                             />
                           </div>
                         ))}
                       </div>
+                      {specKey === "interiorDoor" && (() => {
+                        const legacy = REMOVED_INTERIOR_DOOR_FIELDS.filter(
+                          (f) => (quote.specs?.interiorDoor as Record<string, unknown> | null | undefined)?.[f.key],
+                        );
+                        if (legacy.length === 0) return null;
+                        // Previously saved values for fields no longer on the
+                        // interior door form: shown read-only, preserved on save.
+                        return (
+                          <div className="pt-2 border-t border-border/50 space-y-2">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              Previously saved values (read-only — these fields no longer apply to interior doors but are kept with the quote):
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                              {legacy.map((f) => (
+                                <div key={f.key} className="flex flex-col">
+                                  <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider">{f.label}</span>
+                                  <span className="text-foreground font-medium">
+                                    {String((quote.specs?.interiorDoor as Record<string, unknown>)[f.key])}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 )
@@ -845,13 +870,13 @@ export default function QuoteDetailPage() {
               {selectedCategories.includes("trim") && (
                 <Card>
                   <CardContent className="p-6 sm:p-8 space-y-4">
-                    <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">Trim Specifications</h3>
+                    <h3 className="text-xl font-serif font-bold text-foreground border-b-2 border-border pb-2">Moulding Specifications</h3>
                     <div className="space-y-2">
                       <Label htmlFor="trimDescription">Description / Details</Label>
                       <Textarea 
                         id="trimDescription" 
                         {...form.register("specs.trimDescription")} 
-                        placeholder="Enter trim profiles, materials, lengths..."
+                        placeholder="Enter moulding profiles, materials, lengths..."
                         className="h-32"
                       />
                     </div>
@@ -943,7 +968,7 @@ export default function QuoteDetailPage() {
                 )}
                 {quote.categories.includes("trim") && (
                   <div className="space-y-3">
-                    <h3 className="text-lg font-serif font-bold text-primary bg-primary/5 px-3 py-1 rounded">Trim</h3>
+                    <h3 className="text-lg font-serif font-bold text-primary bg-primary/5 px-3 py-1 rounded">Moulding</h3>
                     <div className="px-3">
                       <p className="whitespace-pre-wrap text-foreground font-medium">{quote.specs?.trimDescription || <span className="text-muted-foreground italic">No details</span>}</p>
                     </div>
