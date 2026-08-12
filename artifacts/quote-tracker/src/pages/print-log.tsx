@@ -5,6 +5,8 @@ import { ArrowLeft, Printer } from "lucide-react";
 import { useGetQuote, getGetQuoteQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { categoryLabel } from "@/lib/revision-categories";
+import { CopyButton } from "@/components/copy-button";
+import { formatRevisionsDigest } from "@/lib/copy-text";
 
 export default function PrintLogPage() {
   const { id } = useParams();
@@ -67,6 +69,14 @@ export default function PrintLogPage() {
                 </option>
               ))}
             </select>
+            <CopyButton
+              variant="outline"
+              label="Copy log"
+              copiedLabel="Copied"
+              title="Copy the visible revision log as plain text"
+              disabled={filteredRevisions.length === 0}
+              getText={() => formatRevisionsDigest(filteredRevisions)}
+            />
             <Button onClick={() => window.print()} className="bg-black text-white hover:bg-gray-800">
               <Printer className="w-4 h-4 mr-2" /> Print Document
             </Button>
@@ -118,7 +128,12 @@ export default function PrintLogPage() {
                     <div className="flex-1 space-y-2">
                       <div className="flex items-baseline justify-between">
                         <span className="font-bold text-lg">{rev.authorName}</span>
-                        <span className="text-sm text-gray-500 font-bold">{format(new Date(rev.createdAt), "MMMM d, yyyy 'at' h:mm a")}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm text-gray-500 font-bold">{format(new Date(rev.createdAt), "MMMM d, yyyy 'at' h:mm a")}</span>
+                          <span className="print:hidden">
+                            <CopyButton title="Copy note text" getText={() => rev.note} />
+                          </span>
+                        </div>
                       </div>
                       {(rev.categories?.length ?? 0) > 0 && (
                         <div className="flex flex-wrap gap-1.5">

@@ -38,6 +38,8 @@ import { useToast } from "@/components/ui/toaster";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import type { RevisionCategoriesItem } from "@workspace/api-client-react";
 import { categoryLabel } from "@/lib/revision-categories";
+import { CopyButton } from "@/components/copy-button";
+import { formatRevisionsDigest } from "@/lib/copy-text";
 
 const sameTags = (a: string[], b: string[]) =>
   a.length === b.length && a.every((t) => b.includes(t));
@@ -1009,10 +1011,21 @@ export default function QuoteDetailPage() {
 
           <Card>
             <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                Revision Log
-              </CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5" />
+                  Revision Log
+                </CardTitle>
+                {revisions.length > 0 && (
+                  <CopyButton
+                    variant="outline"
+                    label="Copy log"
+                    copiedLabel="Copied"
+                    title="Copy the full revision log as plain text"
+                    getText={() => formatRevisionsDigest(revisions)}
+                  />
+                )}
+              </div>
             </CardHeader>
             <CardContent className="pt-0 flex flex-col h-[720px]">
               <div className="flex-1 overflow-y-auto pr-2 space-y-6 mb-4">
@@ -1028,7 +1041,10 @@ export default function QuoteDetailPage() {
                         <div className="space-y-1.5">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-bold text-foreground">{rev.authorName}</span>
-                            <span className="text-xs text-muted-foreground font-bold shrink-0">{format(new Date(rev.createdAt), "MMM d, h:mm a")}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-xs text-muted-foreground font-bold">{format(new Date(rev.createdAt), "MMM d, h:mm a")}</span>
+                              <CopyButton title="Copy note text" getText={() => rev.note} />
+                            </div>
                           </div>
                           {(rev.categories?.length ?? 0) > 0 && (
                             <div className="flex flex-wrap gap-1.5">
