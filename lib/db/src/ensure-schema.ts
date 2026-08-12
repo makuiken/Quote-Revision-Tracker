@@ -52,6 +52,11 @@ const RECONCILIATION_STATEMENTS: string[] = [
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT revision_drafts_quote_author_unique UNIQUE (quote_id, author_id)
   )`,
+
+  // Revision category tags: optional subset of the quote's categories;
+  // null/empty means the entry applies to the whole quote.
+  `ALTER TABLE revisions ADD COLUMN IF NOT EXISTS categories text[]`,
+  `ALTER TABLE revision_drafts ADD COLUMN IF NOT EXISTS categories text[]`,
 ];
 
 export async function ensureSchema(): Promise<void> {

@@ -91,6 +91,9 @@ export const revisionsTable = pgTable("revisions", {
   authorId: text("author_id").notNull(),
   authorName: text("author_name").notNull(),
   note: text("note").notNull(),
+  // Optional category tags (subset of the quote's categories). Null/empty
+  // means "general/all" — the revision applies to the whole quote.
+  categories: text("categories").array(),
   // Hides the entry on the signoff document only; the revision log itself is immutable.
   excludedFromSignoff: boolean("excluded_from_signoff").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -110,6 +113,8 @@ export const revisionDraftsTable = pgTable(
       .references(() => quotesTable.id, { onDelete: "cascade" }),
     authorId: text("author_id").notNull(),
     note: text("note").notNull(),
+    // Optional category tags saved with the draft (subset of the quote's categories).
+    categories: text("categories").array(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

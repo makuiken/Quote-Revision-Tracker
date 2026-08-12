@@ -353,6 +353,20 @@ router.post("/quotes", async (req: AuthedRequest, res): Promise<void> => {
 });
 
 /**
+ * Normalizes revision category tags: dedupes and keeps only tags that are
+ * among the quote's own categories. Empty/absent becomes null ("general/all").
+ */
+function sanitizeRevisionCategories(
+  input: string[] | null | undefined,
+  quote: Pick<QuoteRow, "categories">,
+): string[] | null {
+  if (!input || input.length === 0) return null;
+  const allowed = new Set(quote.categories);
+  const tags = [...new Set(input)].filter((t) => allowed.has(t));
+  return tags.length > 0 ? tags : null;
+}
+
+/**
  * Archived quotes are read-only: no edits, revisions, attachments, share
  * links, or signatures until they are restored. Returns false (and responds
  * 400) when the quote is archived.
@@ -432,6 +446,17 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
 
   const updates: Partial<QuoteRow> = {};
   const changed: string[] = [];
+  // Category tags derived from which spec sections changed, used to
+  // auto-tag the generated revision entry.
+  const changedSpecCategories = new Set<string>();
+  const SPEC_KEY_TO_CATEGORY: Record<string, string> = {
+    window: "windows",
+    door: "doors",
+    interiorDoor: "interiorDoors",
+    exteriorDoor: "exteriorDoors",
+    trimDescription: "trim",
+    millworkDescription: "millwork",
+  };
 
   const fmtValue = (value: unknown): string => {
     if (value === null || value === undefined || value === "") return "(blank)";
@@ -455,13 +480,29 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
     const prev = (before.specs ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
     const next = (value ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
     for (const category of new Set([...Object.keys(prev), ...Object.keys(next)])) {
-      const prevFields = prev[category] ?? {};
-      const nextFields = next[category] ?? {};
+      const prevValue = prev[category];
+      const nextValue = next[category];
+      // Scalar spec fields (trim/millwork descriptions) diff as a whole.
+      const isScalar =
+        (prevValue !== undefined && prevValue !== null && typeof prevValue !== "object") ||
+        (nextValue !== undefined && nextValue !== null && typeof nextValue !== "object");
+      if (isScalar) {
+        if (JSON.stringify(prevValue ?? null) !== JSON.stringify(nextValue ?? null)) {
+          changed.push(`${category}: ${fmtValue(prevValue)} → ${fmtValue(nextValue)}`);
+          const tag = SPEC_KEY_TO_CATEGORY[category];
+          if (tag) changedSpecCategories.add(tag);
+        }
+        continue;
+      }
+      const prevFields = prevValue ?? {};
+      const nextFields = nextValue ?? {};
       for (const field of new Set([...Object.keys(prevFields), ...Object.keys(nextFields)])) {
         const a = (prevFields as Record<string, unknown>)[field];
         const b = (nextFields as Record<string, unknown>)[field];
         if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) {
           changed.push(`${category} ${field}: ${fmtValue(a)} → ${fmtValue(b)}`);
+          const tag = SPEC_KEY_TO_CATEGORY[category];
+          if (tag) changedSpecCategories.add(tag);
         }
       }
     }
@@ -503,6 +544,12 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
         authorId: req.userId!,
         authorName: profile.name,
         note: `Edited quote details:\n${changed.join("\n")}`,
+        // Auto-tag with the categories whose specs changed (limited to the
+        // quote's categories after the edit; empty means "general").
+        categories: sanitizeRevisionCategories(
+          [...changedSpecCategories],
+          updated,
+        ),
       });
     }
     return updated;
@@ -728,10 +775,15 @@ router.put(
         quoteId: quote.id,
         authorId: req.userId!,
         note: parsed.data.note,
+        categories: sanitizeRevisionCategories(parsed.data.categories, quote),
       })
       .onConflictDoUpdate({
         target: [revisionDraftsTable.quoteId, revisionDraftsTable.authorId],
-        set: { note: parsed.data.note, updatedAt: new Date() },
+        set: {
+          note: parsed.data.note,
+          categories: sanitizeRevisionCategories(parsed.data.categories, quote),
+          updatedAt: new Date(),
+        },
       })
       .returning();
 
@@ -777,6 +829,7 @@ router.post(
     // the stored draft, making publish a single atomic request — an
     // in-flight auto-save can never overtake it with older text.
     let providedNote: string | undefined;
+    let providedCategories: string[] | null | undefined;
     if (req.body && typeof req.body === "object" && "note" in req.body) {
       const body = PublishRevisionDraftBody.safeParse(req.body);
       if (!body.success) {
@@ -788,6 +841,10 @@ router.post(
         return;
       }
       providedNote = body.data.note;
+      // Distinguish "field omitted" (fall back to the draft's tags) from an
+      // explicit empty selection (publish untagged).
+      if ("categories" in body.data)
+        providedCategories = body.data.categories ?? null;
     }
 
     const quote = await loadQuote(params.data.id, res);
@@ -817,6 +874,12 @@ router.post(
         );
       const note = providedNote ?? draft?.note;
       if (!note || !note.trim()) return { noDraft: true as const };
+      const categories = sanitizeRevisionCategories(
+        providedCategories !== undefined
+          ? providedCategories
+          : draft?.categories,
+        current,
+      );
 
       if (draft) {
         await tx
@@ -831,6 +894,7 @@ router.post(
           authorId: req.userId!,
           authorName: profile.name,
           note,
+          categories,
         })
         .returning();
       return { revision: rev };
@@ -902,6 +966,10 @@ router.post(
           authorId: req.userId!,
           authorName: profile.name,
           note: parsed.data.note,
+          categories: sanitizeRevisionCategories(
+            parsed.data.categories,
+            current,
+          ),
         })
         .returning();
       return rev;

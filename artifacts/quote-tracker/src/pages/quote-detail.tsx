@@ -36,6 +36,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toaster";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import type { RevisionCategoriesItem } from "@workspace/api-client-react";
+import { categoryLabel } from "@/lib/revision-categories";
+
+const sameTags = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((t) => b.includes(t));
 
 const doorSpecSchema = z.object({
   brand: z.string().optional(),
@@ -263,14 +268,17 @@ export default function QuoteDetailPage() {
   const draft = draftLookup?.draft ?? null;
 
   const [note, setNote] = useState("");
+  // Category tags selected for the update being composed.
+  const [tags, setTags] = useState<RevisionCategoriesItem[]>([]);
   // The note the server currently holds as this user's draft ("" = none).
   const [savedDraftNote, setSavedDraftNote] = useState<string | null>(null);
+  const [savedDraftTags, setSavedDraftTags] = useState<RevisionCategoriesItem[] | null>(null);
   const hydratedDraftRef = useRef(false);
   const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
 
   // Latest composer state, readable from unmount cleanups without stale closures.
-  const composerRef = useRef({ note: "", savedDraftNote: null as string | null });
-  composerRef.current = { note, savedDraftNote };
+  const composerRef = useRef({ note: "", savedDraftNote: null as string | null, tags: [] as RevisionCategoriesItem[] });
+  composerRef.current = { note, savedDraftNote, tags };
   const saveDraftMutateAsyncRef = useRef(saveDraft.mutateAsync);
   saveDraftMutateAsyncRef.current = saveDraft.mutateAsync;
 
@@ -283,16 +291,18 @@ export default function QuoteDetailPage() {
   useEffect(() => {
     hydratedDraftRef.current = false;
     setNote("");
+    setTags([]);
     setSavedDraftNote(null);
+    setSavedDraftTags(null);
     setPendingNavHref(null);
     const flushQuoteId = quoteId;
     return () => {
-      const { note: text, savedDraftNote: saved } = composerRef.current;
+      const { note: text, savedDraftNote: saved, tags: flushTags } = composerRef.current;
       if (flushQuoteId && text.trim() && text !== (saved ?? "")) {
         // Route the flush through the write queue so it stays ordered
         // behind any in-flight draft writes for this quote.
         enqueueDraftWriteRef
-          .current(() => saveDraftMutateAsyncRef.current({ id: flushQuoteId, data: { note: text } }))
+          .current(() => saveDraftMutateAsyncRef.current({ id: flushQuoteId, data: { note: text, categories: flushTags } }))
           .then(() => {
             queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(flushQuoteId) });
           })
@@ -307,13 +317,17 @@ export default function QuoteDetailPage() {
     if (draftLookup === undefined || hydratedDraftRef.current) return;
     hydratedDraftRef.current = true;
     setSavedDraftNote(draft?.note ?? null);
+    setSavedDraftTags(draft ? (draft.categories ?? []) : null);
     if (draft && draft.note) {
       setNote((current) => (current.trim() ? current : draft.note));
+      setTags((current) => (current.length ? current : (draft.categories ?? [])));
     }
   }, [draftLookup, draft]);
 
   const hasDraft = savedDraftNote !== null;
-  const isDirty = note.trim() !== "" && note !== (savedDraftNote ?? "");
+  const isDirty =
+    note.trim() !== "" &&
+    (note !== (savedDraftNote ?? "") || !sameTags(tags, savedDraftTags ?? []));
 
   // Draft-write coordination: ALL draft mutations (save, discard, publish)
   // run through a single promise-chain queue, so at most one request is in
@@ -338,14 +352,16 @@ export default function QuoteDetailPage() {
 
   const persistDraft = (text: string, opts?: { silent?: boolean; onSuccess?: () => void }) => {
     const epoch = writeEpochRef.current;
+    const draftTags = composerRef.current.tags;
     enqueueDraftWrite(async () => {
       // Superseded (published/discarded) while queued: never dispatched.
       if (epoch !== writeEpochRef.current) return null;
-      return saveDraft.mutateAsync({ id: quoteId, data: { note: text } });
+      return saveDraft.mutateAsync({ id: quoteId, data: { note: text, categories: draftTags } });
     })
       .then((saved) => {
         if (!saved || epoch !== writeEpochRef.current) return;
         setSavedDraftNote(saved.note);
+        setSavedDraftTags(saved.categories ?? []);
         queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(quoteId) });
         if (!opts?.silent) {
           toast({ title: "Draft saved", description: "Your update is saved privately — it isn't published yet." });
@@ -373,7 +389,7 @@ export default function QuoteDetailPage() {
     }, 2500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note, isDirty, publishDraft.isPending]);
+  }, [note, tags, isDirty, publishDraft.isPending]);
 
   // Warn before leaving the page with unsaved typing (browser close/reload).
   useEffect(() => {
@@ -466,7 +482,9 @@ export default function QuoteDetailPage() {
 
   const finishPublish = () => {
     setNote("");
+    setTags([]);
     setSavedDraftNote(null);
+    setSavedDraftTags(null);
     setIsRevisionWarningOpen(false);
     toast({ title: "Update added", description: "The revision log has been updated." });
     queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
@@ -485,7 +503,7 @@ export default function QuoteDetailPage() {
     // orders it after every already-dispatched save.
     setIsCoordinatingPublish(true);
     writeEpochRef.current++;
-    enqueueDraftWrite(() => publishDraft.mutateAsync({ id: quoteId, data: { note } }))
+    enqueueDraftWrite(() => publishDraft.mutateAsync({ id: quoteId, data: { note, categories: tags } }))
       .then(finishPublish)
       .catch(publishError)
       .finally(() => setIsCoordinatingPublish(false));
@@ -506,7 +524,9 @@ export default function QuoteDetailPage() {
     enqueueDraftWrite(() => discardDraft.mutateAsync({ id: quoteId }))
       .then(() => {
         setNote("");
+        setTags([]);
         setSavedDraftNote(null);
+        setSavedDraftTags(null);
         queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(quoteId) });
         toast({ title: "Draft discarded", description: "The draft was removed. Nothing was published." });
       })
@@ -1010,6 +1030,15 @@ export default function QuoteDetailPage() {
                             <span className="font-bold text-foreground">{rev.authorName}</span>
                             <span className="text-xs text-muted-foreground font-bold shrink-0">{format(new Date(rev.createdAt), "MMM d, h:mm a")}</span>
                           </div>
+                          {(rev.categories?.length ?? 0) > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {rev.categories!.map((tag) => (
+                                <Badge key={tag} variant="outline" className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">
+                                  {categoryLabel(tag)}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-foreground font-medium bg-muted/30 p-4 rounded-md border-2 border-border/50 text-[15px] leading-relaxed whitespace-pre-wrap">
                             {rev.note}
                           </p>
@@ -1034,6 +1063,37 @@ export default function QuoteDetailPage() {
                     </span>
                   </div>
                 )}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Tag categories (optional — untagged applies to the whole quote)
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {quote.categories.map((cat) => {
+                      const selected = tags.includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          disabled={isEditing || quote.archived}
+                          onClick={() =>
+                            setTags((current) =>
+                              current.includes(cat)
+                                ? current.filter((t) => t !== cat)
+                                : [...current, cat],
+                            )
+                          }
+                          className={`text-xs font-bold px-2.5 py-1 rounded-full border-2 transition-colors ${
+                            selected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-card text-muted-foreground hover:bg-accent/50"
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {categoryLabel(cat)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <Label htmlFor="note" className="sr-only">Add an update</Label>
                 <Textarea 
                   id="note"
@@ -1142,9 +1202,10 @@ export default function QuoteDetailPage() {
                 const dest = pendingNavHref!;
                 setPendingNavHref(null);
                 setNote(savedDraftNote ?? "");
+                setTags(savedDraftTags ?? []);
                 // Update the ref synchronously so the unmount flush doesn't
                 // re-save the text the user chose to abandon.
-                composerRef.current = { note: savedDraftNote ?? "", savedDraftNote };
+                composerRef.current = { note: savedDraftNote ?? "", savedDraftNote, tags: savedDraftTags ?? [] };
                 setLocation(dest);
               }}
             >
@@ -1158,7 +1219,7 @@ export default function QuoteDetailPage() {
                   silent: true,
                   onSuccess: () => {
                     setPendingNavHref(null);
-                    composerRef.current = { note, savedDraftNote: note };
+                    composerRef.current = { note, savedDraftNote: note, tags };
                     setLocation(dest);
                   },
                 });

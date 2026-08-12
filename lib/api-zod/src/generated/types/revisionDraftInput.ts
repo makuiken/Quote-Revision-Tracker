@@ -5,8 +5,10 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { RevisionCategories } from './revisionCategories';
 
 export interface RevisionDraftInput {
   /** @minLength 1 */
   note: string;
+  categories?: RevisionCategories | null;
 }

@@ -5,6 +5,7 @@ import type { Quote, Revision, Signoff } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { categoryLabel } from "@/lib/revision-categories";
 
 export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void, onClear: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -253,6 +254,18 @@ export function SignoffDocument({
                           </Button>
                         )}
                       </div>
+                      {(rev.categories?.length ?? 0) > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {rev.categories!.map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[10px] font-bold uppercase tracking-wider border border-gray-400 text-gray-600 rounded-full px-2 py-0.5"
+                            >
+                              {categoryLabel(tag)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <p className="mt-1 whitespace-pre-wrap leading-relaxed">{rev.note}</p>
                     </div>
                   );

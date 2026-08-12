@@ -226,11 +226,30 @@ export interface QuoteList {
   total: number;
 }
 
+export type RevisionCategoriesItem = typeof RevisionCategoriesItem[keyof typeof RevisionCategoriesItem];
+
+
+export const RevisionCategoriesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+/**
+ * Optional category tags (subset of the quote's categories); empty/absent means the revision applies to the whole quote
+ * @nullable
+ */
+export type RevisionCategories = RevisionCategoriesItem[] | null;
+
 export interface Revision {
   id: number;
   quoteId: number;
   authorName: string;
   note: string;
+  categories?: RevisionCategories | null;
   excludedFromSignoff: boolean;
   createdAt: string;
 }
@@ -333,12 +352,14 @@ export interface QuoteUpdate {
 export interface RevisionInput {
   /** @minLength 1 */
   note: string;
+  categories?: RevisionCategories | null;
 }
 
 export interface RevisionDraft {
   id: number;
   quoteId: number;
   note: string;
+  categories?: RevisionCategories | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -350,6 +371,7 @@ export interface RevisionDraftLookup {
 export interface RevisionDraftInput {
   /** @minLength 1 */
   note: string;
+  categories?: RevisionCategories | null;
 }
 
 export interface RevisionExclusionInput {

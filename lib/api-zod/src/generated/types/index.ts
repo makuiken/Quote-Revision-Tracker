@@ -34,6 +34,8 @@ export * from './quoteSpecs';
 export * from './quoteUpdate';
 export * from './quoteUpdateCategoriesItem';
 export * from './revision';
+export * from './revisionCategories';
+export * from './revisionCategoriesItem';
 export * from './revisionDraft';
 export * from './revisionDraftInput';
 export * from './revisionDraftLookup';

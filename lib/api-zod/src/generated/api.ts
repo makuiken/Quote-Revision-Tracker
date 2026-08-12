@@ -346,6 +346,7 @@ export const GetQuoteResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })),
@@ -672,6 +673,7 @@ export const GetRevisionDraftResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }),zod.null()])
@@ -689,13 +691,15 @@ export const SaveRevisionDraftParams = zod.object({
 
 
 export const SaveRevisionDraftBody = zod.object({
-  "note": zod.string().min(1)
+  "note": zod.string().min(1),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote')
 })
 
 export const SaveRevisionDraftResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -722,7 +726,8 @@ export const PublishRevisionDraftParams = zod.object({
 
 
 export const PublishRevisionDraftBody = zod.object({
-  "note": zod.string().min(1)
+  "note": zod.string().min(1),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote')
 })
 
 export const PublishRevisionDraftResponse = zod.object({
@@ -730,6 +735,7 @@ export const PublishRevisionDraftResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -747,6 +753,7 @@ export const ListRevisionsResponseItem = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -764,7 +771,8 @@ export const CreateRevisionParams = zod.object({
 
 
 export const CreateRevisionBody = zod.object({
-  "note": zod.string().min(1)
+  "note": zod.string().min(1),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote')
 })
 
 export const CreateRevisionResponse = zod.object({
@@ -772,6 +780,7 @@ export const CreateRevisionResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -794,6 +803,7 @@ export const SetRevisionSignoffExclusionResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -945,6 +955,7 @@ export const GetPublicSignoffResponse = zod.object({
   "quoteId": zod.int(),
   "authorName": zod.string(),
   "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
   "excludedFromSignoff": zod.boolean(),
   "createdAt": zod.coerce.date()
 })),

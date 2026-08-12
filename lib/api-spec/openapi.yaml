@@ -1232,13 +1232,23 @@ components:
         quoteId: { type: integer }
         authorName: { type: string }
         note: { type: string }
+        categories:
+          $ref: "#/components/schemas/RevisionCategories"
         excludedFromSignoff: { type: boolean }
         createdAt: { type: string, format: date-time }
       required: [id, quoteId, authorName, note, excludedFromSignoff, createdAt]
+    RevisionCategories:
+      description: Optional category tags (subset of the quote's categories); empty/absent means the revision applies to the whole quote
+      type: ["array", "null"]
+      items:
+        type: string
+        enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
     RevisionInput:
       type: object
       properties:
         note: { type: string, minLength: 1 }
+        categories:
+          $ref: "#/components/schemas/RevisionCategories"
       required: [note]
     RevisionDraft:
       type: object
@@ -1246,6 +1256,8 @@ components:
         id: { type: integer }
         quoteId: { type: integer }
         note: { type: string }
+        categories:
+          $ref: "#/components/schemas/RevisionCategories"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [id, quoteId, note, createdAt, updatedAt]
@@ -1261,6 +1273,8 @@ components:
       type: object
       properties:
         note: { type: string, minLength: 1 }
+        categories:
+          $ref: "#/components/schemas/RevisionCategories"
       required: [note]
     RevisionExclusionInput:
       type: object
