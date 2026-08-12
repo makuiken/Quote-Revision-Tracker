@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
 import { db, usersTable, fieldOptionsTable } from "@workspace/db";
 import {
@@ -12,6 +12,7 @@ import {
   SetDependentFieldOptionsBody,
   SetDependentFieldOptionsResponse,
   DeleteDependentFieldOptionsParams,
+  DeleteDependentFieldOptionsQueryParams,
   ClearFieldDependencyParams,
   ApproveUserParams,
   ApproveUserResponse,
@@ -199,7 +200,10 @@ router.put(
         target: [
           fieldOptionsTable.category,
           fieldOptionsTable.field,
+          fieldOptionsTable.parentField,
           fieldOptionsTable.parentValue,
+          fieldOptionsTable.grandField,
+          fieldOptionsTable.grandValue,
         ],
         set: { values, updatedAt: new Date() },
       })
@@ -211,6 +215,8 @@ router.put(
         field: row!.field,
         parentField: row!.parentField,
         parentValue: row!.parentValue,
+        grandField: row!.grandField,
+        grandValue: row!.grandValue,
         values: row!.values,
       }),
     );
@@ -253,6 +259,33 @@ function dedupeValues(raw: string[]): string[] {
   return values;
 }
 
+// Valid spec field keys per category (mirrors the quote form's field
+// definitions) so dependencies can only reference real sibling fields.
+const CATEGORY_FIELD_KEYS: Record<string, readonly string[]> = {
+  window: [
+    "brand",
+    "series",
+    "exteriorColor",
+    "interiorColor",
+    "jambDepth",
+    "dividedLites",
+    "hardwareFinish",
+    "screenColor",
+  ],
+  interiorDoor: ["brand", "seriesStyle", "materialSpecies", "jambDepth", "hardwareFinish"],
+  exteriorDoor: [
+    "brand",
+    "seriesStyle",
+    "materialSpecies",
+    "exteriorColor",
+    "interiorFinish",
+    "jambDepth",
+    "hardwareFinish",
+    "glassLiteOptions",
+    "lockPrep",
+  ],
+};
+
 // ---------- Dependent (parent-scoped) option lists ----------
 // One level only: `field` in a category depends on sibling `parentField`;
 // each parentValue gets its own option list. Quote forms filter suggestions
@@ -273,13 +306,31 @@ router.put(
     }
     const parentField = body.data.parentField.trim();
     const parentValue = body.data.parentValue.trim();
+    const grandField = (body.data.grandField ?? "").trim();
+    const grandValue = (body.data.grandValue ?? "").trim();
     if (!parentField || !parentValue) {
       res.status(400).json({ error: "parentField and parentValue are required" });
       return;
     }
-    if (parentField === params.data.field) {
+    if ((grandField === "") !== (grandValue === "")) {
+      res.status(400).json({ error: "grandField and grandValue must be provided together" });
+      return;
+    }
+    if (parentField === params.data.field || grandField === params.data.field) {
       res.status(400).json({ error: "A field cannot depend on itself" });
       return;
+    }
+    if (grandField && grandField === parentField) {
+      res.status(400).json({ error: "grandField must differ from parentField" });
+      return;
+    }
+    // The target and its ancestors must be real fields in this category.
+    const validFields = CATEGORY_FIELD_KEYS[params.data.category] ?? [];
+    for (const f of [params.data.field, parentField, grandField].filter(Boolean)) {
+      if (!validFields.includes(f)) {
+        res.status(400).json({ error: `Unknown field "${f}" for this category` });
+        return;
+      }
     }
     const values = dedupeValues(body.data.values);
     if (values.length === 0) {
@@ -287,39 +338,199 @@ router.put(
       return;
     }
 
-    const row = await db.transaction(async (tx) => {
-      // A field has at most one parent: saving under a new parentField
-      // replaces the previous dependency entirely.
-      await tx
-        .delete(fieldOptionsTable)
+    const result = await db.transaction(async (tx) => {
+      // Serialize all dependency-chain reads/writes per category so a
+      // concurrent change to another field's chain (e.g. the parent's) can't
+      // race this validation.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`field_options:${params.data.category}`}))`,
+      );
+
+      // The declared hierarchy must match reality: if the parent field itself
+      // has a dependency, grandField must be that field; otherwise no grand
+      // scope is allowed. Chains are capped at two levels, so a parent that
+      // is itself two-level (has a grandparent) cannot be depended on — that
+      // would need a third ancestor the data model can't represent.
+      const [parentDep] = await tx
+        .select({
+          parentField: fieldOptionsTable.parentField,
+          grandField: fieldOptionsTable.grandField,
+        })
+        .from(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.field, parentField),
+            ne(fieldOptionsTable.parentValue, ""),
+          ),
+        )
+        .limit(1);
+      if (parentDep?.grandField) {
+        return {
+          status: 400 as const,
+          error: `"${parentField}" already depends on "${parentDep.parentField}" and "${parentDep.grandField}" — chains deeper than two levels aren't supported. Pick a different field to depend on.`,
+        };
+      }
+      const expectedGrand = parentDep?.parentField ?? "";
+      if (expectedGrand === params.data.field) {
+        return {
+          status: 400 as const,
+          error: `"${parentField}" depends on "${params.data.field}" — that would create a circular dependency.`,
+        };
+      }
+
+      // Full cycle detection: apply the proposed edge to the category's
+      // dependency graph and walk upward from the parent — if the walk
+      // reaches the target field, the edge closes a cycle.
+      const edgeRows = await tx
+        .selectDistinct({
+          field: fieldOptionsTable.field,
+          parentField: fieldOptionsTable.parentField,
+        })
+        .from(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            ne(fieldOptionsTable.parentValue, ""),
+          ),
+        );
+      const parentOf = new Map<string, string>();
+      for (const e of edgeRows) parentOf.set(e.field, e.parentField);
+      parentOf.set(params.data.field, parentField);
+      let cursor: string | undefined = parentField;
+      const seen = new Set<string>();
+      while (cursor && !seen.has(cursor)) {
+        if (cursor === params.data.field) {
+          return {
+            status: 400 as const,
+            error: `Depending on "${parentField}" would create a circular dependency chain.`,
+          };
+        }
+        seen.add(cursor);
+        cursor = parentOf.get(cursor);
+      }
+      if (grandField !== expectedGrand) {
+        return {
+          status: 400 as const,
+          error: expectedGrand
+            ? `"${parentField}" depends on "${expectedGrand}", so grandField must be "${expectedGrand}"`
+            : `"${parentField}" has no dependency, so grandField must be omitted`,
+        };
+      }
+
+      // Changing this field's chain must not orphan fields that depend on
+      // it: their stored grandField must keep matching this field's parent.
+      const dependents = await tx
+        .select({
+          field: fieldOptionsTable.field,
+          grandField: fieldOptionsTable.grandField,
+        })
+        .from(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.parentField, params.data.field),
+            ne(fieldOptionsTable.parentValue, ""),
+          ),
+        );
+      const orphaned = [...new Set(
+        dependents.filter((d) => d.grandField !== parentField).map((d) => d.field),
+      )];
+      if (orphaned.length > 0) {
+        return {
+          status: 409 as const,
+          error: `Other fields (${orphaned.join(", ")}) depend on "${params.data.field}". Remove their dependency first, then change this field's dependency.`,
+        };
+      }
+
+      // A field has one dependency chain (parentField, and optionally
+      // grandField). Changing the chain deletes every list scoped to the old
+      // chain — that's destructive, so it requires explicit acknowledgment.
+      const conflicting = await tx
+        .select({
+          parentField: fieldOptionsTable.parentField,
+          parentValue: fieldOptionsTable.parentValue,
+          grandField: fieldOptionsTable.grandField,
+        })
+        .from(fieldOptionsTable)
         .where(
           and(
             eq(fieldOptionsTable.category, params.data.category),
             eq(fieldOptionsTable.field, params.data.field),
             ne(fieldOptionsTable.parentValue, ""),
-            ne(fieldOptionsTable.parentField, parentField),
           ),
         );
-      const [saved] = await tx
-        .insert(fieldOptionsTable)
-        .values({
-          category: params.data.category,
-          field: params.data.field,
-          parentField,
-          parentValue,
-          values,
-        })
-        .onConflictDoUpdate({
-          target: [
-            fieldOptionsTable.category,
-            fieldOptionsTable.field,
-            fieldOptionsTable.parentValue,
-          ],
-          set: { parentField, values, updatedAt: new Date() },
-        })
-        .returning();
-      return saved!;
+      const outdated = conflicting.filter(
+        (r) => r.parentField !== parentField || r.grandField !== grandField,
+      );
+      if (outdated.length > 0 && body.data.replaceExisting !== true) {
+        return {
+          status: 409 as const,
+          error: `Saving would change this field's dependency and delete ${outdated.length} existing option list${outdated.length === 1 ? "" : "s"} (${outdated
+            .slice(0, 5)
+            .map((r) => r.parentValue)
+            .join(", ")}${outdated.length > 5 ? ", …" : ""}). Confirm to replace.`,
+        };
+      }
+      if (outdated.length > 0) {
+        await tx
+          .delete(fieldOptionsTable)
+          .where(
+            and(
+              eq(fieldOptionsTable.category, params.data.category),
+              eq(fieldOptionsTable.field, params.data.field),
+              ne(fieldOptionsTable.parentValue, ""),
+              or(
+                ne(fieldOptionsTable.parentField, parentField),
+                ne(fieldOptionsTable.grandField, grandField),
+              ),
+            ),
+          );
+      }
+
+      // Case-insensitive scope match: "Andersen" and "andersen" are the same
+      // list. Update the existing row (keeping its stored casing) if one
+      // matches; otherwise insert.
+      const [existing] = await tx
+        .select({ id: fieldOptionsTable.id })
+        .from(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.field, params.data.field),
+            eq(fieldOptionsTable.parentField, parentField),
+            sql`lower(${fieldOptionsTable.parentValue}) = lower(${parentValue})`,
+            eq(fieldOptionsTable.grandField, grandField),
+            sql`lower(${fieldOptionsTable.grandValue}) = lower(${grandValue})`,
+          ),
+        )
+        .limit(1);
+      const [saved] = existing
+        ? await tx
+            .update(fieldOptionsTable)
+            .set({ values, updatedAt: new Date() })
+            .where(eq(fieldOptionsTable.id, existing.id))
+            .returning()
+        : await tx
+            .insert(fieldOptionsTable)
+            .values({
+              category: params.data.category,
+              field: params.data.field,
+              parentField,
+              parentValue,
+              grandField,
+              grandValue,
+              values,
+            })
+            .returning();
+      return { status: 200 as const, row: saved! };
     });
+
+    if (result.status !== 200) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    const row = result.row;
 
     res.json(
       SetDependentFieldOptionsResponse.parse({
@@ -327,6 +538,8 @@ router.put(
         field: row.field,
         parentField: row.parentField,
         parentValue: row.parentValue,
+        grandField: row.grandField,
+        grandValue: row.grandValue,
         values: row.values,
       }),
     );
@@ -341,15 +554,70 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
-    await db
-      .delete(fieldOptionsTable)
-      .where(
-        and(
-          eq(fieldOptionsTable.category, params.data.category),
-          eq(fieldOptionsTable.field, params.data.field),
-          eq(fieldOptionsTable.parentValue, params.data.parentValue),
-        ),
+    const query = DeleteDependentFieldOptionsQueryParams.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ error: query.error.message });
+      return;
+    }
+    // Full scope identifies exactly one list: one-level lists have '' in
+    // grand_value; two-level lists must pass their grandValue. Values match
+    // case-insensitively, mirroring how lists are saved and looked up.
+    const result = await db.transaction(async (tx) => {
+      // Same per-category lock as chain mutations: deleting the last scoped
+      // list removes this field's effective dependency, which must not race
+      // or bypass the dependent checks.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`field_options:${params.data.category}`}))`,
       );
+      const scopeMatch = and(
+        eq(fieldOptionsTable.category, params.data.category),
+        eq(fieldOptionsTable.field, params.data.field),
+        ne(fieldOptionsTable.parentValue, ""),
+        sql`lower(${fieldOptionsTable.parentValue}) = lower(${params.data.parentValue})`,
+        sql`lower(${fieldOptionsTable.grandValue}) = lower(${query.data.grandValue ?? ""})`,
+      );
+      // Would this delete remove the field's last scoped list? If so, the
+      // field's dependency disappears — refuse while other fields still have
+      // two-level lists chained through it.
+      const remaining = await tx
+        .select({ id: fieldOptionsTable.id })
+        .from(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.field, params.data.field),
+            ne(fieldOptionsTable.parentValue, ""),
+            sql`NOT (lower(${fieldOptionsTable.parentValue}) = lower(${params.data.parentValue}) AND lower(${fieldOptionsTable.grandValue}) = lower(${query.data.grandValue ?? ""}))`,
+          ),
+        )
+        .limit(1);
+      if (remaining.length === 0) {
+        const dependents = await tx
+          .select({ field: fieldOptionsTable.field })
+          .from(fieldOptionsTable)
+          .where(
+            and(
+              eq(fieldOptionsTable.category, params.data.category),
+              eq(fieldOptionsTable.parentField, params.data.field),
+              ne(fieldOptionsTable.parentValue, ""),
+              ne(fieldOptionsTable.grandField, ""),
+            ),
+          );
+        const orphaned = [...new Set(dependents.map((d) => d.field))];
+        if (orphaned.length > 0) {
+          return {
+            status: 409 as const,
+            error: `This is the last "${params.data.field}" list, and other fields (${orphaned.join(", ")}) have lists scoped per its dependency. Remove their dependency first.`,
+          };
+        }
+      }
+      await tx.delete(fieldOptionsTable).where(scopeMatch);
+      return { status: 204 as const };
+    });
+    if (result.status !== 204) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
     res.sendStatus(204);
   },
 );
@@ -362,15 +630,46 @@ router.delete(
       res.status(400).json({ error: params.error.message });
       return;
     }
-    await db
-      .delete(fieldOptionsTable)
-      .where(
-        and(
-          eq(fieldOptionsTable.category, params.data.category),
-          eq(fieldOptionsTable.field, params.data.field),
-          ne(fieldOptionsTable.parentValue, ""),
-        ),
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`field_options:${params.data.category}`}))`,
       );
+      // Removing this field's dependency would leave two-level lists of
+      // fields that depend on it pointing at a grandparent that no longer
+      // exists in the chain.
+      const dependents = await tx
+        .select({ field: fieldOptionsTable.field })
+        .from(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.parentField, params.data.field),
+            ne(fieldOptionsTable.parentValue, ""),
+            ne(fieldOptionsTable.grandField, ""),
+          ),
+        );
+      const orphaned = [...new Set(dependents.map((d) => d.field))];
+      if (orphaned.length > 0) {
+        return {
+          status: 409 as const,
+          error: `Other fields (${orphaned.join(", ")}) have lists scoped per this field's dependency. Remove their dependency first.`,
+        };
+      }
+      await tx
+        .delete(fieldOptionsTable)
+        .where(
+          and(
+            eq(fieldOptionsTable.category, params.data.category),
+            eq(fieldOptionsTable.field, params.data.field),
+            ne(fieldOptionsTable.parentValue, ""),
+          ),
+        );
+      return { status: 204 as const };
+    });
+    if (result.status !== 204) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
     res.sendStatus(204);
   },
 );

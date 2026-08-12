@@ -72,6 +72,10 @@ export interface FieldOptions {
   parentField: string;
   /** Empty for a flat list; otherwise the parent field's value this list is scoped to (e.g. Andersen). */
   parentValue: string;
+  /** Empty unless two-level; the second-level ancestor field (e.g. brand for a color list scoped to Brand+Series). */
+  grandField: string;
+  /** Empty unless two-level; the second-level ancestor value (e.g. Andersen). */
+  grandValue: string;
   values: string[];
 }
 
@@ -86,6 +90,18 @@ export interface DependentFieldOptionsInput {
      * @maxLength 120
      */
   parentValue: string;
+  /**
+     * Optional second-level ancestor field; must be provided together with grandValue.
+     * @maxLength 64
+     */
+  grandField?: string;
+  /**
+     * Optional second-level ancestor value; must be provided together with grandField.
+     * @maxLength 120
+     */
+  grandValue?: string;
+  /** Required acknowledgment when this save would change the field's dependency chain (different parentField/grandField) and therefore delete lists scoped to the old chain. Without it such a save is rejected with 409. */
+  replaceExisting?: boolean;
   /**
      * @maxItems 200
      * @items.minLength 1
@@ -466,6 +482,14 @@ export interface ActivityEntry {
   note: string;
   createdAt: string;
 }
+
+export type DeleteDependentFieldOptionsParams = {
+/**
+ * For two-level lists, the grand ancestor value identifying the exact list; omit for one-level lists.
+ * @maxLength 120
+ */
+grandValue?: string;
+};
 
 export type ListQuotesParams = {
 /**

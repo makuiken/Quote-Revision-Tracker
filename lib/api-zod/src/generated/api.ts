@@ -56,6 +56,8 @@ export const ListFieldOptionsResponseItem = zod.object({
   "field": zod.string(),
   "parentField": zod.string().describe('Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).'),
   "parentValue": zod.string().describe('Empty for a flat list; otherwise the parent field\'s value this list is scoped to (e.g. Andersen).'),
+  "grandField": zod.string().describe('Empty unless two-level; the second-level ancestor field (e.g. brand for a color list scoped to Brand+Series).'),
+  "grandValue": zod.string().describe('Empty unless two-level; the second-level ancestor value (e.g. Andersen).'),
   "values": zod.array(zod.string())
 })
 export const ListFieldOptionsResponse = zod.array(ListFieldOptionsResponseItem)
@@ -88,6 +90,8 @@ export const SetFieldOptionsResponse = zod.object({
   "field": zod.string(),
   "parentField": zod.string().describe('Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).'),
   "parentValue": zod.string().describe('Empty for a flat list; otherwise the parent field\'s value this list is scoped to (e.g. Andersen).'),
+  "grandField": zod.string().describe('Empty unless two-level; the second-level ancestor field (e.g. brand for a color list scoped to Brand+Series).'),
+  "grandValue": zod.string().describe('Empty unless two-level; the second-level ancestor value (e.g. Andersen).'),
   "values": zod.array(zod.string())
 })
 
@@ -108,7 +112,7 @@ export const DeleteFieldOptionsResponse = zod.void()
 
 
 /**
- * Declares/extends a one-level dependency: when the quote form's parent field equals parentValue, the dependent field suggests these values. Saving under a different parentField replaces the previous dependency (all lists scoped to the old parent are removed).
+ * Declares/extends a dependency: when the quote form's parent field equals parentValue (and, for two-level chains, the grand field equals grandValue), the dependent field suggests these values. Saving under a different dependency chain (parentField/grandField) is rejected with 409 unless replaceExisting is true, in which case lists scoped to the old chain are deleted.
  * @summary Create or replace the option list for a spec field scoped to a parent field value (admin only)
  */
 export const setDependentFieldOptionsPathFieldMax = 64;
@@ -124,6 +128,10 @@ export const setDependentFieldOptionsBodyParentFieldMax = 64;
 
 export const setDependentFieldOptionsBodyParentValueMax = 120;
 
+export const setDependentFieldOptionsBodyGrandFieldMax = 64;
+
+export const setDependentFieldOptionsBodyGrandValueMax = 120;
+
 export const setDependentFieldOptionsBodyValuesItemMax = 120;
 
 export const setDependentFieldOptionsBodyValuesMax = 200;
@@ -133,6 +141,9 @@ export const setDependentFieldOptionsBodyValuesMax = 200;
 export const SetDependentFieldOptionsBody = zod.object({
   "parentField": zod.string().min(1).max(setDependentFieldOptionsBodyParentFieldMax),
   "parentValue": zod.string().min(1).max(setDependentFieldOptionsBodyParentValueMax),
+  "grandField": zod.string().max(setDependentFieldOptionsBodyGrandFieldMax).optional().describe('Optional second-level ancestor field; must be provided together with grandValue.'),
+  "grandValue": zod.string().max(setDependentFieldOptionsBodyGrandValueMax).optional().describe('Optional second-level ancestor value; must be provided together with grandField.'),
+  "replaceExisting": zod.boolean().optional().describe('Required acknowledgment when this save would change the field\'s dependency chain (different parentField\/grandField) and therefore delete lists scoped to the old chain. Without it such a save is rejected with 409.\n'),
   "values": zod.array(zod.string().min(1).max(setDependentFieldOptionsBodyValuesItemMax)).max(setDependentFieldOptionsBodyValuesMax)
 })
 
@@ -141,6 +152,8 @@ export const SetDependentFieldOptionsResponse = zod.object({
   "field": zod.string(),
   "parentField": zod.string().describe('Empty for a flat list; otherwise the sibling field this list depends on (e.g. brand).'),
   "parentValue": zod.string().describe('Empty for a flat list; otherwise the parent field\'s value this list is scoped to (e.g. Andersen).'),
+  "grandField": zod.string().describe('Empty unless two-level; the second-level ancestor field (e.g. brand for a color list scoped to Brand+Series).'),
+  "grandValue": zod.string().describe('Empty unless two-level; the second-level ancestor value (e.g. Andersen).'),
   "values": zod.array(zod.string())
 })
 
@@ -158,6 +171,14 @@ export const DeleteDependentFieldOptionsParams = zod.object({
   "category": zod.enum(['window', 'interiorDoor', 'exteriorDoor']),
   "field": zod.coerce.string().min(1).max(deleteDependentFieldOptionsPathFieldMax),
   "parentValue": zod.coerce.string().min(1).max(deleteDependentFieldOptionsPathParentValueMax)
+})
+
+export const deleteDependentFieldOptionsQueryGrandValueMax = 120;
+
+
+
+export const DeleteDependentFieldOptionsQueryParams = zod.object({
+  "grandValue": zod.coerce.string().max(deleteDependentFieldOptionsQueryGrandValueMax).optional().describe('For two-level lists, the grand ancestor value identifying the exact list; omit for one-level lists.')
 })
 
 export const DeleteDependentFieldOptionsResponse = zod.void()

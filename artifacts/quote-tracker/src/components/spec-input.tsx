@@ -25,7 +25,8 @@ export function useFieldOptions() {
 
   return useMemo(() => {
     const flat = new Map<string, string[]>();
-    type Dep = { parentField: string; byParent: Map<string, string[]>; all: string[] };
+    type DepRow = { parentValue: string; grandValue: string; values: string[] };
+    type Dep = { parentField: string; grandField: string; rows: DepRow[] };
     const deps = new Map<string, Dep>();
 
     for (const row of data ?? []) {
@@ -37,17 +38,35 @@ export function useFieldOptions() {
       }
       let dep = deps.get(key);
       if (!dep) {
-        dep = { parentField: row.parentField, byParent: new Map(), all: [] };
+        dep = { parentField: row.parentField, grandField: "", rows: [] };
         deps.set(key, dep);
       }
       dep.parentField = row.parentField;
-      dep.byParent.set(row.parentValue.toLowerCase(), row.values);
-      for (const v of row.values) {
-        if (!dep.all.some((x) => x.toLowerCase() === v.toLowerCase())) {
-          dep.all.push(v);
+      if (row.grandField) dep.grandField = row.grandField;
+      dep.rows.push({
+        parentValue: row.parentValue.toLowerCase(),
+        grandValue: (row.grandValue ?? "").toLowerCase(),
+        values: row.values,
+      });
+    }
+
+    const union = (rows: DepRow[]): string[] => {
+      const out: string[] = [];
+      for (const r of rows) {
+        for (const v of r.values) {
+          if (!out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v);
         }
       }
-    }
+      return out;
+    };
+
+    const specString = (
+      specs: Record<string, unknown> | null | undefined,
+      field: string,
+    ): string => {
+      const raw = field ? specs?.[field] : undefined;
+      return typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    };
 
     const optionsFor = (
       category: string,
@@ -57,10 +76,17 @@ export function useFieldOptions() {
       const key = `${category}.${field}`;
       const dep = deps.get(key);
       if (dep) {
-        const raw = specs?.[dep.parentField];
-        const parent = typeof raw === "string" ? raw.trim() : "";
-        if (parent) return dep.byParent.get(parent.toLowerCase()) ?? [];
-        return dep.all;
+        const parent = specString(specs, dep.parentField);
+        const grand = specString(specs, dep.grandField);
+        let rows = dep.rows;
+        if (parent) rows = rows.filter((r) => r.parentValue === parent);
+        if (grand) {
+          // Prefer lists scoped to this exact ancestor; keep unscoped
+          // (one-level legacy) lists as a fallback when nothing matches.
+          const exact = rows.filter((r) => r.grandValue === grand);
+          rows = exact.length > 0 ? exact : rows.filter((r) => !r.grandValue);
+        }
+        return union(rows);
       }
       return flat.get(key) ?? [];
     };

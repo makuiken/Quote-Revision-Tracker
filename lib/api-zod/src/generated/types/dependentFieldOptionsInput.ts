@@ -18,6 +18,18 @@ export interface DependentFieldOptionsInput {
      */
   parentValue: string;
   /**
+     * Optional second-level ancestor field; must be provided together with grandValue.
+     * @maxLength 64
+     */
+  grandField?: string;
+  /**
+     * Optional second-level ancestor value; must be provided together with grandField.
+     * @maxLength 120
+     */
+  grandValue?: string;
+  /** Required acknowledgment when this save would change the field's dependency chain (different parentField/grandField) and therefore delete lists scoped to the old chain. Without it such a save is rejected with 409. */
+  replaceExisting?: boolean;
+  /**
      * @maxItems 200
      * @items.minLength 1
      * @items.maxLength 120

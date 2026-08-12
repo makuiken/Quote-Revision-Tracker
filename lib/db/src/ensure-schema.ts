@@ -76,6 +76,17 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS field_options_category_field_parent_value_unique
     ON field_options (category, field, parent_value)`,
   `ALTER TABLE field_options DROP CONSTRAINT IF EXISTS field_options_category_field_unique`,
+
+  // Two-level dependent dropdowns: a scoped list can additionally be keyed by
+  // a second-level ancestor (e.g. Color options per Brand+Series). Flat and
+  // one-level rows keep '' sentinels in the grand columns. Uniqueness must
+  // include the field columns too — the old (category, field, parent_value)
+  // key ambiguously collided lists scoped to different parent fields.
+  `ALTER TABLE field_options ADD COLUMN IF NOT EXISTS grand_field text NOT NULL DEFAULT ''`,
+  `ALTER TABLE field_options ADD COLUMN IF NOT EXISTS grand_value text NOT NULL DEFAULT ''`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS field_options_scope_unique
+    ON field_options (category, field, parent_field, parent_value, grand_field, grand_value)`,
+  `DROP INDEX IF EXISTS field_options_category_field_parent_value_unique`,
 ];
 
 export async function ensureSchema(): Promise<void> {

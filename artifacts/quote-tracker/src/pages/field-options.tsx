@@ -23,6 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/components/ui/toaster";
 import { WINDOW_FIELDS, INTERIOR_DOOR_FIELDS, EXTERIOR_DOOR_FIELDS } from "@/lib/spec-fields";
 
@@ -35,6 +45,13 @@ const CATEGORY_DEFS: { key: OptionCategory; label: string; fields: { key: string
 ];
 
 const NONE = "__none__";
+
+type ConfirmState = {
+  title: string;
+  description: string;
+  actionLabel: string;
+  onConfirm: () => void;
+} | null;
 
 export default function FieldOptionsPage() {
   const { data: dbUser } = useGetCurrentUser();
@@ -57,8 +74,10 @@ export default function FieldOptionsPage() {
   const [editingValue, setEditingValue] = useState("");
   // Dependency editing state.
   const [parentChoice, setParentChoice] = useState<string>("");
+  const [grandValueSel, setGrandValueSel] = useState<string>("");
   const [parentValue, setParentValue] = useState<string>("");
   const [newParentValue, setNewParentValue] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmState>(null);
 
   const categoryDef = CATEGORY_DEFS.find((c) => c.key === category)!;
 
@@ -70,38 +89,105 @@ export default function FieldOptionsPage() {
   const depRows = useMemo(() => fieldRows.filter((o) => o.parentValue), [fieldRows]);
   const configuredParent = depRows[0]?.parentField ?? "";
 
+  // If the chosen parent field itself depends on another field, editing this
+  // field's lists is two-level: pick the grandparent value first (e.g. Brand),
+  // then the parent value (e.g. Series), then the option list (e.g. Colors).
+  const grandField = useMemo(() => {
+    if (!parentChoice) return "";
+    const parentDepRow = (allOptions ?? []).find(
+      (o) => o.category === category && o.field === parentChoice && o.parentValue,
+    );
+    return parentDepRow?.parentField ?? "";
+  }, [allOptions, category, parentChoice]);
+  const twoLevel = Boolean(parentChoice && grandField);
+
   // Sync the dependency selector when the selected field (or server data) changes.
   useEffect(() => {
     setParentChoice(configuredParent);
+    setGrandValueSel("");
     setParentValue("");
     setNewParentValue("");
     setEditingIndex(null);
   }, [category, fieldKey, configuredParent]);
 
-  // Parent values available for the chosen parent field: its flat option list
-  // plus any parent values that already have a scoped list.
-  const parentValueChoices = useMemo(() => {
-    if (!parentChoice) return [];
-    const fromParentList =
-      (allOptions ?? []).find(
-        (o) => o.category === category && o.field === parentChoice && !o.parentValue,
-      )?.values ?? [];
+  // Reset downstream picks when upstream picks change.
+  useEffect(() => {
+    setParentValue("");
+    setNewParentValue("");
+    setEditingIndex(null);
+  }, [grandValueSel]);
+
+  const dedupeCaseInsensitive = (lists: string[][]): string[] => {
     const out: string[] = [];
     const seen = new Set<string>();
-    for (const v of [...fromParentList, ...depRows.filter((r) => r.parentField === parentChoice).map((r) => r.parentValue)]) {
-      if (seen.has(v.toLowerCase())) continue;
-      seen.add(v.toLowerCase());
-      out.push(v);
+    for (const list of lists) {
+      for (const v of list) {
+        if (seen.has(v.toLowerCase())) continue;
+        seen.add(v.toLowerCase());
+        out.push(v);
+      }
     }
     return out;
-  }, [allOptions, category, parentChoice, depRows]);
+  };
+
+  // Choices for the grandparent value (two-level only): the grand field's flat
+  // list, plus values already used by the parent's scoped lists or this
+  // field's scoped lists.
+  const grandValueChoices = useMemo(() => {
+    if (!twoLevel) return [];
+    const rows = allOptions ?? [];
+    const grandFlat =
+      rows.find((o) => o.category === category && o.field === grandField && !o.parentValue)?.values ?? [];
+    const fromParentLists = rows
+      .filter((o) => o.category === category && o.field === parentChoice && o.parentValue)
+      .map((o) => o.parentValue);
+    const fromOwnLists = depRows.filter((r) => r.grandValue).map((r) => r.grandValue);
+    return dedupeCaseInsensitive([grandFlat, fromParentLists, fromOwnLists]);
+  }, [twoLevel, allOptions, category, grandField, parentChoice, depRows]);
+
+  // Parent values available: for two-level chains, the parent's option list
+  // scoped to the chosen grandparent value; otherwise the parent's flat list.
+  // Either way, include values that already have a scoped list here.
+  const parentValueChoices = useMemo(() => {
+    if (!parentChoice) return [];
+    const rows = allOptions ?? [];
+    let base: string[];
+    if (twoLevel) {
+      if (!grandValueSel) return [];
+      base =
+        rows.find(
+          (o) =>
+            o.category === category &&
+            o.field === parentChoice &&
+            o.parentValue.toLowerCase() === grandValueSel.toLowerCase(),
+        )?.values ?? [];
+    } else {
+      base =
+        rows.find((o) => o.category === category && o.field === parentChoice && !o.parentValue)
+          ?.values ?? [];
+    }
+    const existing = depRows
+      .filter(
+        (r) =>
+          r.parentField === parentChoice &&
+          (!twoLevel || r.grandValue.toLowerCase() === grandValueSel.toLowerCase()),
+      )
+      .map((r) => r.parentValue);
+    return dedupeCaseInsensitive([base, existing]);
+  }, [allOptions, category, parentChoice, twoLevel, grandValueSel, depRows]);
 
   const dependent = parentChoice !== "";
-  const values = dependent
+  const currentDepRow = dependent
     ? depRows.find(
-        (r) => r.parentField === parentChoice && r.parentValue.toLowerCase() === parentValue.toLowerCase(),
-      )?.values ?? []
-    : flatValues;
+        (r) =>
+          r.parentField === parentChoice &&
+          r.parentValue.toLowerCase() === parentValue.toLowerCase() &&
+          (twoLevel
+            ? r.grandValue.toLowerCase() === grandValueSel.toLowerCase()
+            : !r.grandValue),
+      )
+    : undefined;
+  const values = dependent ? currentDepRow?.values ?? [] : flatValues;
 
   if (dbUser && dbUser.role !== "admin") {
     return (
@@ -126,17 +212,40 @@ export default function FieldOptionsPage() {
     });
   };
 
-  const save = (nextValues: string[], successTitle: string) => {
+  const fieldLabel = categoryDef.fields.find((f) => f.key === fieldKey)?.label ?? fieldKey;
+  const parentLabel = categoryDef.fields.find((f) => f.key === parentChoice)?.label ?? parentChoice;
+  const grandLabel = categoryDef.fields.find((f) => f.key === grandField)?.label ?? grandField;
+  const configuredParentLabel =
+    categoryDef.fields.find((f) => f.key === configuredParent)?.label ?? configuredParent;
+
+  const scopeLabel = dependent
+    ? twoLevel
+      ? `${grandLabel} “${grandValueSel}” → ${parentLabel} “${parentValue}”`
+      : `${parentLabel} “${parentValue}”`
+    : "";
+
+  const doSave = (nextValues: string[], successTitle: string, replaceExisting?: boolean) => {
     let mutation: Promise<unknown>;
     if (dependent) {
       if (!parentValue.trim()) return;
       mutation =
         nextValues.length === 0
-          ? deleteDependentOptions.mutateAsync({ category, field: fieldKey, parentValue })
+          ? deleteDependentOptions.mutateAsync({
+              category,
+              field: fieldKey,
+              parentValue,
+              params: twoLevel ? { grandValue: grandValueSel } : undefined,
+            })
           : setDependentOptions.mutateAsync({
               category,
               field: fieldKey,
-              data: { parentField: parentChoice, parentValue, values: nextValues },
+              data: {
+                parentField: parentChoice,
+                parentValue,
+                ...(twoLevel ? { grandField, grandValue: grandValueSel } : {}),
+                ...(replaceExisting ? { replaceExisting: true } : {}),
+                values: nextValues,
+              },
             });
     } else {
       mutation =
@@ -149,7 +258,40 @@ export default function FieldOptionsPage() {
         invalidate();
         toast({ title: successTitle });
       })
-      .catch(onError);
+      .catch((err: any) => {
+        // The server rejects saves that would change the dependency chain and
+        // delete other lists; surface that as an explicit confirmation.
+        // (Deletes never take replaceExisting — their 409s, e.g. "other
+        // fields depend on this", are shown as plain errors.)
+        if (err?.status === 409 && !replaceExisting && nextValues.length > 0) {
+          setConfirm({
+            title: "Replace this field's dependency?",
+            description:
+              err?.data?.error ||
+              "Saving will change the dependency and delete existing lists.",
+            actionLabel: "Replace and delete",
+            onConfirm: () => doSave(nextValues, successTitle, true),
+          });
+          return;
+        }
+        onError(err);
+      });
+  };
+
+  const save = (nextValues: string[], successTitle: string) => {
+    if (nextValues.length === 0 && values.length > 0) {
+      // Emptying a list deletes it entirely — make sure that's intended.
+      setConfirm({
+        title: dependent ? "Delete this option list?" : "Delete this field's option list?",
+        description: dependent
+          ? `Removing the last option deletes the entire ${fieldLabel} list for ${scopeLabel}. Existing quotes keep their values.`
+          : `Removing the last option deletes the ${fieldLabel} list, and the field goes back to free text on quote forms. Existing quotes keep their values.`,
+        actionLabel: "Delete list",
+        onConfirm: () => doSave([], "List deleted"),
+      });
+      return;
+    }
+    doSave(nextValues, successTitle);
   };
 
   const handleAdd = () => {
@@ -189,15 +331,25 @@ export default function FieldOptionsPage() {
   };
 
   const handleRemoveDependency = () => {
-    clearDependency
-      .mutateAsync({ category, field: fieldKey })
-      .then(() => {
-        invalidate();
-        setParentChoice("");
-        setParentValue("");
-        toast({ title: "Dependency removed", description: "The field now uses its flat option list (or free text)." });
-      })
-      .catch(onError);
+    const count = depRows.length;
+    const parents = dedupeCaseInsensitive([depRows.map((r) => r.parentValue)]);
+    setConfirm({
+      title: "Remove this dependency?",
+      description: `This deletes all ${count} ${fieldLabel} list${count === 1 ? "" : "s"} configured for ${configuredParentLabel} (${parents.slice(0, 6).join(", ")}${parents.length > 6 ? ", …" : ""}). The field goes back to its flat option list or free text. Existing quotes keep their values.`,
+      actionLabel: "Remove dependency",
+      onConfirm: () => {
+        clearDependency
+          .mutateAsync({ category, field: fieldKey })
+          .then(() => {
+            invalidate();
+            setParentChoice("");
+            setGrandValueSel("");
+            setParentValue("");
+            toast({ title: "Dependency removed", description: "The field now uses its flat option list (or free text)." });
+          })
+          .catch(onError);
+      },
+    });
   };
 
   const isSaving =
@@ -206,10 +358,9 @@ export default function FieldOptionsPage() {
     setDependentOptions.isPending ||
     deleteDependentOptions.isPending ||
     clearDependency.isPending;
-  const fieldLabel = categoryDef.fields.find((f) => f.key === fieldKey)?.label ?? fieldKey;
-  const parentLabel = categoryDef.fields.find((f) => f.key === parentChoice)?.label ?? parentChoice;
 
-  const canEditList = !dependent || parentValue.trim() !== "";
+  const canEditList =
+    !dependent || (parentValue.trim() !== "" && (!twoLevel || grandValueSel.trim() !== ""));
 
   return (
     <Shell>
@@ -220,8 +371,9 @@ export default function FieldOptionsPage() {
         <p className="text-muted-foreground font-medium max-w-2xl">
           Set the dropdown choices for product spec fields. Fields with options become dropdowns
           on quote forms (custom values can still be typed); fields without options stay free text.
-          A field can also depend on another field (e.g. Series depends on Brand) with a separate
-          list per parent value. Changing options never alters existing quotes.
+          A field can also depend on another field (e.g. Series depends on Brand) — and chains
+          work too: if Color depends on Series and Series depends on Brand, Color lists are kept
+          per Brand + Series combination. Changing options never alters existing quotes.
         </p>
       </div>
 
@@ -275,7 +427,8 @@ export default function FieldOptionsPage() {
             </Label>
             <p className="text-sm text-muted-foreground font-medium">
               Make {fieldLabel} offer a different option list depending on another field's value
-              (e.g. Series depends on Brand). One level only.
+              (e.g. Series depends on Brand). If the field it depends on has its own dependency,
+              lists are kept per combination (e.g. Color per Brand + Series).
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
               <div className="space-y-2">
@@ -284,6 +437,7 @@ export default function FieldOptionsPage() {
                   value={parentChoice || NONE}
                   onValueChange={(v) => {
                     setParentChoice(v === NONE ? "" : v);
+                    setGrandValueSel("");
                     setParentValue("");
                     setEditingIndex(null);
                   }}
@@ -312,18 +466,45 @@ export default function FieldOptionsPage() {
             </div>
             {configuredParent && !parentChoice && (
               <p className="text-sm text-muted-foreground font-medium">
-                {fieldLabel} currently depends on {categoryDef.fields.find((f) => f.key === configuredParent)?.label ?? configuredParent}.
+                {fieldLabel} currently depends on {configuredParentLabel}.
                 Use “Remove dependency” to go back to a single flat list.
               </p>
             )}
             {dependent && configuredParent && parentChoice !== configuredParent && (
               <p className="text-sm text-destructive font-medium">
                 Saving a list under {parentLabel} will replace the existing dependency on{" "}
-                {categoryDef.fields.find((f) => f.key === configuredParent)?.label ?? configuredParent} and delete its lists.
+                {configuredParentLabel} — you'll be asked to confirm before anything is deleted.
+              </p>
+            )}
+            {twoLevel && (
+              <p className="text-sm text-muted-foreground font-medium">
+                {parentLabel} depends on {grandLabel}, so {fieldLabel} lists are kept per{" "}
+                {grandLabel} + {parentLabel} combination.
               </p>
             )}
             {dependent && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {twoLevel && (
+                  <div className="space-y-2">
+                    <Label>{grandLabel} value</Label>
+                    <Select
+                      value={grandValueSel || NONE}
+                      onValueChange={(v) => {
+                        setGrandValueSel(v === NONE ? "" : v);
+                      }}
+                    >
+                      <SelectTrigger data-testid="select-grand-value">
+                        <SelectValue placeholder={`Choose a ${grandLabel} value`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE}>— choose —</SelectItem>
+                        {grandValueChoices.map((v) => (
+                          <SelectItem key={v} value={v}>{v}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>{parentLabel} value</Label>
                   <Select
@@ -332,16 +513,28 @@ export default function FieldOptionsPage() {
                       setParentValue(v === NONE ? "" : v);
                       setEditingIndex(null);
                     }}
+                    disabled={twoLevel && !grandValueSel}
                   >
                     <SelectTrigger data-testid="select-parent-value">
-                      <SelectValue placeholder={`Choose a ${parentLabel} value`} />
+                      <SelectValue
+                        placeholder={
+                          twoLevel && !grandValueSel
+                            ? `Choose a ${grandLabel} value first`
+                            : `Choose a ${parentLabel} value`
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>— choose —</SelectItem>
                       {parentValueChoices.map((v) => (
                         <SelectItem key={v} value={v}>
                           {v}
-                          {depRows.some((r) => r.parentField === parentChoice && r.parentValue.toLowerCase() === v.toLowerCase())
+                          {depRows.some(
+                            (r) =>
+                              r.parentField === parentChoice &&
+                              r.parentValue.toLowerCase() === v.toLowerCase() &&
+                              (!twoLevel || r.grandValue.toLowerCase() === grandValueSel.toLowerCase()),
+                          )
                             ? " ✓"
                             : ""}
                         </SelectItem>
@@ -356,6 +549,7 @@ export default function FieldOptionsPage() {
                       placeholder={`e.g. Andersen`}
                       value={newParentValue}
                       maxLength={120}
+                      disabled={twoLevel && !grandValueSel}
                       onChange={(e) => setNewParentValue(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -370,7 +564,7 @@ export default function FieldOptionsPage() {
                     />
                     <Button
                       variant="outline"
-                      disabled={!newParentValue.trim()}
+                      disabled={!newParentValue.trim() || (twoLevel && !grandValueSel)}
                       onClick={() => {
                         const v = newParentValue.trim();
                         if (!v) return;
@@ -390,17 +584,19 @@ export default function FieldOptionsPage() {
           <div className="space-y-3 pt-4 border-t-2 border-border">
             <Label className="text-base">
               Options for {categoryDef.label} → {fieldLabel}
-              {dependent && parentValue ? ` (when ${parentLabel} is “${parentValue}”)` : ""}
+              {dependent && canEditList ? ` (when ${scopeLabel})` : ""}
             </Label>
 
             {!canEditList ? (
               <p className="text-sm text-muted-foreground font-medium py-2">
-                Choose a {parentLabel} value above to edit its {fieldLabel} options.
+                {twoLevel && !grandValueSel
+                  ? `Choose a ${grandLabel} value above to get started.`
+                  : `Choose a ${parentLabel} value above to edit its ${fieldLabel} options.`}
               </p>
             ) : values.length === 0 ? (
               <p className="text-sm text-muted-foreground font-medium py-2">
                 {dependent
-                  ? `No options configured for this ${parentLabel} value yet.`
+                  ? `No options configured for this ${twoLevel ? "combination" : `${parentLabel} value`} yet.`
                   : "No options configured — this field is currently free text on quote forms."}
               </p>
             ) : (
@@ -459,6 +655,7 @@ export default function FieldOptionsPage() {
                           className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                           title="Remove" disabled={isSaving}
                           onClick={() => handleRemove(index)}
+                          data-testid={`button-remove-option-${index}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -492,6 +689,29 @@ export default function FieldOptionsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }}>
+        <AlertDialogContent data-testid="dialog-confirm-destructive">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirm?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirm?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-confirm-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-action"
+              onClick={() => {
+                const action = confirm?.onConfirm;
+                setConfirm(null);
+                action?.();
+              }}
+            >
+              {confirm?.actionLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Shell>
   );
 }

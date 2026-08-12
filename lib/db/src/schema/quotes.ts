@@ -183,6 +183,10 @@ export const fieldOptionsTable = pgTable(
     parentField: text("parent_field").notNull().default(""),
     // '' = flat list; otherwise the parent field's value this list applies to.
     parentValue: text("parent_value").notNull().default(""),
+    // Optional second-level ancestor (e.g. brand for a Color list scoped to
+    // Brand+Series). '' = not scoped by a grandparent.
+    grandField: text("grand_field").notNull().default(""),
+    grandValue: text("grand_value").notNull().default(""),
     values: text("values").array().notNull().default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -190,10 +194,13 @@ export const fieldOptionsTable = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    unique("field_options_category_field_parent_value_unique").on(
+    unique("field_options_scope_unique").on(
       table.category,
       table.field,
+      table.parentField,
       table.parentValue,
+      table.grandField,
+      table.grandValue,
     ),
   ],
 );

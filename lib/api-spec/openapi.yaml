@@ -167,10 +167,12 @@ paths:
       tags: [admin]
       summary: Create or replace the option list for a spec field scoped to a parent field value (admin only)
       description: >
-        Declares/extends a one-level dependency: when the quote form's parent
-        field equals parentValue, the dependent field suggests these values.
-        Saving under a different parentField replaces the previous dependency
-        (all lists scoped to the old parent are removed).
+        Declares/extends a dependency: when the quote form's parent field
+        equals parentValue (and, for two-level chains, the grand field equals
+        grandValue), the dependent field suggests these values. Saving under a
+        different dependency chain (parentField/grandField) is rejected with
+        409 unless replaceExisting is true, in which case lists scoped to the
+        old chain are deleted.
       parameters:
         - name: category
           in: path
@@ -204,6 +206,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Save would change the dependency chain and delete existing lists; retry with replaceExisting true to confirm
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/field-options/{category}/{field}/dependent/{parentValue}:
     delete:
       operationId: deleteDependentFieldOptions
@@ -229,6 +237,13 @@ paths:
           schema:
             type: string
             minLength: 1
+            maxLength: 120
+        - name: grandValue
+          in: query
+          required: false
+          description: For two-level lists, the grand ancestor value identifying the exact list; omit for one-level lists.
+          schema:
+            type: string
             maxLength: 120
       responses:
         "204":
@@ -1208,15 +1223,36 @@ components:
         parentValue:
           type: string
           description: Empty for a flat list; otherwise the parent field's value this list is scoped to (e.g. Andersen).
+        grandField:
+          type: string
+          description: Empty unless two-level; the second-level ancestor field (e.g. brand for a color list scoped to Brand+Series).
+        grandValue:
+          type: string
+          description: Empty unless two-level; the second-level ancestor value (e.g. Andersen).
         values:
           type: array
           items: { type: string }
-      required: [category, field, parentField, parentValue, values]
+      required: [category, field, parentField, parentValue, grandField, grandValue, values]
     DependentFieldOptionsInput:
       type: object
       properties:
         parentField: { type: string, minLength: 1, maxLength: 64 }
         parentValue: { type: string, minLength: 1, maxLength: 120 }
+        grandField:
+          type: string
+          maxLength: 64
+          description: Optional second-level ancestor field; must be provided together with grandValue.
+        grandValue:
+          type: string
+          maxLength: 120
+          description: Optional second-level ancestor value; must be provided together with grandField.
+        replaceExisting:
+          type: boolean
+          description: >
+            Required acknowledgment when this save would change the field's
+            dependency chain (different parentField/grandField) and therefore
+            delete lists scoped to the old chain. Without it such a save is
+            rejected with 409.
         values:
           type: array
           maxItems: 200

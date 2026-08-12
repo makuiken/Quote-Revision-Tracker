@@ -14,5 +14,9 @@ export interface FieldOptions {
   parentField: string;
   /** Empty for a flat list; otherwise the parent field's value this list is scoped to (e.g. Andersen). */
   parentValue: string;
+  /** Empty unless two-level; the second-level ancestor field (e.g. brand for a color list scoped to Brand+Series). */
+  grandField: string;
+  /** Empty unless two-level; the second-level ancestor value (e.g. Andersen). */
+  grandValue: string;
   values: string[];
 }

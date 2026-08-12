@@ -27,6 +27,7 @@ import type {
   AttachmentInput,
   CurrentUser,
   DashboardSummary,
+  DeleteDependentFieldOptionsParams,
   DependentFieldOptionsInput,
   ErrorResponse,
   FieldOptions,
@@ -625,7 +626,7 @@ export const getSetDependentFieldOptionsUrl = (category: 'window' | 'interiorDoo
 }
 
 /**
- * Declares/extends a one-level dependency: when the quote form's parent field equals parentValue, the dependent field suggests these values. Saving under a different parentField replaces the previous dependency (all lists scoped to the old parent are removed).
+ * Declares/extends a dependency: when the quote form's parent field equals parentValue (and, for two-level chains, the grand field equals grandValue), the dependent field suggests these values. Saving under a different dependency chain (parentField/grandField) is rejected with 409 unless replaceExisting is true, in which case lists scoped to the old chain are deleted.
  * @summary Create or replace the option list for a spec field scoped to a parent field value (admin only)
  */
 export const setDependentFieldOptions = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
@@ -692,12 +693,20 @@ export const useSetDependentFieldOptions = <TError = ErrorType<ErrorResponse>,
 
 export const getDeleteDependentFieldOptionsUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',
     field: string,
-    parentValue: string,) => {
+    parentValue: string,
+    params?: DeleteDependentFieldOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/field-options/${category}/${field}/dependent/${parentValue}`
+  return stringifiedParams.length > 0 ? `/api/admin/field-options/${category}/${field}/dependent/${parentValue}?${stringifiedParams}` : `/api/admin/field-options/${category}/${field}/dependent/${parentValue}`
 }
 
 /**
@@ -705,9 +714,10 @@ export const getDeleteDependentFieldOptionsUrl = (category: 'window' | 'interior
  */
 export const deleteDependentFieldOptions = async (category: 'window' | 'interiorDoor' | 'exteriorDoor',
     field: string,
-    parentValue: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+    parentValue: string,
+    params?: DeleteDependentFieldOptionsParams, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<void>(getDeleteDependentFieldOptionsUrl(category,field,parentValue),
+  return customFetch<void>(getDeleteDependentFieldOptionsUrl(category,field,parentValue,params),
   {
     ...options,
     method: 'DELETE'
@@ -721,8 +731,8 @@ export const deleteDependentFieldOptions = async (category: 'window' | 'interior
 
 
 export const getDeleteDependentFieldOptionsMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string;params?: DeleteDependentFieldOptionsParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string;params?: DeleteDependentFieldOptionsParams}, TContext> => {
 
 const mutationKey = ['deleteDependentFieldOptions'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -734,10 +744,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}> = (props) => {
-          const {category,field,parentValue} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string;params?: DeleteDependentFieldOptionsParams}> = (props) => {
+          const {category,field,parentValue,params} = props ?? {};
 
-          return  deleteDependentFieldOptions(category,field,parentValue,requestOptions)
+          return  deleteDependentFieldOptions(category,field,parentValue,params,requestOptions)
         }
 
 
@@ -755,11 +765,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Remove the option list scoped to one parent value (admin only)
  */
 export const useDeleteDependentFieldOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDependentFieldOptions>>, TError,{category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string;params?: DeleteDependentFieldOptionsParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteDependentFieldOptions>>,
         TError,
-        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string},
+        {category: 'window' | 'interiorDoor' | 'exteriorDoor';field: string;parentValue: string;params?: DeleteDependentFieldOptionsParams},
         TContext
       > => {
       return useMutation(getDeleteDependentFieldOptionsMutationOptions(options));
