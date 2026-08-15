@@ -7,6 +7,7 @@ import { useCreateQuote } from "@workspace/api-client-react";
 import { Shell } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -152,10 +153,17 @@ export default function NewQuotePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="jobAddress">Job Address</Label>
-                <Input 
-                  id="jobAddress" 
-                  placeholder="e.g. 123 Main St, City, ST 12345" 
-                  {...form.register("jobAddress")} 
+                <Controller
+                  name="jobAddress"
+                  control={form.control}
+                  render={({ field }) => (
+                    <AddressAutocomplete
+                      id="jobAddress"
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
                 {form.formState.errors.jobAddress && (
                   <p className="text-sm text-destructive font-medium">{form.formState.errors.jobAddress.message}</p>
