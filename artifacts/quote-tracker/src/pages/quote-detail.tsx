@@ -42,6 +42,7 @@ import { CopyButton } from "@/components/copy-button";
 import { formatRevisionsDigest } from "@/lib/copy-text";
 import { INTERIOR_DOOR_FIELDS, EXTERIOR_DOOR_FIELDS, LEGACY_DOOR_FIELDS, REMOVED_INTERIOR_DOOR_FIELDS } from "@/lib/spec-fields";
 import { SpecInput, useFieldOptions } from "@/components/spec-input";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 const sameTags = (a: string[], b: string[]) =>
   a.length === b.length && a.every((t) => b.includes(t));
@@ -748,10 +749,17 @@ export default function QuoteDetailPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="jobAddress">Job Address</Label>
-                      <Input 
-                        id="jobAddress" 
-                        placeholder="e.g. 123 Main St, City, ST 12345" 
-                        {...form.register("jobAddress")} 
+                      <Controller
+                        name="jobAddress"
+                        control={form.control}
+                        render={({ field }) => (
+                          <AddressAutocomplete
+                            id="jobAddress"
+                            value={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                          />
+                        )}
                       />
                       {form.formState.errors.jobAddress && (
                         <p className="text-sm text-destructive font-medium">{form.formState.errors.jobAddress.message}</p>
