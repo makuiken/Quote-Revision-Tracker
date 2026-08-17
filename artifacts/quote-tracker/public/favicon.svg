@@ -1,16 +1,14 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background: primary dark green -->
   <rect width="180" height="180" rx="36" fill="#253d31"/>
-  <!-- Subtle inner border for depth -->
   <rect x="6" y="6" width="168" height="168" rx="30" stroke="#3a5e48" stroke-width="2"/>
-  <!-- K -->
   <text
-    x="42"
-    y="128"
+    x="90"
+    y="90"
     font-family="Georgia, 'Times New Roman', serif"
-    font-size="100"
+    font-size="88"
     font-weight="700"
     fill="#f0ebe0"
-    letter-spacing="-4"
+    text-anchor="middle"
+    dominant-baseline="central"
   >KQ</text>
 </svg>
