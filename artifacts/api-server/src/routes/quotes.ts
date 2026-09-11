@@ -85,6 +85,7 @@ import {
   getUserProfile,
   type AuthedRequest,
 } from "../middlewares/requireAuth";
+import { hasMeaningfulSignatureInk } from "../lib/validateSignaturePng";
 
 const router: IRouter = Router();
 
@@ -229,6 +230,31 @@ export function serializeQuote(
  * already-open documents become stale and must be reloaded before signing.
  */
 export const SIGNOFF_CONTENT_VERSION = 2;
+
+type SignoffSubmission = {
+  customerName: string;
+  stakeholderRole: "Homeowner" | "Contractor" | "Architect/Designer" | "Other";
+  signatureType: "typed" | "drawn";
+  signatureData: string;
+};
+
+export function validateSignoffSubmission(
+  input: SignoffSubmission,
+): { customerName: string; signatureData: string } | { error: string } {
+  const customerName = input.customerName.trim();
+  if (!customerName) return { error: "Signer name is required." };
+
+  const signatureData = input.signatureData.trim();
+  if (input.signatureType === "typed") {
+    if (!signatureData) return { error: "A typed signature is required." };
+    if (signatureData !== customerName) {
+      return { error: "The typed signature must match the signer name." };
+    }
+  } else if (!hasMeaningfulSignatureInk(signatureData)) {
+    return { error: "A drawn signature is required." };
+  }
+  return { customerName, signatureData };
+}
 
 /**
  * Opaque fingerprint of the signoff document content: the quote's last edit
@@ -1231,6 +1257,11 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const validated = validateSignoffSubmission(parsed.data);
+  if ("error" in validated) {
+    res.status(400).json({ error: validated.error });
+    return;
+  }
 
   const quote = await loadQuote(params.data.id, res);
   if (!quote) return;
@@ -1250,16 +1281,18 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
       .insert(signoffsTable)
       .values({
         quoteId: quote.id,
-        customerName: parsed.data.customerName,
+        customerName: validated.customerName,
+        stakeholderRole: parsed.data.stakeholderRole,
         signatureType: parsed.data.signatureType,
-        signatureData: parsed.data.signatureData,
+        signatureData: validated.signatureData,
       })
       .onConflictDoUpdate({
         target: signoffsTable.quoteId,
         set: {
-          customerName: parsed.data.customerName,
+          customerName: validated.customerName,
+          stakeholderRole: parsed.data.stakeholderRole,
           signatureType: parsed.data.signatureType,
-          signatureData: parsed.data.signatureData,
+          signatureData: validated.signatureData,
           signedAt: new Date(),
         },
       })

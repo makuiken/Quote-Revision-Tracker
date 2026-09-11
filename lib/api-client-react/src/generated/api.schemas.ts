@@ -319,6 +319,16 @@ export interface Revision {
   createdAt: string;
 }
 
+export type SignoffStakeholderRole = typeof SignoffStakeholderRole[keyof typeof SignoffStakeholderRole];
+
+
+export const SignoffStakeholderRole = {
+  Homeowner: 'Homeowner',
+  Contractor: 'Contractor',
+  'Architect/Designer': 'Architect/Designer',
+  Other: 'Other',
+} as const;
+
 export type SignoffSignatureType = typeof SignoffSignatureType[keyof typeof SignoffSignatureType];
 
 
@@ -331,6 +341,7 @@ export interface Signoff {
   id: number;
   quoteId: number;
   customerName: string;
+  stakeholderRole: SignoffStakeholderRole;
   signatureType: SignoffSignatureType;
   signatureData: string;
   signedAt: string;
@@ -444,6 +455,16 @@ export interface RevisionExclusionInput {
   excludedFromSignoff: boolean;
 }
 
+export type SignoffInputStakeholderRole = typeof SignoffInputStakeholderRole[keyof typeof SignoffInputStakeholderRole];
+
+
+export const SignoffInputStakeholderRole = {
+  Homeowner: 'Homeowner',
+  Contractor: 'Contractor',
+  'Architect/Designer': 'Architect/Designer',
+  Other: 'Other',
+} as const;
+
 export type SignoffInputSignatureType = typeof SignoffInputSignatureType[keyof typeof SignoffInputSignatureType];
 
 
@@ -455,6 +476,7 @@ export const SignoffInputSignatureType = {
 export interface SignoffInput {
   /** @minLength 1 */
   customerName: string;
+  stakeholderRole: SignoffInputStakeholderRole;
   signatureType: SignoffInputSignatureType;
   /** @minLength 1 */
   signatureData: string;

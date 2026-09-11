@@ -231,11 +231,17 @@ export default function SignoffPage() {
 
   const { quote, revisions, signoff } = detail;
 
-  const submitSignoff = (type: "typed" | "drawn", data: string) => {
+  const submitSignoff = (
+    signerName: string,
+    stakeholderRole: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+    type: "typed" | "drawn",
+    data: string,
+  ) => {
     saveSignoff.mutate({ 
       id: quoteId, 
       data: {
-        customerName: quote.customerName,
+        customerName: signerName,
+        stakeholderRole,
         signatureType: type,
         signatureData: data,
         documentVersion: detail.documentVersion,

@@ -276,22 +276,24 @@ test.describe.serial("quote-to-signoff flow", () => {
 
   test("save a typed signature", async ({ page }) => {
     await page.goto(`${quoteUrl}/signoff`);
-    await page.getByRole("button", { name: /type name/i }).click();
-    await page.locator("#typedName").fill(customerName);
+    await fillSignerIdentity(page, customerName, "Homeowner");
+    await page.getByRole("button", { name: /type signature/i }).click();
     await page.getByRole("button", { name: /confirm signature/i }).click();
     await expect(page.getByText(/electronically signed/i)).toBeVisible();
     await expect(page.getByText(customerName).first()).toBeVisible();
+    await expect(page.getByText(/homeowner/i)).toBeVisible();
   });
 
   test("editing a signed quote clears the typed signoff", async ({ page }) => {
     await editQuoteNotes(page, "Edited after typed signature");
     await page.goto(`${quoteUrl}/signoff`);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /type name/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
   });
 
   test("save a drawn signature", async ({ page }) => {
     await page.goto(`${quoteUrl}/signoff`);
+    await fillSignerIdentity(page, customerName, "Contractor");
     await page.getByRole("button", { name: /draw signature/i }).click();
 
     const canvas = page.locator("canvas");
@@ -307,6 +309,7 @@ test.describe.serial("quote-to-signoff flow", () => {
     await page.getByRole("button", { name: /confirm signature/i }).click();
     await expect(page.getByText(/electronically signed/i)).toBeVisible();
     await expect(page.getByAltText("Customer Signature")).toBeVisible();
+    await expect(page.getByText(/contractor/i)).toBeVisible();
   });
 
   test("editing a signed quote clears the drawn signoff", async ({ page }) => {
@@ -316,6 +319,117 @@ test.describe.serial("quote-to-signoff flow", () => {
     await expect(
       page.getByRole("button", { name: /draw signature/i }),
     ).toBeVisible();
+  });
+
+  test("signoff requires a name, role, and real signature", async ({ page }) => {
+    await page.goto(`${quoteUrl}/signoff`);
+
+    // An untouched drawing canvas cannot be submitted.
+    await page.getByRole("button", { name: /confirm signature/i }).click();
+    await expect(page.getByText(/please draw your signature/i)).toBeVisible();
+    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
+
+    // Typed signing validates both identity fields.
+    await page.getByRole("button", { name: /type signature/i }).click();
+    await page.getByRole("button", { name: /confirm signature/i }).click();
+    await expect(page.getByText(/please enter your full name/i)).toBeVisible();
+    await expect(page.getByText(/please select your role/i)).toBeVisible();
+
+    const quoteId = quoteUrl.split("/").pop();
+    const detail = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}`);
+      return res.json();
+    }, quoteId);
+    const blankPng = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 300;
+      canvas.height = 120;
+      return canvas.toDataURL("image/png");
+    });
+    const invalidDrawnStatuses = await page.evaluate(
+      async ({ id, version, blank }) => {
+        const submit = (signatureData: string) =>
+          fetch(`/api/quotes/${id}/signoff`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              customerName: "API Signer",
+              stakeholderRole: "Contractor",
+              signatureType: "drawn",
+              signatureData,
+              documentVersion: version,
+            }),
+          }).then((res) => res.status);
+        return [await submit("data:image/png;base64,not-a-png"), await submit(blank)];
+      },
+      { id: quoteId, version: detail.documentVersion, blank: blankPng },
+    );
+    expect(invalidDrawnStatuses).toEqual([400, 400]);
+
+    const invalidRoleStatus = await page.evaluate(
+      async ({ id, version }) => {
+        const res = await fetch(`/api/quotes/${id}/signoff`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName: "API Signer",
+            stakeholderRole: "Not A Role",
+            signatureType: "typed",
+            signatureData: "API Signer",
+            documentVersion: version,
+          }),
+        });
+        return res.status;
+      },
+      { id: quoteId, version: detail.documentVersion },
+    );
+    expect(invalidRoleStatus).toBe(400);
+
+    // The public token-gated route enforces and persists the same identity
+    // fields; clean up afterward so later serial tests remain unsigned.
+    const publicResult = await page.evaluate(async ({ id, blank }) => {
+      const linkRes = await fetch(`/api/quotes/${id}/share-link`, { method: "POST" });
+      const { token } = await linkRes.json();
+      const detailRes = await fetch(`/api/public/signoff/${token}`);
+      const publicDetail = await detailRes.json();
+      const blankRes = await fetch(`/api/public/signoff/${token}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: "Public Signer",
+          stakeholderRole: "Architect/Designer",
+          signatureType: "drawn",
+          signatureData: blank,
+          documentVersion: publicDetail.documentVersion,
+        }),
+      });
+      const saveRes = await fetch(`/api/public/signoff/${token}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: "Public Signer",
+          stakeholderRole: "Architect/Designer",
+          signatureType: "typed",
+          signatureData: "Public Signer",
+          documentVersion: publicDetail.documentVersion,
+        }),
+      });
+      return {
+        blankStatus: blankRes.status,
+        status: saveRes.status,
+        body: await saveRes.json(),
+      };
+    }, { id: quoteId, blank: blankPng });
+    expect(publicResult.blankStatus).toBe(400);
+    expect(publicResult.status).toBe(200);
+    expect(publicResult.body.customerName).toBe("Public Signer");
+    expect(publicResult.body.stakeholderRole).toBe("Architect/Designer");
+
+    const clearStatus = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/quotes/${id}/signoff`, { method: "DELETE" });
+      return res.status;
+    }, quoteId);
+    expect(clearStatus).toBe(204);
   });
 
   test("adding a revision to a signed quote warns and clears the signature", async ({ page }) => {
@@ -363,7 +477,7 @@ test.describe.serial("quote-to-signoff flow", () => {
 
   test("signing with a stale document version is rejected", async ({ page }) => {
     await page.goto(`${quoteUrl}/signoff`);
-    await expect(page.getByRole("button", { name: /type name/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
     const quoteId = quoteUrl.split("/").pop();
     const status = await page.evaluate(async (id) => {
       const res = await fetch(`/api/quotes/${id}/signoff`, {
@@ -371,6 +485,7 @@ test.describe.serial("quote-to-signoff flow", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerName: "Stale Signer",
+          stakeholderRole: "Other",
           signatureType: "typed",
           signatureData: "Stale Signer",
           documentVersion: "0000000000000000000000000000000000000000",
@@ -451,17 +566,27 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     await page.goto(`${quoteUrl}/signoff`);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /type name/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
   });
 });
 
 /** Sign the quote with a typed signature (from an unsigned state). */
 async function signTyped(page: Page): Promise<void> {
   await page.goto(`${quoteUrl}/signoff`);
-  await page.getByRole("button", { name: /type name/i }).click();
-  await page.locator("#typedName").fill(customerName);
+  await fillSignerIdentity(page, customerName, "Homeowner");
+  await page.getByRole("button", { name: /type signature/i }).click();
   await page.getByRole("button", { name: /confirm signature/i }).click();
   await expect(page.getByText(/electronically signed/i)).toBeVisible();
+}
+
+async function fillSignerIdentity(
+  page: Page,
+  name: string,
+  role: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+): Promise<void> {
+  await page.locator("#signerName").fill(name);
+  await page.getByTestId("stakeholder-role").click();
+  await page.getByRole("option", { name: role, exact: true }).click();
 }
 
 /** Edit the quote via the detail page, accepting the signature-removal warning if shown. */

@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { SignoffInputSignatureType } from './signoffInputSignatureType';
+import type { SignoffInputStakeholderRole } from './signoffInputStakeholderRole';
 
 export interface SignoffInput {
   /** @minLength 1 */
   customerName: string;
+  stakeholderRole: SignoffInputStakeholderRole;
   signatureType: SignoffInputSignatureType;
   /** @minLength 1 */
   signatureData: string;

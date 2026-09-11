@@ -1546,16 +1546,22 @@ components:
         id: { type: integer }
         quoteId: { type: integer }
         customerName: { type: string }
+        stakeholderRole:
+          type: string
+          enum: [Homeowner, Contractor, Architect/Designer, Other]
         signatureType:
           type: string
           enum: [typed, drawn]
         signatureData: { type: string }
         signedAt: { type: string, format: date-time }
-      required: [id, quoteId, customerName, signatureType, signatureData, signedAt]
+      required: [id, quoteId, customerName, stakeholderRole, signatureType, signatureData, signedAt]
     SignoffInput:
       type: object
       properties:
         customerName: { type: string, minLength: 1 }
+        stakeholderRole:
+          type: string
+          enum: [Homeowner, Contractor, Architect/Designer, Other]
         signatureType:
           type: string
           enum: [typed, drawn]
@@ -1564,7 +1570,7 @@ components:
           type: string
           minLength: 1
           description: The documentVersion the signer loaded; signing is rejected if the document has changed since
-      required: [customerName, signatureType, signatureData, documentVersion]
+      required: [customerName, stakeholderRole, signatureType, signatureData, documentVersion]
     DashboardSummary:
       type: object
       properties:

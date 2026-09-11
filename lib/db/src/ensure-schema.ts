@@ -58,6 +58,10 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `ALTER TABLE revisions ADD COLUMN IF NOT EXISTS categories text[]`,
   `ALTER TABLE revision_drafts ADD COLUMN IF NOT EXISTS categories text[]`,
 
+  // Signer identity: pre-existing signoffs remain readable as "Other", while
+  // all new signoffs must send an explicit role through API validation.
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS stakeholder_role text NOT NULL DEFAULT 'Other'`,
+
   // Admin-managed dropdown option lists for product spec fields.
   `CREATE TABLE IF NOT EXISTS field_options (
     id serial PRIMARY KEY,

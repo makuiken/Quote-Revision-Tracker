@@ -15,6 +15,7 @@ import {
   computeDocumentVersion,
   loadIncludedRevisions,
   lockQuoteRow,
+  validateSignoffSubmission,
 } from "./quotes";
 
 // Public, token-gated routes. No login required — access is granted by
@@ -102,6 +103,11 @@ router.put(
       res.status(400).json({ error: parsed.error.message });
       return;
     }
+    const validated = validateSignoffSubmission(parsed.data);
+    if ("error" in validated) {
+      res.status(400).json({ error: validated.error });
+      return;
+    }
 
     const quote = await loadQuoteByToken(params.data.token);
     if (!quote) {
@@ -124,16 +130,18 @@ router.put(
         .insert(signoffsTable)
         .values({
           quoteId: quote.id,
-          customerName: parsed.data.customerName,
+          customerName: validated.customerName,
+          stakeholderRole: parsed.data.stakeholderRole,
           signatureType: parsed.data.signatureType,
-          signatureData: parsed.data.signatureData,
+          signatureData: validated.signatureData,
         })
         .onConflictDoUpdate({
           target: signoffsTable.quoteId,
           set: {
-            customerName: parsed.data.customerName,
+            customerName: validated.customerName,
+            stakeholderRole: parsed.data.stakeholderRole,
             signatureType: parsed.data.signatureType,
-            signatureData: parsed.data.signatureData,
+            signatureData: validated.signatureData,
             signedAt: new Date(),
           },
         })

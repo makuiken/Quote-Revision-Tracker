@@ -517,6 +517,7 @@ export const GetQuoteResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
@@ -995,6 +996,7 @@ export const GetSignoffResponse = zod.union([zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
@@ -1015,6 +1017,7 @@ export const SaveSignoffParams = zod.object({
 
 export const SaveSignoffBody = zod.object({
   "customerName": zod.string().min(1),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string().min(1),
   "documentVersion": zod.string().min(1).describe('The documentVersion the signer loaded; signing is rejected if the document has changed since')
@@ -1024,6 +1027,7 @@ export const SaveSignoffResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
@@ -1141,6 +1145,7 @@ export const GetPublicSignoffResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
@@ -1163,6 +1168,7 @@ export const SavePublicSignoffParams = zod.object({
 
 export const SavePublicSignoffBody = zod.object({
   "customerName": zod.string().min(1),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string().min(1),
   "documentVersion": zod.string().min(1).describe('The documentVersion the signer loaded; signing is rejected if the document has changed since')
@@ -1172,6 +1178,7 @@ export const SavePublicSignoffResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()

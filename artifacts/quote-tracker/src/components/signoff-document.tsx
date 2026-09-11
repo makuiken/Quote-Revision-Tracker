@@ -5,11 +5,20 @@ import type { Quote, Revision, Signoff } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { categoryLabel } from "@/lib/revision-categories";
 
 export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void, onClear: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [hasInk, setHasInk] = useState(false);
+  const [showError, setShowError] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -62,6 +71,8 @@ export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => vo
     if (ctx) {
       ctx.lineTo(x, y);
       ctx.stroke();
+      setHasInk(true);
+      setShowError(false);
     }
   };
 
@@ -76,9 +87,15 @@ export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => vo
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
     onClear();
+    setHasInk(false);
+    setShowError(false);
   };
 
   const handleSave = () => {
+    if (!hasInk) {
+      setShowError(true);
+      return;
+    }
     const canvas = canvasRef.current;
     if (canvas) {
       onSave(canvas.toDataURL("image/png"));
@@ -103,6 +120,11 @@ export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => vo
           Draw Signature Here
         </div>
       </div>
+      {showError && (
+        <p className="text-sm text-red-600 font-medium" role="alert">
+          Please draw your signature before confirming.
+        </p>
+      )}
       <div className="flex gap-4">
         <Button type="button" variant="outline" onClick={handleClear} className="w-full">
           <RefreshCcw className="w-4 h-4 mr-2" /> Clear
@@ -145,22 +167,54 @@ export function SignoffDocument({
   quote: Quote;
   revisions: Revision[];
   signoff: Signoff | null;
-  onSubmit: (type: "typed" | "drawn", data: string) => void;
+  onSubmit: (
+    signerName: string,
+    stakeholderRole: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+    type: "typed" | "drawn",
+    data: string,
+  ) => void;
   /** When provided (internal view), shows hide/show controls per revision. */
   onToggleExclude?: (revision: Revision) => void;
 }) {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
   const [signMethod, setSignMethod] = useState<"draw" | "type">("draw");
-  const [typedName, setTypedName] = useState("");
+  const [signerName, setSignerName] = useState("");
+  const [stakeholderRole, setStakeholderRole] = useState<
+    "Homeowner" | "Contractor" | "Architect/Designer" | "Other" | ""
+  >("");
   const [nameError, setNameError] = useState(false);
+  const [roleError, setRoleError] = useState(false);
+
+  const validateIdentity = () => {
+    const validName = Boolean(signerName.trim());
+    const validRole = Boolean(stakeholderRole);
+    setNameError(!validName);
+    setRoleError(!validRole);
+    return validName && validRole;
+  };
 
   const handleSaveTyped = () => {
-    if (!typedName.trim()) {
+    if (!validateIdentity()) {
       setNameError(true);
       return;
     }
     setNameError(false);
-    onSubmit("typed", typedName);
+    onSubmit(
+      signerName.trim(),
+      stakeholderRole as "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+      "typed",
+      signerName.trim(),
+    );
+  };
+
+  const handleSaveDrawn = (dataUrl: string) => {
+    if (!validateIdentity()) return;
+    onSubmit(
+      signerName.trim(),
+      stakeholderRole as "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+      "drawn",
+      dataUrl,
+    );
   };
 
   return (
@@ -298,7 +352,12 @@ export function SignoffDocument({
           <div className="bg-gray-50 border border-gray-200 p-6 rounded-lg text-center flex flex-col items-center">
             <CheckCircle className="w-16 h-16 text-green-700 mb-4" />
             <h3 className="text-2xl font-serif font-bold text-green-800 mb-2">Electronically Signed</h3>
-            <p className="text-gray-600 mb-6">By {signoff.customerName} on {format(new Date(signoff.signedAt), "MMMM d, yyyy 'at' h:mm a")}</p>
+            <p className="text-gray-600">
+              By {signoff.customerName} · {signoff.stakeholderRole}
+            </p>
+            <p className="text-gray-600 mb-6">
+              Signed {format(new Date(signoff.signedAt), "MMMM d, yyyy 'at' h:mm a")}
+            </p>
 
             {signoff.signatureType === "drawn" ? (
               <div className="border-b-2 border-black inline-block px-12 pb-2">
@@ -329,6 +388,55 @@ export function SignoffDocument({
 
             {/* Digital Signing UI (hidden on print) */}
             <div className="print:hidden bg-gray-50 border border-gray-200 p-6 sm:p-8 rounded-lg">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div className="space-y-2">
+                  <Label htmlFor="signerName">Your full legal name</Label>
+                  <Input
+                    id="signerName"
+                    value={signerName}
+                    onChange={(e) => {
+                      setSignerName(e.target.value);
+                      setNameError(false);
+                    }}
+                    placeholder="e.g. John Doe"
+                    autoComplete="name"
+                    className="bg-white border-2 border-gray-300"
+                  />
+                  {nameError && (
+                    <p className="text-sm text-red-600 font-medium" role="alert">
+                      Please enter your full name.
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="stakeholderRole">Your role</Label>
+                  <Select
+                    value={stakeholderRole}
+                    onValueChange={(value) => {
+                      setStakeholderRole(
+                        value as "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+                      );
+                      setRoleError(false);
+                    }}
+                  >
+                    <SelectTrigger id="stakeholderRole" data-testid="stakeholder-role">
+                      <SelectValue placeholder="Select your role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Homeowner">Homeowner</SelectItem>
+                      <SelectItem value="Contractor">Contractor</SelectItem>
+                      <SelectItem value="Architect/Designer">Architect/Designer</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {roleError && (
+                    <p className="text-sm text-red-600 font-medium" role="alert">
+                      Please select your role.
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div className="flex gap-4 mb-6">
                 <Button
                   variant={signMethod === "draw" ? "default" : "outline"}
@@ -342,26 +450,21 @@ export function SignoffDocument({
                   onClick={() => setSignMethod("type")}
                   className={signMethod === "type" ? "bg-black text-white" : ""}
                 >
-                  Type Name
+                  Type Signature
                 </Button>
               </div>
 
               {signMethod === "draw" ? (
-                <SignaturePad onSave={(dataUrl) => onSubmit("drawn", dataUrl)} onClear={() => {}} />
+                <SignaturePad onSave={handleSaveDrawn} onClear={() => {}} />
               ) : (
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="typedName">Type your full legal name</Label>
-                    <Input
-                      id="typedName"
-                      value={typedName}
-                      onChange={(e) => { setTypedName(e.target.value); setNameError(false); }}
-                      placeholder="e.g. John Doe"
-                      className="font-serif text-2xl italic h-14 bg-white border-2 border-gray-300"
-                    />
-                    {nameError && (
-                      <p className="text-sm text-red-600 font-medium">Please type your full name to sign.</p>
-                    )}
+                  <div className="border border-gray-300 rounded-lg bg-white p-5 text-center">
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
+                      Signature preview
+                    </p>
+                    <p className="font-serif text-3xl italic min-h-10">
+                      {signerName.trim() || "Your name will appear here"}
+                    </p>
                   </div>
                   <Button onClick={handleSaveTyped} className="w-full bg-black text-white hover:bg-gray-800">
                     Confirm Signature

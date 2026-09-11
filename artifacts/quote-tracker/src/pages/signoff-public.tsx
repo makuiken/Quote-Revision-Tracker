@@ -47,12 +47,18 @@ export default function PublicSignoffPage() {
 
   const { quote, revisions, signoff } = detail;
 
-  const submitSignoff = (type: "typed" | "drawn", data: string) => {
+  const submitSignoff = (
+    signerName: string,
+    stakeholderRole: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+    type: "typed" | "drawn",
+    data: string,
+  ) => {
     savePublicSignoff.mutate(
       {
         token: token!,
         data: {
-          customerName: quote.customerName,
+          customerName: signerName,
+          stakeholderRole,
           signatureType: type,
           signatureData: data,
           documentVersion: detail.documentVersion,

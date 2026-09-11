@@ -141,6 +141,10 @@ export const signoffsTable = pgTable("signoffs", {
     .unique()
     .references(() => quotesTable.id, { onDelete: "cascade" }),
   customerName: text("customer_name").notNull(),
+  stakeholderRole: text("stakeholder_role")
+    .$type<"Homeowner" | "Contractor" | "Architect/Designer" | "Other">()
+    .notNull()
+    .default("Other"),
   signatureType: text("signature_type").notNull(),
   signatureData: text("signature_data").notNull(),
   signedAt: timestamp("signed_at", { withTimezone: true })
