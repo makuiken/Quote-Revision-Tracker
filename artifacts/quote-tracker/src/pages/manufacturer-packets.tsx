@@ -436,7 +436,7 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
            <div className="space-y-1.5">
              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Manufacturer</label>
              <Input
-               placeholder="e.g. Andersen, Therma-Tru"
+               placeholder="e.g. Andersen, Reeb"
                value={manufacturer}
                onChange={(e) => setManufacturer(e.target.value)}
                disabled={isUploading}
