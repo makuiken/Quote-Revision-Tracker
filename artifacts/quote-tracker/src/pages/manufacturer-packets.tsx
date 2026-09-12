@@ -1006,6 +1006,7 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
   const deleteManifest = useClearManufacturerPacketManifest();
 
   const [entries, setEntries] = useState<{packetId: number, pageNumber: number, id: string}[]>([]);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [policyConfirmed, setPolicyConfirmed] = useState(false);
 
   useEffect(() => {
@@ -1089,7 +1090,11 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
     return <Card className="h-full flex items-center justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></Card>;
   }
 
+  const previewEntry = previewIndex === null ? null : entries[previewIndex];
+  const previewPacket = previewEntry ? packets.find((packet) => packet.id === previewEntry.packetId) : null;
+
   return (
+    <>
     <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="bg-muted/30 border-b pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -1161,9 +1166,16 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
                       <Button type="button" size="icon" variant="ghost" className="h-6 w-6" data-testid={`button-move-customer-page-down-${idx}`} aria-label={`Move customer page ${idx + 1} down`} title="Move page down" onClick={() => moveDown(idx)} disabled={idx === entries.length - 1}>▼</Button>
                     </div>
                     
-                    <div className="w-16 h-20 shrink-0 border bg-gray-100 flex items-center justify-center overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-16 h-20 shrink-0 border bg-gray-100 flex items-center justify-center overflow-hidden cursor-zoom-in rounded-sm hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      onClick={() => setPreviewIndex(idx)}
+                      aria-label={`Expand ${p?.originalName || "manufacturer quote"} page ${entry.pageNumber}`}
+                      title="Open a larger page preview"
+                      data-testid={`button-preview-customer-page-${idx}`}
+                    >
                        <MiniPreview quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} />
-                    </div>
+                    </button>
                     
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-sm truncate">{p?.originalName || "Unknown packet"}</div>
@@ -1181,10 +1193,39 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
         </div>
       </div>
     </Card>
+    <Dialog open={previewIndex !== null} onOpenChange={(open) => { if (!open) setPreviewIndex(null); }}>
+      <DialogContent className="max-w-5xl max-h-[95vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{previewPacket?.originalName || "Manufacturer quote"}</DialogTitle>
+          <DialogDescription>
+            Page {previewEntry?.pageNumber} · Customer document position {(previewIndex ?? 0) + 1} of {entries.length}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border bg-gray-100 p-3">
+          {previewEntry && (
+            <MiniPreview
+              quoteId={quoteId}
+              packetId={previewEntry.packetId}
+              pageNumber={previewEntry.pageNumber}
+              expanded
+            />
+          )}
+        </div>
+        <DialogFooter className="sm:justify-between">
+          <Button type="button" variant="outline" onClick={() => setPreviewIndex((index) => index === null ? null : Math.max(0, index - 1))} disabled={previewIndex === 0}>
+            Previous page
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setPreviewIndex((index) => index === null ? null : Math.min(entries.length - 1, index + 1))} disabled={previewIndex === entries.length - 1}>
+            Next page
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
-function MiniPreview({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
+function MiniPreview({ quoteId, packetId, pageNumber, expanded = false }: { quoteId: number, packetId: number, pageNumber: number, expanded?: boolean }) {
   const { data: blob } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber);
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -1195,5 +1236,11 @@ function MiniPreview({ quoteId, packetId, pageNumber }: { quoteId: number, packe
     }
     return undefined;
   }, [blob]);
-  return url ? <img src={url} alt={`Clean page ${pageNumber} preview`} className="w-full h-full object-cover" /> : <Loader2 aria-label="Loading page preview" className="w-4 h-4 animate-spin text-muted-foreground" />;
+  return url ? (
+    <img
+      src={url}
+      alt={`Clean page ${pageNumber} preview`}
+      className={expanded ? "block w-full h-auto max-h-[72vh] object-contain mx-auto" : "w-full h-full object-cover"}
+    />
+  ) : <Loader2 aria-label="Loading page preview" className="w-4 h-4 animate-spin text-muted-foreground" />;
 }
