@@ -55,6 +55,15 @@ export interface PdfAnalysis {
   warnings: string[];
 }
 
+type PdfPageBounds = {
+  left: number;
+  bottom: number;
+  right: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 export interface RenderPreviewOptions {
   dpi?: number;
   limits?: Partial<PacketEngineLimits>;
@@ -254,10 +263,14 @@ async function closeDocument(document: PdfJsDocument): Promise<void> {
   await document.loadingTask?.destroy();
 }
 
-function dimensionsFor(page: PdfJsPage, limits: PacketEngineLimits): { width: number; height: number; rotation: number } {
+function dimensionsFor(page: PdfJsPage, limits: PacketEngineLimits): PdfPageBounds & { rotation: number } {
   const [left, bottom, right, top] = page.view;
-  const width = Math.abs(right - left);
-  const height = Math.abs(top - bottom);
+  const pageLeft = Math.min(left ?? 0, right ?? 0);
+  const pageRight = Math.max(left ?? 0, right ?? 0);
+  const pageBottom = Math.min(bottom ?? 0, top ?? 0);
+  const pageTop = Math.max(bottom ?? 0, top ?? 0);
+  const width = pageRight - pageLeft;
+  const height = pageTop - pageBottom;
   if (
     !Number.isFinite(width) ||
     !Number.isFinite(height) ||
@@ -268,60 +281,188 @@ function dimensionsFor(page: PdfJsPage, limits: PacketEngineLimits): { width: nu
   ) {
     throw new PacketEngineError("LIMIT_EXCEEDED", "PDF page dimensions are outside configured bounds.");
   }
-  return { width, height, rotation: ((page.rotate % 360) + 360) % 360 };
+  return {
+    left: pageLeft,
+    bottom: pageBottom,
+    right: pageRight,
+    top: pageTop,
+    width,
+    height,
+    rotation: ((page.rotate % 360) + 360) % 360,
+  };
 }
 
-function textLinesFromContent(items: readonly unknown[], width: number, height: number): TextLine[] {
-  const lines = new Map<string, { text: string[]; x: number; y: number; right: number; bottom: number }>();
-  for (const value of items) {
-    if (typeof value !== "object" || value === null) continue;
-    const item = value as {
-      str?: unknown;
-      width?: unknown;
-      height?: unknown;
-      transform?: unknown;
-    };
-    if (typeof item.str !== "string" || !Array.isArray(item.transform) || item.transform.length < 6) continue;
-    const transform = item.transform as number[];
-    const x = transform[4];
-    const baseline = transform[5];
-    const itemWidth = typeof item.width === "number" ? Math.abs(item.width) : 0;
-    const itemHeight = typeof item.height === "number" && item.height > 0 ? item.height : Math.abs(transform[3]) || 8;
-    if (![x, baseline, itemWidth, itemHeight].every(Number.isFinite)) continue;
-    const key = `${Math.round(baseline * 2)}`;
-    const current = lines.get(key) ?? {
-      text: [],
-      x,
-      y: baseline,
-      right: x,
-      bottom: baseline - itemHeight,
-    };
-    current.text.push(item.str);
-    current.x = Math.min(current.x, x);
-    current.right = Math.max(current.right, x + itemWidth);
-    current.y = Math.max(current.y, baseline);
-    current.bottom = Math.min(current.bottom, baseline - itemHeight);
-    lines.set(key, current);
+type TextFragment = {
+  text: string;
+  bounds: { left: number; bottom: number; right: number; top: number };
+  angle: number;
+  normal: number;
+  alongStart: number;
+  alongEnd: number;
+  baselineTolerance: number;
+};
+
+function normalizedPdfBounds(
+  bounds: { left: number; bottom: number; right: number; top: number },
+  page: PdfPageBounds,
+): NormalizedRect | undefined {
+  const left = Math.max(page.left, Math.min(page.right, bounds.left));
+  const right = Math.max(page.left, Math.min(page.right, bounds.right));
+  const bottom = Math.max(page.bottom, Math.min(page.top, bounds.bottom));
+  const top = Math.max(page.bottom, Math.min(page.top, bounds.top));
+  if (right <= left || top <= bottom) return undefined;
+  const normalized = {
+    x: (left - page.left) / page.width,
+    y: (page.top - top) / page.height,
+    width: (right - left) / page.width,
+    height: (top - bottom) / page.height,
+  };
+  return isNormalizedRect(normalized) ? normalized : undefined;
+}
+
+function canonicalTextAngle(angle: number): number {
+  let canonical = angle % Math.PI;
+  if (canonical < -Math.PI / 2) canonical += Math.PI;
+  if (canonical >= Math.PI / 2) canonical -= Math.PI;
+  return canonical;
+}
+
+function fragmentFromTextItem(value: unknown): TextFragment | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const item = value as {
+    str?: unknown;
+    width?: unknown;
+    height?: unknown;
+    transform?: unknown;
+  };
+  if (typeof item.str !== "string" || item.str.trim().length === 0) return undefined;
+  if (!Array.isArray(item.transform) || item.transform.length < 6) return undefined;
+
+  const transform = item.transform as number[];
+  const [a, b, c, d, e, f] = transform;
+  const itemWidth = typeof item.width === "number" ? Math.abs(item.width) : 0;
+  const itemHeight = typeof item.height === "number" && item.height > 0
+    ? item.height
+    : Math.hypot(c ?? 0, d ?? 0) || Math.hypot(a ?? 0, b ?? 0) || 8;
+  const xScale = Math.hypot(a ?? 0, b ?? 0);
+  const yScale = Math.hypot(c ?? 0, d ?? 0);
+  if (
+    ![a, b, c, d, e, f, itemWidth, itemHeight, xScale, yScale].every(
+      (part) => typeof part === "number" && Number.isFinite(part),
+    ) ||
+    xScale <= 0 ||
+    yScale <= 0
+  ) {
+    return undefined;
   }
 
-  return [...lines.values()]
-    .map((line) => {
-      const padding = 2;
-      const left = Math.max(0, line.x - padding);
-      const right = Math.min(width, line.right + padding);
-      const bottom = Math.max(0, line.bottom - padding);
-      const top = Math.min(height, line.y + padding);
-      return {
-        text: line.text.join(" ").replace(/\s+/g, " ").trim(),
-        bounds: {
-          x: left / width,
-          y: 1 - top / height,
-          width: Math.max(0, right - left) / width,
-          height: Math.max(0, top - bottom) / height,
+  // Text item transforms are in PDF user space. item.width/item.height are
+  // already user-space lengths, while the transform's first two columns carry
+  // their direction. Using both columns handles vertical/rotated text instead
+  // of assuming every item is horizontal and anchored at its baseline.
+  const xDirection = [(a ?? 0) / xScale, (b ?? 0) / xScale] as const;
+  const yDirection = [(c ?? 0) / yScale, (d ?? 0) / yScale] as const;
+  const advance = itemWidth > 0 ? itemWidth : xScale * Math.max(1, item.str.length * 0.25);
+  const corners = [
+    [e ?? 0, f ?? 0],
+    [(e ?? 0) + xDirection[0] * advance, (f ?? 0) + xDirection[1] * advance],
+    [(e ?? 0) + yDirection[0] * itemHeight, (f ?? 0) + yDirection[1] * itemHeight],
+    [
+      (e ?? 0) + xDirection[0] * advance + yDirection[0] * itemHeight,
+      (f ?? 0) + xDirection[1] * advance + yDirection[1] * itemHeight,
+    ],
+  ];
+  const angle = canonicalTextAngle(Math.atan2(xDirection[1], xDirection[0]));
+  const alongDirection = [Math.cos(angle), Math.sin(angle)] as const;
+  const normalDirection = [-Math.sin(angle), Math.cos(angle)] as const;
+  const along = corners.map(([x, y]) => x * alongDirection[0] + y * alongDirection[1]);
+  const normal = (e ?? 0) * normalDirection[0] + (f ?? 0) * normalDirection[1];
+  return {
+    text: item.str,
+    bounds: {
+      left: Math.min(...corners.map(([x]) => x)),
+      right: Math.max(...corners.map(([x]) => x)),
+      bottom: Math.min(...corners.map(([, y]) => y)),
+      top: Math.max(...corners.map(([, y]) => y)),
+    },
+    angle,
+    normal,
+    alongStart: Math.min(...along),
+    alongEnd: Math.max(...along),
+    baselineTolerance: Math.max(1.5, Math.min(4, yScale * 0.22)),
+  };
+}
+
+/**
+ * Converts PDF.js text items into tight top-left-origin rectangles. The page
+ * view box is required because CropBox coordinates need not start at (0, 0).
+ * Rows are split at large horizontal/along-text gaps so two columns sharing a
+ * baseline never become one giant administrative rectangle.
+ */
+export function textLinesFromContent(
+  items: readonly unknown[],
+  page: Pick<PdfPageBounds, "left" | "bottom" | "right" | "top" | "width" | "height">,
+): TextLine[] {
+  const fragments = items
+    .map(fragmentFromTextItem)
+    .filter((fragment): fragment is TextFragment => Boolean(fragment));
+  const rows: Array<{ angle: number; normal: number; fragments: TextFragment[] }> = [];
+  const angleTolerance = Math.PI / 36;
+  for (const fragment of fragments) {
+    const row = rows.find(
+      (candidate) =>
+        Math.abs(candidate.angle - fragment.angle) <= angleTolerance &&
+        Math.abs(candidate.normal - fragment.normal) <= fragment.baselineTolerance,
+    );
+    if (row) {
+      row.fragments.push(fragment);
+    } else {
+      rows.push({ angle: fragment.angle, normal: fragment.normal, fragments: [fragment] });
+    }
+  }
+
+  const result: TextLine[] = [];
+  for (const row of rows) {
+    const sorted = [...row.fragments].sort((left, right) => left.alongStart - right.alongStart);
+    let segment: TextFragment[] = [];
+    const flush = () => {
+      if (segment.length === 0) return;
+      const bounds = segment.reduce(
+        (combined, fragment) => ({
+          left: Math.min(combined.left, fragment.bounds.left),
+          right: Math.max(combined.right, fragment.bounds.right),
+          bottom: Math.min(combined.bottom, fragment.bounds.bottom),
+          top: Math.max(combined.top, fragment.bounds.top),
+        }),
+        { left: Infinity, right: -Infinity, bottom: Infinity, top: -Infinity },
+      );
+      const textPadding = 1.5;
+      const normalizedBounds = normalizedPdfBounds(
+        {
+          left: bounds.left - textPadding,
+          right: bounds.right + textPadding,
+          bottom: bounds.bottom - textPadding,
+          top: bounds.top + textPadding,
         },
-      };
-    })
-    .filter((line) => line.text.length > 0 && isNormalizedRect(line.bounds));
+        page,
+      );
+      const text = segment.map((fragment) => fragment.text).join(" ").replace(/\s+/g, " ").trim();
+      if (text && normalizedBounds) result.push({ text, bounds: normalizedBounds });
+      segment = [];
+    };
+    for (const fragment of sorted) {
+      const previous = segment[segment.length - 1];
+      const gap = previous ? fragment.alongStart - previous.alongEnd : 0;
+      // A gap of several font heights is a column/table-cell boundary, not a
+      // word gap. This is intentionally conservative for administrative
+      // matching: separate fields must not be merged into one redaction.
+      const splitThreshold = Math.max(12, fragment.baselineTolerance * 8);
+      if (previous && gap > splitThreshold) flush();
+      segment.push(fragment);
+    }
+    flush();
+  }
+  return result;
 }
 
 function pageText(lines: readonly TextLine[]): string {
@@ -339,24 +480,22 @@ function multiplyMatrices(left: number[], right: number[]): number[] {
   ];
 }
 
-function rectForImageTransform(matrix: number[], width: number, height: number): NormalizedRect | undefined {
+function rectForImageTransform(matrix: number[], page: PdfPageBounds): NormalizedRect | undefined {
   const points = [
     [0, 0],
     [1, 0],
     [0, 1],
     [1, 1],
   ].map(([x, y]) => [matrix[0]! * x + matrix[2]! * y + matrix[4]!, matrix[1]! * x + matrix[3]! * y + matrix[5]!]);
-  const left = Math.max(0, Math.min(...points.map(([x]) => x!)));
-  const right = Math.min(width, Math.max(...points.map(([x]) => x!)));
-  const bottom = Math.max(0, Math.min(...points.map(([, y]) => y!)));
-  const top = Math.min(height, Math.max(...points.map(([, y]) => y!)));
-  const bounds = {
-    x: left / width,
-    y: 1 - top / height,
-    width: (right - left) / width,
-    height: (top - bottom) / height,
-  };
-  return isNormalizedRect(bounds) ? bounds : undefined;
+  return normalizedPdfBounds(
+    {
+      left: Math.min(...points.map(([x]) => x!)),
+      right: Math.max(...points.map(([x]) => x!)),
+      bottom: Math.min(...points.map(([, y]) => y!)),
+      top: Math.max(...points.map(([, y]) => y!)),
+    },
+    page,
+  );
 }
 
 /**
@@ -367,8 +506,7 @@ function rectForImageTransform(matrix: number[], width: number, height: number):
 function imagePlacementsFromOperators(
   operatorList: { fnArray: number[]; argsArray: unknown[][] },
   ops: Record<string, number>,
-  width: number,
-  height: number,
+  page: PdfPageBounds,
 ): ImagePlacement[] {
   const paintOps = new Set([ops.paintImageXObject, ops.paintJpegXObject, ops.paintImageMaskXObject]);
   const stack: number[][] = [];
@@ -389,7 +527,7 @@ function imagePlacementsFromOperators(
         transform = multiplyMatrices(transform, next as number[]);
       }
     } else if (paintOps.has(operation) && args.length > 0) {
-      const bounds = rectForImageTransform(transform, width, height);
+      const bounds = rectForImageTransform(transform, page);
       if (bounds) placements.push({ key: String(args[0]), bounds });
     }
   }
@@ -513,13 +651,20 @@ export async function analyzePdf(bytes: Buffer, manufacturer?: string): Promise<
       assertWithinDeadline(startedAt, limits);
       const page = await document.getPage(pageNumber);
       try {
-        const { width, height, rotation } = dimensionsFor(page, limits);
-        const lines = textLinesFromContent((await page.getTextContent()).items, width, height);
+        const dimensions = dimensionsFor(page, limits);
+        const lines = textLinesFromContent((await page.getTextContent()).items, dimensions);
         const { pdfjs } = await loadLibraries();
-        const images = imagePlacementsFromOperators(await page.getOperatorList(), pdfjs.OPS, width, height);
+        const images = imagePlacementsFromOperators(await page.getOperatorList(), pdfjs.OPS, dimensions);
         const text = pageText(lines);
         documentText += `\n${text}`;
-        drafts.push({ pageNumber, width, height, rotation, lines, images });
+        drafts.push({
+          pageNumber,
+          width: dimensions.width,
+          height: dimensions.height,
+          rotation: dimensions.rotation,
+          lines,
+          images,
+        });
       } finally {
         page.cleanup();
       }
@@ -537,7 +682,7 @@ export async function analyzePdf(bytes: Buffer, manufacturer?: string): Promise<
     const pages = drafts.map((draft) => {
       const text = pageText(draft.lines);
       const pageType = classifyPacketPage(draft.pageNumber, document.numPages, text, profile);
-      const regions = findAdministrativeRegions(draft.lines).map((region) =>
+      const regions = findAdministrativeRegions(draft.lines, { profile, pageType }).map((region) =>
         profile === "unknown" ? { ...region, suggested: false } : region,
       );
       for (const image of draft.images) {
@@ -552,10 +697,10 @@ export async function analyzePdf(bytes: Buffer, manufacturer?: string): Promise<
               : "repeated visual mark (manual review required)",
             bounds: image.bounds,
             confidence: isMarvinLogoCandidate ? 0.85 : 0.65,
-            // A narrow, repeated Marvin mark is a vendor-logo candidate. It
-            // remains explicitly reviewable, but is surfaced through the
-            // service adapter so an admin can retain or remove it manually.
-            suggested: isMarvinLogoCandidate,
+            // Image identity is not enough to distinguish a dealer logo from a
+            // product mark, drawing, QR code, or technical illustration. Keep
+            // every visual candidate manual-review-only.
+            suggested: false,
           });
         }
       }
@@ -571,12 +716,18 @@ export async function analyzePdf(bytes: Buffer, manufacturer?: string): Promise<
         suggestedBrandingRects: regions.filter((region) => region.suggested).map((region) => region.bounds),
       };
     });
+    const unknownPages = pages
+      .filter((page) => page.pageType === "unknown")
+      .map((page) => page.pageNumber);
     const warnings =
       profile === "unknown"
         ? ["Unknown manufacturer/layout: no automatic branding bounds were proposed; manual review is required."]
         : [
             "Suggested bounds are limited to narrow dealer/admin identity text. Review each selection before sanitizing.",
             "Product specifications, technical manufacturer names, prices, terms, warranties, and dates are not automatically selected.",
+            ...(unknownPages.length > 0
+              ? [`Unknown page layout on page${unknownPages.length === 1 ? "" : "s"} ${unknownPages.join(", ")}; manual review is required.`]
+              : []),
           ];
     return { pageCount: document.numPages, profile, pages, warnings };
   } finally {

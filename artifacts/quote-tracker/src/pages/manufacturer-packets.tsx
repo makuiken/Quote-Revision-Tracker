@@ -7,6 +7,8 @@ import { Shell } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toaster";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   useGetQuote,
   useListManufacturerPackets, 
@@ -36,8 +38,8 @@ export default function ManufacturerPacketsPage() {
         <Link href={`/quotes/${quoteId}`} className="inline-flex items-center text-sm font-bold text-muted-foreground hover:text-primary transition-colors mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to Quote
         </Link>
-        <h1 className="text-3xl font-serif font-bold text-primary">Manufacturer Packets</h1>
-        <p className="text-muted-foreground mt-1">Upload and sanitize manufacturer PDF quotes for customer review.</p>
+        <h1 className="text-3xl font-serif font-bold text-primary">Manufacturer Quotes</h1>
+        <p className="text-muted-foreground mt-1">Upload, clean up, and publish manufacturer quote pages for customer review.</p>
       </div>
       <PacketsManager quoteId={quoteId} />
     </Shell>
@@ -76,16 +78,36 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
   }, [packets, activePacketId]);
 
   const activePacket = typeof activePacketId === 'number' ? packets.find(p => p.id === activePacketId) || null : null;
+  const nextStep = packets.length === 0
+    ? "Upload the first manufacturer quote PDF."
+    : packets.some(packet => packet.status === "needs_review")
+      ? "Review the suggested redactions on the quote marked Needs Review."
+      : packets.some(packet => packet.status === "awaiting_upload" || packet.status === "queued" || packet.status === "processing")
+        ? "Wait for the manufacturer quote to finish processing, then review it."
+      : packets.some(packet => packet.status === "ready_for_approval")
+        ? "Open the clean preview, then choose the pages your customer should see."
+        : packets.some(packet => packet.status === "approved")
+          ? "Choose and order customer pages, then publish the customer document."
+          : "Review the manufacturer quote status and try again if processing failed.";
   
   const deletePacket = useDeleteManufacturerPacket();
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
-      <div className="w-full lg:w-1/3 xl:w-1/4 space-y-4">
-        <UploadCard quoteId={quoteId} />
+    <>
+      <WorkflowGuide
+        quoteId={quoteId}
+        quoteSigned={quote?.signed ?? false}
+        hasPublishedDocument={packets.some(packet => packet.status === "approved")}
+        nextStep={nextStep}
+      />
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="w-full lg:w-1/3 xl:w-1/4 space-y-4">
+          <UploadCard quoteId={quoteId} />
         
         <button
           onClick={() => setActivePacketId('manifest')}
+          data-testid="button-customer-document"
+          aria-label="Open customer document pages"
           className={`w-full text-left p-4 rounded-lg border-2 transition-colors flex items-center justify-between ${
             activePacketId === 'manifest' 
               ? "border-primary bg-primary/5 shadow-sm" 
@@ -93,24 +115,26 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
           }`}
         >
           <div>
-            <div className="font-bold text-base">Publication Manifest</div>
-            <div className="text-xs text-muted-foreground mt-0.5">Manage customer-facing PDF</div>
+            <div className="font-bold text-base">Customer Document</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Choose and order pages to publish</div>
           </div>
         </button>
         
         <Card>
           <CardHeader className="py-4">
-            <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">Source Packets</CardTitle>
+            <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">Uploaded Manufacturer Quotes</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0 pb-4 px-4">
             {isLoading && <div className="text-center p-4"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" /></div>}
             {!isLoading && packets.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">No packets uploaded yet.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">No manufacturer quotes uploaded yet.</p>
             )}
             {packets.map(packet => (
               <div key={packet.id} className="relative group">
                 <button
                   onClick={() => setActivePacketId(packet.id)}
+                  data-testid={`button-manufacturer-quote-${packet.id}`}
+                  aria-label={`Open ${packet.originalName}`}
                   className={`w-full text-left p-3 pr-10 rounded-lg border-2 transition-colors ${
                     activePacketId === packet.id 
                       ? "border-primary bg-primary/5" 
@@ -121,20 +145,24 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
                     <span className="font-bold text-sm truncate pr-2">{packet.originalName}</span>
                   </div>
                   <div className="text-xs text-muted-foreground flex justify-between items-center">
-                    <span className="truncate pr-2">{packet.manufacturer || "Unknown Mfg"}</span>
+                    <span className="truncate pr-2">{packet.manufacturer || "Manufacturer not identified"}</span>
                     <StatusBadge status={packet.status} />
                   </div>
                 </button>
                 <Button 
                   size="icon" 
                   variant="ghost" 
-                  className="absolute right-1 top-1 h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  type="button"
+                  data-testid={`button-delete-manufacturer-quote-${packet.id}`}
+                  aria-label={`Delete ${packet.originalName}`}
+                  title="Delete this uploaded quote"
+                  className="absolute right-1 top-1 h-8 w-8 text-muted-foreground hover:text-destructive opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm("Delete this packet? This will remove its pages from the manifest if published.")) {
+                    if (confirm(`Delete this uploaded manufacturer quote? Any customer pages from it will be removed. ${quote?.signed ? "This quote is signed, so the customer will need to sign again." : "Only do this after a replacement is published."}`)) {
                       deletePacket.mutate({ id: quoteId, packetId: packet.id }, {
                         onSuccess: () => {
-                          toast({ title: "Packet deleted" });
+                          toast({ title: "Manufacturer quote deleted" });
                           queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
                           if (activePacketId === packet.id) setActivePacketId('manifest');
                         }
@@ -148,24 +176,86 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
             ))}
           </CardContent>
         </Card>
-      </div>
+        </div>
       
-      <div className="w-full lg:w-2/3 xl:w-3/4">
-        {activePacketId === 'manifest' ? (
-          <ManifestBuilder quoteId={quoteId} quoteSigned={quote?.signed ?? false} packets={packets.filter(p => p.status === 'ready_for_approval' || p.status === 'approved')} />
-        ) : activePacket ? (
-          <PacketDetails key={activePacket.id} quoteId={quoteId} packet={activePacket} />
-        ) : (
-          <Card className="h-full min-h-[400px] flex items-center justify-center border-dashed bg-muted/20">
-            <div className="text-center max-w-md mx-auto p-6">
-              <FileText className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-foreground mb-2">No Selection</h3>
-              <p className="text-sm text-muted-foreground">Select the manifest or a packet from the sidebar.</p>
-            </div>
-          </Card>
-        )}
+        <div className="w-full lg:w-2/3 xl:w-3/4">
+          {activePacketId === 'manifest' ? (
+            <ManifestBuilder quoteId={quoteId} quoteSigned={quote?.signed ?? false} packets={packets.filter(p => p.status === 'ready_for_approval' || p.status === 'approved')} />
+          ) : activePacket ? (
+            <PacketDetails key={activePacket.id} quoteId={quoteId} packet={activePacket} />
+          ) : (
+            <Card className="h-full min-h-[400px] flex items-center justify-center border-dashed bg-muted/20">
+              <div className="text-center max-w-md mx-auto p-6">
+                <FileText className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-foreground mb-2">No Selection</h3>
+                <p className="text-sm text-muted-foreground">Select the customer document or an uploaded quote from the sidebar.</p>
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
-    </div>
+    </>
+  );
+}
+
+function WorkflowGuide({ quoteId, quoteSigned, hasPublishedDocument, nextStep }: { quoteId: number; quoteSigned: boolean; hasPublishedDocument: boolean; nextStep: string }) {
+  const steps = [
+    ["1", "Upload a manufacturer quote", "Add the latest PDF. Keep the currently published document until a replacement is ready."],
+    ["2", "Review and redact", "Check suggested private-detail boxes, then draw, move, or resize boxes where needed."],
+    ["3", "Generate a clean preview", "Submit your redactions and review the cleaned pages before sharing anything."],
+    ["4", "Choose customer pages", "Select only the pages the customer needs and arrange them in the right order."],
+    ["5", "Publish the customer document", "Publishing makes the selected clean pages the customer-facing version."],
+    ["6", "Customer signoff", "Open Signoff Document, share the no-login link, and ask the customer to review and sign."],
+  ] as const;
+
+  return (
+    <Card className="mb-6 border-primary/20 bg-primary/5" data-testid="card-manufacturer-workflow">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-xl">Six steps from quote PDF to customer signoff</CardTitle>
+        <CardDescription>
+          Follow the steps in order. A clean preview is never published until you choose the pages and click Publish Customer Document.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {steps.map(([number, title, description]) => (
+            <li key={number} className="flex gap-3 rounded-md border border-primary/15 bg-white/70 p-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground" aria-hidden="true">
+                {number}
+              </span>
+              <div>
+                <h3 className="font-bold text-foreground">{title}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="rounded-md border border-primary/20 bg-white p-3 text-sm text-foreground" data-testid="text-manufacturer-next-step">
+          <strong>Next step:</strong> {nextStep}
+          {hasPublishedDocument && (
+            <Link href={`/quotes/${quoteId}/signoff`} className="ml-2 font-bold text-primary underline underline-offset-2 hover:no-underline" data-testid="link-open-signoff-document">
+              Open Signoff Document
+            </Link>
+          )}
+        </div>
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" data-testid="card-manufacturer-replacement-guidance">
+          <h3 className="font-bold">Replacing a changed manufacturer quote</h3>
+          <p className="mt-1">
+            Upload the replacement as a new quote and keep the old published pages in place while you review and clean the replacement.
+            When the replacement is ready, choose its pages and publish the customer document; that single publish swaps the customer-facing pages.
+            Only then delete the old uploaded quote if you no longer need it.
+          </p>
+          <p className="mt-2 font-medium">
+            {quoteSigned
+              ? "This quote is already signed. Publishing a replacement removes that signature, so the customer must review the new document and sign again."
+              : "If the customer signs before you publish a replacement, the replacement will require the customer to review and sign again."}
+          </p>
+          <p className="mt-2">
+            Deleting an uploaded quote can also remove the current signoff, even when its pages are no longer selected. Keep old quotes for the record unless you are ready to request another signature.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -175,8 +265,8 @@ function StatusBadge({ status }: { status: string }) {
     queued: { label: "Queued", className: "bg-blue-100 text-blue-800" },
     processing: { label: "Processing", className: "bg-blue-100 text-blue-800" },
     needs_review: { label: "Needs Review", className: "bg-amber-100 text-amber-800" },
-    ready_for_approval: { label: "Approve", className: "bg-purple-100 text-purple-800" },
-    approved: { label: "Approved", className: "bg-green-100 text-green-800" },
+    ready_for_approval: { label: "Clean Preview Ready", className: "bg-purple-100 text-purple-800" },
+    approved: { label: "Published", className: "bg-green-100 text-green-800" },
     failed: { label: "Failed", className: "bg-red-100 text-red-800" },
   };
   const m = map[status] || { label: status, className: "bg-gray-100 text-gray-800" };
@@ -222,10 +312,10 @@ function UploadCard({ quoteId }: { quoteId: number }) {
         packetId: req.packet.id
       });
       
-      toast({ title: "Packet uploaded", description: "Processing started." });
+       toast({ title: "Manufacturer quote uploaded", description: "Processing started. We will mark it ready for review when analysis finishes." });
       queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
     } catch (err: any) {
-      toast({ title: "Upload error", description: err.message || "Failed to upload packet.", variant: "destructive" });
+      toast({ title: "Upload error", description: err.message || "Failed to upload the manufacturer quote.", variant: "destructive" });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -234,7 +324,11 @@ function UploadCard({ quoteId }: { quoteId: number }) {
 
   return (
     <Card>
-      <CardContent className="p-4">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Step 1: Upload a quote</CardTitle>
+        <CardDescription className="text-xs">Choose the manufacturer PDF you received. You can prepare a replacement without changing the current customer document.</CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0 p-4">
         <input 
           ref={fileInputRef}
           type="file" 
@@ -245,11 +339,14 @@ function UploadCard({ quoteId }: { quoteId: number }) {
         />
         <Button 
           className="w-full font-bold" 
+          type="button"
+          data-testid="button-upload-manufacturer-quote"
+          title="Upload a manufacturer quote PDF"
           disabled={isUploading}
           onClick={() => fileInputRef.current?.click()}
         >
           {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-          {isUploading ? "Uploading..." : "Upload New Packet"}
+          {isUploading ? "Uploading..." : "Upload New Manufacturer Quote"}
         </Button>
       </CardContent>
     </Card>
@@ -261,7 +358,7 @@ function PacketDetails({ quoteId, packet }: { quoteId: number, packet: Manufactu
     return (
       <Card className="h-full flex flex-col items-center justify-center p-12 text-center border-dashed">
         <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
-        <h3 className="text-xl font-bold mb-2">Analyzing Document...</h3>
+        <h3 className="text-xl font-bold mb-2">Analyzing Manufacturer Quote...</h3>
         <p className="text-muted-foreground max-w-md">
           The system is extracting pages, detecting layouts, and finding areas to redact. This usually takes a few moments.
         </p>
@@ -281,9 +378,9 @@ function PacketDetails({ quoteId, packet }: { quoteId: number, packet: Manufactu
     return (
       <Card className="h-full flex flex-col items-center justify-center p-12 text-center border-green-200 bg-green-50/50">
         <CheckCircle className="w-16 h-16 text-green-600 mb-4" />
-        <h3 className="text-2xl font-bold text-green-900 mb-2">Packet Approved</h3>
+        <h3 className="text-2xl font-bold text-green-900 mb-2">Quote ready for customer pages</h3>
         <p className="text-green-700 max-w-md">
-          This packet has been sanitized and approved. It will be automatically attached to the customer's signoff document.
+          This quote has a clean preview and is included in the customer document. Open Customer Document to choose or reorder its pages.
         </p>
       </Card>
     );
@@ -308,7 +405,10 @@ function PacketFailed({ quoteId, packet }: { quoteId: number, packet: Manufactur
           {packet.failureMessage || "An unknown error occurred while analyzing the document."}
         </p>
         <Button 
+          type="button"
           variant="outline" 
+          data-testid="button-retry-manufacturer-quote"
+          title="Try analyzing this manufacturer quote again"
           disabled={retry.isPending}
           onClick={() => {
             retry.mutate({ id: quoteId, packetId: packet.id }, {
@@ -360,7 +460,7 @@ function PacketReview({ quoteId, packet }: { quoteId: number, packet: Manufactur
       data: { redactionsByPage: redactions }
     }, {
       onSuccess: () => {
-        toast({ title: "Redactions submitted", description: "Packet queued for final generation." });
+        toast({ title: "Redactions submitted", description: "The clean preview is being generated." });
         queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
       },
       onError: (err: any) => {
@@ -387,21 +487,21 @@ function PacketReview({ quoteId, packet }: { quoteId: number, packet: Manufactur
     <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="bg-muted/30 border-b pb-4 flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Review & Redact</CardTitle>
+          <CardTitle>Step 2: Review & Redact</CardTitle>
           <CardDescription>
             {packet.status === "ready_for_approval"
-              ? "Review the sanitized preview, or correct the boxes and generate again. When satisfied, select pages in Publication Manifest."
-              : "Review suggested removals and draw or resize boxes over administrative details."}
+              ? "Step 3 is ready: review the clean preview, or return to the editor to correct boxes and generate it again. When satisfied, choose pages in Customer Document."
+              : "Review suggested removals and draw or resize boxes over private administrative details. Then submit them to generate a clean preview."}
           </CardDescription>
         </div>
         <div className="flex gap-4 items-center">
           <div className="flex items-center gap-2 bg-white rounded-md border p-1">
-            <Button size="sm" variant={viewMode === 'source' ? 'default' : 'ghost'} onClick={() => setViewMode('source')}>Editor</Button>
-            <Button size="sm" disabled={packet.status !== "ready_for_approval"} variant={viewMode === 'cleaned' ? 'default' : 'ghost'} onClick={() => setViewMode('cleaned')}>Sanitized Preview</Button>
+            <Button size="sm" type="button" data-testid="button-redaction-editor" title="Draw and adjust redaction boxes" variant={viewMode === 'source' ? 'default' : 'ghost'} onClick={() => setViewMode('source')}>Editor</Button>
+            <Button size="sm" type="button" data-testid="button-clean-preview" title={packet.status === "ready_for_approval" ? "View the generated clean preview" : "Submit redactions first to generate a clean preview"} disabled={packet.status !== "ready_for_approval"} variant={viewMode === 'cleaned' ? 'default' : 'ghost'} onClick={() => setViewMode('cleaned')}>Clean Preview</Button>
           </div>
-          <Button onClick={handleSave} disabled={submitRedactions.isPending} className="bg-black text-white">
+          <Button type="button" data-testid="button-generate-clean-preview" title="Submit redactions and generate the clean preview" onClick={handleSave} disabled={submitRedactions.isPending} className="bg-black text-white">
             {submitRedactions.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            Submit for Generation
+            {packet.status === "ready_for_approval" ? "Generate Again" : "Generate Clean Preview"}
           </Button>
         </div>
       </CardHeader>
@@ -411,6 +511,10 @@ function PacketReview({ quoteId, packet }: { quoteId: number, packet: Manufactur
           {analysis.map(a => (
             <button
               key={a.pageNumber}
+              type="button"
+              data-testid={`button-review-page-${a.pageNumber}`}
+              aria-label={`Page ${a.pageNumber} — Review page`}
+              title={`Review page ${a.pageNumber}${a.pageType === "unknown" ? " (layout needs manual review)" : ""}`}
               onClick={() => setCurrentPageNum(a.pageNumber)}
               className={`w-full text-left p-2 rounded text-sm transition-colors ${
                 currentPageNum === a.pageNumber 
@@ -438,28 +542,43 @@ function PacketReview({ quoteId, packet }: { quoteId: number, packet: Manufactur
           
           <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
              {currentPage && viewMode === 'source' && (
-               <PageRedactionEditor 
-                 key={`${packet.id}:${currentPage.pageNumber}`}
-                 quoteId={quoteId}
-                 packetId={packet.id}
-                 pageAnalysis={currentPage}
-                 redactions={pageRedactions}
-                 onChange={(newRedactions) => {
-                   setRedactions(prev => ({ ...prev, [currentPage.pageNumber.toString()]: newRedactions }));
-                 }}
-                 onApplyToSimilar={(rect) => {
-                   const newMap = { ...redactions };
-                   let appliedCount = 0;
-                   analysis.forEach(a => {
-                     // Similar means same dimensions and same page type
-                     if (a.pageType === currentPage.pageType && Math.abs(a.width - currentPage.width) < 10 && Math.abs(a.height - currentPage.height) < 10) {
-                       const key = a.pageNumber.toString();
-                       newMap[key] = [...(newMap[key] || []), { ...rect }];
-                       appliedCount++;
+                <PageRedactionEditor
+                  key={`${packet.id}:${currentPage.pageNumber}`}
+                  quoteId={quoteId}
+                  packetId={packet.id}
+                  pageAnalyses={analysis}
+                  pageAnalysis={currentPage}
+                  redactions={pageRedactions}
+                  onChange={(newRedactions) => {
+                    setRedactions(prev => ({ ...prev, [currentPage.pageNumber.toString()]: newRedactions }));
+                  }}
+                  onApplyToPages={(rect, targetPageNumbers) => {
+                    const newMap = { ...redactions };
+                    const targetPages = new Set(targetPageNumbers);
+                    let appliedCount = 0;
+                    analysis.forEach(a => {
+                      if (targetPages.has(a.pageNumber)) {
+                        const key = a.pageNumber.toString();
+                        const existing = newMap[key] || [];
+                        const alreadyApplied = existing.some(existingRect =>
+                          Math.abs(existingRect.x - rect.x) < 0.5 &&
+                          Math.abs(existingRect.y - rect.y) < 0.5 &&
+                          Math.abs(existingRect.width - rect.width) < 0.5 &&
+                          Math.abs(existingRect.height - rect.height) < 0.5,
+                        );
+                        if (!alreadyApplied) {
+                          newMap[key] = [...existing, { ...rect }];
+                          appliedCount++;
+                        }
                      }
                    });
                    setRedactions(newMap);
-                   toast({ title: "Applied to similar pages", description: `Redaction added to ${appliedCount} pages.` });
+                    toast({
+                      title: "Redaction applied",
+                      description: appliedCount === 1
+                        ? "Redaction added to 1 selected page."
+                        : `Redaction added to ${appliedCount} selected pages. Existing boxes were left unchanged.`,
+                    });
                  }}
                />
              )}
@@ -476,23 +595,28 @@ function PacketReview({ quoteId, packet }: { quoteId: number, packet: Manufactur
 function PageRedactionEditor({ 
   quoteId,
   packetId,
+  pageAnalyses,
   pageAnalysis, 
   redactions, 
   onChange,
-  onApplyToSimilar
+  onApplyToPages
 }: { 
   quoteId: number,
   packetId: number,
+  pageAnalyses: PacketPageAnalysis[],
   pageAnalysis: PacketPageAnalysis, 
   redactions: PacketRect[], 
   onChange: (r: PacketRect[]) => void,
-  onApplyToSimilar: (r: PacketRect) => void
+  onApplyToPages: (r: PacketRect, targetPageNumbers: number[]) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [baseScale, setBaseScale] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [drawing, setDrawing] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
   const [resizing, setResizing] = useState<{ index: number, startX: number, startY: number, startRect: PacketRect, mode: 'move' | 'se' } | null>(null);
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [pendingApplyRect, setPendingApplyRect] = useState<PacketRect | null>(null);
+  const [selectedApplyPages, setSelectedApplyPages] = useState<number[]>([]);
 
   const { data: sourceBlob, isLoading: sourceLoading } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageAnalysis.pageNumber);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
@@ -521,10 +645,33 @@ function PageRedactionEditor({
   }, [pageAnalysis.width, pageAnalysis.height]);
 
   const scale = baseScale * zoom;
+  const otherPages = pageAnalyses.filter(page => page.pageNumber !== pageAnalysis.pageNumber);
+  const sameDimensions = (page: PacketPageAnalysis) =>
+    Math.abs(page.width - pageAnalysis.width) < 10 &&
+    Math.abs(page.height - pageAnalysis.height) < 10;
+  const openApplyDialog = (rect: PacketRect) => {
+    setPendingApplyRect(rect);
+    setSelectedApplyPages(
+      otherPages
+        .filter(page => sameDimensions(page) && page.pageType === pageAnalysis.pageType)
+        .map(page => page.pageNumber),
+    );
+    setApplyDialogOpen(true);
+  };
+  const closeApplyDialog = () => {
+    setApplyDialogOpen(false);
+    setPendingApplyRect(null);
+    setSelectedApplyPages([]);
+  };
+  const confirmApplyToPages = () => {
+    if (!pendingApplyRect || selectedApplyPages.length === 0) return;
+    onApplyToPages(pendingApplyRect, selectedApplyPages);
+    closeApplyDialog();
+  };
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('button')) return; // ignore UI buttons
+    if ((e.target as HTMLElement).closest('button, [data-redaction-controls]')) return; // ignore UI controls
     
     const rect = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - rect.left) / scale;
@@ -595,6 +742,11 @@ function PageRedactionEditor({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    // Redaction action buttons stop pointerdown propagation, so there is no
+    // capture to release for their pointerup. Calling releasePointerCapture
+    // without a capture throws in some browsers and prevents their click from
+    // firing, especially on touch screens.
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     e.currentTarget.releasePointerCapture(e.pointerId);
     
     if (resizing) {
@@ -622,9 +774,19 @@ function PageRedactionEditor({
   return (
     <div ref={containerRef} className="w-full min-h-[600px] flex flex-col items-center justify-start overflow-auto">
       <div className="flex gap-2 bg-white p-2 rounded-lg shadow-sm border mb-4 sticky top-0 z-10">
-        <Button variant="outline" size="icon" onClick={() => setZoom(s => Math.max(0.5, s - 0.25))}><ZoomOut className="w-4 h-4" /></Button>
-        <div className="flex items-center justify-center w-16 text-sm font-medium">{Math.round(zoom * 100)}%</div>
-        <Button variant="outline" size="icon" onClick={() => setZoom(s => Math.min(3, s + 0.25))}><ZoomIn className="w-4 h-4" /></Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button type="button" variant="outline" size="icon" data-testid="button-redaction-zoom-out" aria-label="Zoom out" title="Zoom out" onClick={() => setZoom(s => Math.max(0.5, s - 0.25))}><ZoomOut className="w-4 h-4" /></Button>
+          </TooltipTrigger>
+          <TooltipContent>Zoom out</TooltipContent>
+        </Tooltip>
+        <div className="flex items-center justify-center w-16 text-sm font-medium" aria-live="polite">{Math.round(zoom * 100)}%</div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button type="button" variant="outline" size="icon" data-testid="button-redaction-zoom-in" aria-label="Zoom in" title="Zoom in" onClick={() => setZoom(s => Math.min(3, s + 0.25))}><ZoomIn className="w-4 h-4" /></Button>
+          </TooltipTrigger>
+          <TooltipContent>Zoom in</TooltipContent>
+        </Tooltip>
       </div>
 
       <div 
@@ -658,24 +820,47 @@ function PageRedactionEditor({
               height: r.height * scale,
             }}
           >
-            <div className="absolute -top-8 right-0 hidden group-hover:flex gap-1" onPointerDown={e => e.stopPropagation()}>
-              <Button 
-                size="sm" 
-                variant="secondary" 
-                className="h-6 px-2 text-[10px]"
-                onClick={() => onApplyToSimilar(r)}
-                title="Apply to similar layout pages"
-              >
-                Apply to Similar
-              </Button>
-              <Button 
-                size="sm" 
-                variant="destructive" 
-                className="h-6 w-6 p-0"
-                onClick={() => onChange(redactions.filter((_, idx) => idx !== i))}
-              >
-                <X className="w-3 h-3" />
-              </Button>
+            <div
+              data-redaction-controls
+              role="group"
+              aria-label={`Controls for redaction ${i + 1}`}
+              className="absolute bottom-full left-0 z-30 flex gap-1 rounded-md bg-white p-1 shadow-md border opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity pointer-events-auto"
+              onPointerDown={e => e.stopPropagation()}
+              onPointerUp={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    data-testid={`button-redaction-apply-similar-${i}`}
+                    className="h-7 px-2 text-[10px]"
+                    onClick={() => openApplyDialog(r)}
+                    aria-label="Apply this redaction to other pages"
+                  >
+                    Apply to Pages
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Choose which other pages should receive this redaction box.</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="destructive"
+                    data-testid={`button-redaction-remove-${i}`}
+                    className="h-7 w-7 p-0"
+                    onClick={() => onChange(redactions.filter((_, idx) => idx !== i))}
+                    aria-label={`Delete redaction ${i + 1}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete this redaction box.</TooltipContent>
+              </Tooltip>
             </div>
             <div className="absolute inset-0 flex items-center justify-center text-white/50 text-xs font-mono pointer-events-none overflow-hidden">
               REDACTED
@@ -701,6 +886,74 @@ function PageRedactionEditor({
           />
         )}
       </div>
+      <Dialog open={applyDialogOpen} onOpenChange={(open) => open ? setApplyDialogOpen(true) : closeApplyDialog()}>
+        <DialogContent data-testid="dialog-apply-redaction">
+          <DialogHeader>
+            <DialogTitle>Apply redaction to other pages</DialogTitle>
+            <DialogDescription>
+              Choose the pages where this same redaction box belongs. Pages with the same detected layout and size are preselected; review any different layout before selecting it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2" role="group" aria-label="Pages available for this redaction">
+            {otherPages.map(page => {
+              const sameSize = sameDimensions(page);
+              const sameLayout = page.pageType === pageAnalysis.pageType;
+              const checked = selectedApplyPages.includes(page.pageNumber);
+              const disabled = !sameSize;
+              const checkboxId = `apply-redaction-page-${page.pageNumber}`;
+              return (
+                <div key={page.pageNumber} className={`flex items-start gap-3 rounded-md border p-3 ${disabled ? "border-border/60 bg-muted/40" : "border-border bg-card"}`}>
+                  <Checkbox
+                    id={checkboxId}
+                    data-testid={`checkbox-apply-redaction-page-${page.pageNumber}`}
+                    aria-label={`Page ${page.pageNumber}`}
+                    checked={checked}
+                    disabled={disabled}
+                    onCheckedChange={(nextChecked) => {
+                      setSelectedApplyPages(current => nextChecked
+                        ? (current.includes(page.pageNumber) ? current : [...current, page.pageNumber])
+                        : current.filter(number => number !== page.pageNumber));
+                    }}
+                  />
+                  <label htmlFor={checkboxId} className={`flex-1 text-sm ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                    <span className="font-bold">Page {page.pageNumber}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {disabled
+                        ? "Different page size — review this page manually."
+                        : sameLayout
+                          ? "Same page size and detected layout — preselected."
+                          : "Same page size, different detected layout — review manually."}
+                    </span>
+                  </label>
+                </div>
+              );
+            })}
+            {otherPages.length === 0 && (
+              <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                There are no other pages in this quote.
+              </p>
+            )}
+            {otherPages.some(page => !sameDimensions(page)) && (
+              <p className="text-xs text-amber-700" role="alert">
+                Different-size pages are disabled because this box may not fit. Add a redaction manually on those pages.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" data-testid="button-cancel-apply-redaction" onClick={closeApplyDialog}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              data-testid="button-confirm-apply-redaction"
+              disabled={selectedApplyPages.length === 0}
+              onClick={confirmApplyToPages}
+            >
+              Apply to selected pages
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -766,7 +1019,7 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
   }, [manifest]);
 
   const handleSave = () => {
-    if (quoteSigned && !confirm("This quote is signed. Changing the published manifest will invalidate the customer's signature. Continue?")) {
+    if (quoteSigned && !confirm("This quote is signed. Changing the published customer pages removes the customer's signature. They will need to review and sign again. Continue?")) {
       return;
     }
     
@@ -781,7 +1034,7 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
       }
     }, {
       onSuccess: () => {
-        toast({ title: "Manifest Published", description: "The customer document has been updated." });
+        toast({ title: "Customer document published", description: "The selected clean pages are now ready for customer review and signoff." });
         queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
       },
       onError: (err: any) => {
@@ -791,12 +1044,12 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
   };
 
   const handleUnpublish = () => {
-    if (quoteSigned && !confirm("This quote is signed. Unpublishing will invalidate the customer's signature. Continue?")) {
+    if (quoteSigned && !confirm("This quote is signed. Removing the published customer pages removes the customer's signature. They will need to sign again after you publish a new document. Continue?")) {
       return;
     }
     deleteManifest.mutate({ id: quoteId }, {
       onSuccess: () => {
-        toast({ title: "Unpublished", description: "The manifest has been removed." });
+        toast({ title: "Customer document removed", description: "Publish a new set of clean pages before sending the quote for signoff." });
         queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
       }
     });
@@ -838,57 +1091,62 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
     <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="bg-muted/30 border-b pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <CardTitle>Publication Manifest</CardTitle>
-          <CardDescription>Select and order pages across multiple packets to create the final customer document.</CardDescription>
+          <CardTitle>Step 4: Customer Document Pages</CardTitle>
+          <CardDescription>Select and order clean pages across manufacturer quotes. These are the pages customers will see and sign.</CardDescription>
         </div>
         <div className="flex flex-col items-end gap-2">
           {entries.length > 0 && (
             <div className="flex items-center space-x-2 bg-white/50 p-2 rounded border">
-              <Checkbox id="policy" checked={policyConfirmed} onCheckedChange={(c) => setPolicyConfirmed(!!c)} />
+              <Checkbox id="policy" data-testid="checkbox-preserved-terms" aria-label="Confirm prices, terms, and warranties are preserved" checked={policyConfirmed} onCheckedChange={(c) => setPolicyConfirmed(!!c)} />
               <label htmlFor="policy" className="text-xs font-medium leading-none cursor-pointer">
-                I confirm prices, terms, and warranties are preserved
+                I checked that prices, terms, and warranties are preserved
               </label>
             </div>
           )}
           <div className="flex gap-2">
             {manifest?.entries?.length ? (
-              <Button variant="outline" onClick={handleUnpublish} disabled={deleteManifest.isPending} className="text-destructive hover:text-destructive">
-                Unpublish
+              <Button type="button" variant="outline" data-testid="button-remove-customer-document" title="Remove the currently published customer document" onClick={handleUnpublish} disabled={deleteManifest.isPending} className="text-destructive hover:text-destructive">
+                Remove Published Document
               </Button>
             ) : null}
-            <Button onClick={handleSave} className="bg-green-700 hover:bg-green-800 text-white" disabled={setManifest.isPending || (entries.length > 0 && !policyConfirmed)}>
+            <Button type="button" data-testid="button-publish-customer-document" title="Publish the selected clean pages for customer review and signoff" onClick={handleSave} className="bg-green-700 hover:bg-green-800 text-white" disabled={setManifest.isPending || (entries.length > 0 && !policyConfirmed)}>
               {setManifest.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Publish Document
+              Publish Customer Document
             </Button>
           </div>
         </div>
       </CardHeader>
+      {quoteSigned && (
+        <div className="mx-6 mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" role="alert" data-testid="alert-customer-document-resign">
+          <strong>Re-sign warning:</strong> Publishing a different set or order of pages changes the signoff document and removes the current customer signature. After publishing, open Signoff Document and share the updated link for a new signoff.
+        </div>
+      )}
       
       <div className="flex flex-1 overflow-hidden">
         <div className="w-64 border-r bg-muted/10 overflow-y-auto p-4 space-y-4">
-          <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground mb-2">Available Packets</h3>
+          <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground mb-2">Clean Manufacturer Quotes</h3>
           {packets.length === 0 && (
-            <p className="text-xs text-muted-foreground italic">No ready packets available.</p>
+            <p className="text-xs text-muted-foreground italic">No clean previews ready yet. Finish review first.</p>
           )}
           {packets.map(p => (
             <div key={p.id} className="bg-white p-3 rounded border shadow-sm space-y-2">
               <div className="font-bold text-sm truncate" title={p.originalName}>{p.originalName}</div>
               <div className="text-xs text-muted-foreground">{p.pageCount} pages</div>
-              <Button size="sm" variant="secondary" className="w-full text-xs" onClick={() => addAllFromPacket(p)}>
-                Add All Pages
+              <Button type="button" size="sm" variant="secondary" data-testid={`button-add-all-pages-${p.id}`} title={`Add every clean page from ${p.originalName}`} className="w-full text-xs" onClick={() => addAllFromPacket(p)}>
+                Add all pages
               </Button>
             </div>
           ))}
         </div>
         
         <div className="flex-1 bg-slate-50 overflow-auto p-6">
-          <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground mb-4">Document Sequence ({entries.length} pages)</h3>
+          <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground mb-4">Customer page order ({entries.length} pages)</h3>
           
           {entries.length === 0 ? (
             <div className="text-center p-12 border-2 border-dashed rounded-lg text-muted-foreground">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No pages in manifest.</p>
-              <p className="text-sm mt-2">Add pages from the available packets on the left.</p>
+              <p>No customer pages selected.</p>
+              <p className="text-sm mt-2">Add clean pages from the manufacturer quotes on the left.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -897,8 +1155,8 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
                 return (
                   <div key={entry.id} className="flex items-center gap-3 bg-white p-3 rounded-lg border shadow-sm">
                     <div className="flex flex-col gap-1">
-                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => moveUp(idx)} disabled={idx === 0}>▲</Button>
-                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => moveDown(idx)} disabled={idx === entries.length - 1}>▼</Button>
+                      <Button type="button" size="icon" variant="ghost" className="h-6 w-6" data-testid={`button-move-customer-page-up-${idx}`} aria-label={`Move customer page ${idx + 1} up`} title="Move page up" onClick={() => moveUp(idx)} disabled={idx === 0}>▲</Button>
+                      <Button type="button" size="icon" variant="ghost" className="h-6 w-6" data-testid={`button-move-customer-page-down-${idx}`} aria-label={`Move customer page ${idx + 1} down`} title="Move page down" onClick={() => moveDown(idx)} disabled={idx === entries.length - 1}>▼</Button>
                     </div>
                     
                     <div className="w-16 h-20 shrink-0 border bg-gray-100 flex items-center justify-center overflow-hidden">
@@ -910,7 +1168,7 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
                       <div className="text-xs text-muted-foreground">Page {entry.pageNumber}</div>
                     </div>
                     
-                    <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => removeEntry(idx)}>
+                    <Button type="button" size="icon" variant="ghost" data-testid={`button-remove-customer-page-${idx}`} aria-label={`Remove customer page ${idx + 1}`} title="Remove page from customer document" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => removeEntry(idx)}>
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
@@ -935,5 +1193,5 @@ function MiniPreview({ quoteId, packetId, pageNumber }: { quoteId: number, packe
     }
     return undefined;
   }, [blob]);
-  return url ? <img src={url} className="w-full h-full object-cover" /> : <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />;
+  return url ? <img src={url} alt={`Clean page ${pageNumber} preview`} className="w-full h-full object-cover" /> : <Loader2 aria-label="Loading page preview" className="w-4 h-4 animate-spin text-muted-foreground" />;
 }

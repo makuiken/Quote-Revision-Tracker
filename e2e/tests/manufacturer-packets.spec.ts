@@ -273,8 +273,8 @@ test.describe("manufacturer packet API contract", () => {
     // session used for the API contract, including source preview and a
     // rectangle interaction before the API redaction assertion above.
     await page.goto(`/quotes/${quoteId}/packets`);
-    await page.getByRole("button", { name: new RegExp(firstFilename) }).click();
-    await expect(page.getByText("Review & Redact")).toBeVisible();
+    await page.getByRole("button", { name: `Open ${firstFilename}`, exact: true }).click();
+    await expect(page.getByText("Step 2: Review & Redact", { exact: true })).toBeVisible();
     await expect(page.getByAltText("Original manufacturer page 1")).toBeVisible();
     await expect(page.getByAltText("Original manufacturer page 1")).toHaveJSProperty("complete", true);
     const editor = page.locator('[data-rect-index]').first();
@@ -293,6 +293,32 @@ test.describe("manufacturer packet API contract", () => {
     await page.mouse.down();
     await page.mouse.move(handleBox.x + 10, handleBox.y + 10);
     await page.mouse.up();
+
+    // The redaction actions must work as real controls, not just as hover
+    // decoration. The page-selection dialog should let the reviewer choose
+    // page 2 even when its first/continuation label differs, without
+    // duplicating the box on the page where it already exists.
+    await editor.hover();
+    const applyToSimilar = page.getByTestId("button-redaction-apply-similar-0");
+    await expect(applyToSimilar).toBeVisible();
+    await applyToSimilar.click();
+    const pageTwoTarget = page.getByRole("checkbox", { name: "Page 2", exact: true });
+    await expect(pageTwoTarget).toBeVisible();
+    await pageTwoTarget.check();
+    await page.getByTestId("button-confirm-apply-redaction").click();
+    await expect(page.getByText("Redaction added to 1 selected page.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /^Page 2/ }).click();
+    await expect(page.locator("[data-rect-index]")).toHaveCount(1);
+
+    // Delete the copied redaction through the visible, keyboard-accessible
+    // action button and verify that the original page remains unchanged.
+    const removeRedaction = page.getByTestId("button-redaction-remove-0");
+    await expect(removeRedaction).toBeVisible();
+    await removeRedaction.click();
+    await expect(page.locator("[data-rect-index]")).toHaveCount(0);
+    await page.getByRole("button", { name: /^Page 1/ }).click();
+    await expect(page.locator("[data-rect-index]")).toHaveCount(1);
+
     await page.screenshot({ path: `test-results/manufacturer-packet-source-${quoteId}.png`, fullPage: true });
 
     // Per-packet approve remains a convenience action and publishes all pages
@@ -459,11 +485,11 @@ test.describe("manufacturer packet API contract", () => {
     expect(thirdCleanup.status()).toBe(202);
     await waitForPacket(api, quoteId, third.packet.id, "ready_for_approval");
     await page.goto(`/quotes/${quoteId}/packets`);
-    await page.getByRole("button", { name: new RegExp(thirdFilename) }).click();
+    await page.getByRole("button", { name: `Open ${thirdFilename}`, exact: true }).click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(1);
-    await page.getByRole("button", { name: new RegExp(secondFilename) }).click();
+    await page.getByRole("button", { name: `Open ${secondFilename}`, exact: true }).click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(0);
-    await page.getByRole("button", { name: new RegExp(thirdFilename) }).click();
+    await page.getByRole("button", { name: `Open ${thirdFilename}`, exact: true }).click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(1);
 
     const publishedVersion = beforeSigning.documentVersion;

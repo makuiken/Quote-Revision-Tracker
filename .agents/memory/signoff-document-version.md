@@ -13,3 +13,9 @@ The version hash and the document bytes must be derived from the same locked sna
 **Why:** A concurrent publication between the hash check and byte lookup can serve new pages under an accepted old version, or permanently cache mismatched PDF bytes at a version-keyed path.
 
 **How to apply:** Pass captured quote, revisions, and immutable page references through preview and PDF generation; keep unpublished cleanup edits outside the signed content until explicit publication.
+
+Formatting improvements apply to newly generated documents, not previously stored signed PDFs.
+
+**Why:** Replacing an issued signed artifact for cosmetic reasons would silently change the customer's approval record.
+
+**How to apply:** Version the unsigned rendering cache when layout changes, preserve existing signed snapshot bytes, and explain that distinction when improving PDF exports.

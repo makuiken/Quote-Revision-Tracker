@@ -244,6 +244,14 @@ export function serializeQuote(
  * already-open documents become stale and must be reloaded before signing.
  */
 export const SIGNOFF_CONTENT_VERSION = 3;
+/**
+ * The bytes of unsigned documents are cached under their document version.
+ * Bump this independently when the PDF layout/typography changes so a
+ * previously cached plain-text document can never be served for the new
+ * renderer. Existing issued signed snapshots remain immutable and continue to
+ * use their original object path.
+ */
+export const SIGNOFF_DOCUMENT_FORMAT_VERSION = 2;
 
 type SignoffSubmission = {
   customerName: string;
@@ -299,7 +307,7 @@ export function computeDocumentVersion(
     : `${approvedPacket?.id ?? "none"}:${approvedPacket?.sanitizedPdfSha256 ?? "none"}`;
   return createHash("sha1")
     .update(
-      `v${SIGNOFF_CONTENT_VERSION}|${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}|packet:${packetFingerprint}`,
+      `content-v${SIGNOFF_CONTENT_VERSION}|format-v${SIGNOFF_DOCUMENT_FORMAT_VERSION}|${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}|packet:${packetFingerprint}`,
     )
     .digest("hex");
 }

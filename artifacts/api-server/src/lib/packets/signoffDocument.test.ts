@@ -9,6 +9,7 @@ test("manifest fingerprints cover sanitized bytes and exact page sequence", () =
 });
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PDFDocument } from "pdf-lib";
 import type { Quote } from "@workspace/db";
 
 import { createSignedPacketDocument } from "./signoffDocument";
@@ -45,6 +46,62 @@ test("renders an unsigned document containing multiline terms", async () => {
     approvedPacketPages: [],
   });
   assert.ok(document.bytes.byteLength > 100);
+});
+
+test("renders branded cards, categorized specifications, and complete revisions", async () => {
+  const document = await createSignedPacketDocument({
+    quote: {
+      ...quote,
+      quoteNumber: "KB-2026-0142",
+      customerName: "José García",
+      projectName: "North Ridge Renovation",
+      jobAddress: "12 Main Street, Ridgefield, NJ 07657",
+      categories: ["windows", "exteriorDoors", "millwork"],
+      specs: {
+        window: {
+          brand: "Andersen",
+          series: "A-Series",
+          dividedLites: "6 over 6",
+          hardwareFinish: "Satin nickel",
+        },
+        exteriorDoor: {
+          brand: "TruStile",
+          seriesStyle: "TS-5500",
+          lockPrep: "Multi-point",
+        },
+        millworkDescription: "Custom casing\nwith returns and backband",
+      },
+    },
+    revisions: [
+      {
+        id: 1,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        authorName: "Sales Team",
+        note: "First line of the complete revision note.\nSecond line remains visible in the PDF.",
+        categories: ["windows"],
+        excludedFromSignoff: false,
+      } as never,
+    ],
+  });
+  const parsed = await PDFDocument.load(document.bytes);
+  assert.ok(parsed.getPageCount() >= 2, "long-form cards should paginate");
+  assert.equal(parsed.getPage(0).getWidth(), 612);
+  assert.equal(parsed.getPage(0).getHeight(), 792);
+});
+
+test("keeps approved manufacturer pages as unchanged trailing pages", async () => {
+  const packet = await PDFDocument.create();
+  packet.addPage([420, 595]);
+  const packetBytes = await packet.save();
+  const document = await createSignedPacketDocument({
+    quote,
+    revisions: [],
+    approvedPacketPages: [{ pdfBytes: packetBytes, pageNumber: 1 }],
+  });
+  const parsed = await PDFDocument.load(document.bytes);
+  const lastPage = parsed.getPage(parsed.getPageCount() - 1);
+  assert.equal(lastPage.getWidth(), 420);
+  assert.equal(lastPage.getHeight(), 595);
 });
 
 test("embeds a drawn signature and Unicode auto-revision content", async () => {

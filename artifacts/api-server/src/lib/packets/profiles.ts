@@ -28,6 +28,11 @@ export interface TextLine {
   bounds: NormalizedRect;
 }
 
+export interface AdministrativeRegionOptions {
+  profile?: PacketProfile;
+  pageType?: PacketPageType;
+}
+
 // TruStile must precede Marvin: TruStile literature can correctly say
 // "a Marvin brand" while still using a TruStile quotation/drawing layout.
 const PROFILE_PATTERNS: ReadonlyArray<readonly [PacketProfile, RegExp]> = [
@@ -69,12 +74,12 @@ export function classifyPacketPage(
     return "drawing";
   }
 
-  if (
-    /\b(quote summary|purchase approval|sign[\s/-]?off|project subtotal|project total|grand total|terms and conditions|warrant(?:y|ies))\b/.test(
+  const hasSummaryHeading =
+    /\b(quote summary|purchase approval|sign[\s/-]?off|project subtotal|project total|grand total|terms and conditions)\b/.test(
       normalized,
-    ) ||
-    (pageNumber === pageCount && /\b(total|warrant)/.test(normalized))
-  ) {
+    );
+  const hasWarrantyHeading = /\b(?:manufacturer\s+)?warrant(?:y|ies)\b/.test(normalized);
+  if (hasSummaryHeading || hasWarrantyHeading || (pageNumber === pageCount && /\b(total|warrant)/.test(normalized))) {
     return "summary";
   }
 
@@ -86,21 +91,37 @@ export function classifyPacketPage(
  * deliberately not a target: a customer can keep its dealer branding while
  * removing source-system quote IDs, dates, contacts, and signature fields.
  */
-export function findAdministrativeRegions(lines: readonly TextLine[]): PageRegion[] {
+export function findAdministrativeRegions(
+  lines: readonly TextLine[],
+  options: AdministrativeRegionOptions = {},
+): PageRegion[] {
   const adminFields: ReadonlyArray<readonly [RegExp, string]> = [
     [
-      /\b(?:quote|quotation)(?:\s*(?:#|number\b|id\b)|\s+[a-z]{2,}[0-9][a-z0-9-]*)/i,
+      /^\s*(?:quote\s*(?:#|number\b|id\b)\s*[:#-]?\s*[a-z0-9][a-z0-9-]{3,}|quotation\s+[a-z0-9][a-z0-9-]{3,})\s*$/i,
       "quote identifier",
     ],
-    [/\b(?:created|print(?:ed)?|quote|submitted|latest update)\s+date\b/i, "administrative date"],
+    [
+      /^\s*(?:created|print(?:ed)?|quote|submitted|latest update)\s+date\b/i,
+      "administrative date",
+    ],
     [/\b(?:processed|generated)\s+on\b/i, "generated timestamp"],
-    [/\b(?:sales\s*rep(?:\s*name)?|salesperson|account\s*manager|owner)\b/i, "administrative contact"],
-    [/\b(?:phone(?:\s*\([^)]*\))?|e-?mail|shipping\s+contact|contact\s+name)\b/i, "administrative contact"],
+    [
+      /^\s*(?:sales\s*rep(?:\s*name)?|salesperson|account\s*manager|owner)\s*:?\b/i,
+      "administrative contact",
+    ],
+    [
+      /^\s*(?:phone(?:\s*\([^)]*\))?|e-?mail|shipping\s+contact|contact\s+name)\s*:/i,
+      "administrative contact",
+    ],
     [
       /^\s*(?:purchase\s+approval(?:\s*\/\s*sign\s*off)?|seller\s*:|buyer\s*:|signature\s*:)/i,
       "source approval field",
     ],
     [/^\s*sold\s+by\s*:/i, "source seller field"],
+    [
+      /^\s*project\s+information\b.*\b(?:id|revision)\s*#/i,
+      "project identifier",
+    ],
   ];
 
   const regions: PageRegion[] = [];
@@ -120,6 +141,38 @@ export function findAdministrativeRegions(lines: readonly TextLine[]): PageRegio
     if (match) add(line, match[1]);
   }
 
+  // TruStile puts the quotation number on its own line below the "Quotation"
+  // heading. Only pair a strict identifier with that explicit heading; a
+  // random alphanumeric product/model code is never a suggestion.
+  if (options.profile === "trustile") {
+    const identifier = /^(?:[a-z]{2,}[a-z0-9-]{3,}|\d{5,})$/i;
+    for (const heading of lines.filter((line) => /^\s*quotation\s*$/i.test(line.text))) {
+      const headingBottom = heading.bounds.y + heading.bounds.height;
+      const candidate = lines.find((line) => {
+        if (!identifier.test(line.text.trim())) return false;
+        if (line.bounds.y < headingBottom || line.bounds.y - headingBottom > 0.08) return false;
+        const headingCenter = heading.bounds.x + heading.bounds.width / 2;
+        const candidateCenter = line.bounds.x + line.bounds.width / 2;
+        return Math.abs(headingCenter - candidateCenter) <= 0.2;
+      });
+      if (candidate) add(candidate, "quote identifier");
+    }
+  }
+
+  // Reeb's project header wraps its revision number onto a second line. Keep
+  // this pairing tied to the explicit project-information label so numeric
+  // dimensions, prices, and product revisions elsewhere remain untouched.
+  for (const heading of regions.filter((region) => region.label === "project identifier")) {
+    const headingBottom = heading.bounds.y + heading.bounds.height;
+    const continuation = lines.find((line) =>
+      /^#\s*[0-9]{4,}\)?\s*$/i.test(line.text.trim()) &&
+      line.bounds.y >= headingBottom &&
+      line.bounds.y - headingBottom <= 0.04 &&
+      Math.abs(line.bounds.x - heading.bounds.x) <= 0.03,
+    );
+    if (continuation) add(continuation, "project identifier");
+  }
+
   // Dates are only candidates when visually adjacent to an explicit
   // administrative date/timestamp label. This avoids broad date removal from
   // specifications, warranty terms, and product-body content.
@@ -134,7 +187,7 @@ export function findAdministrativeRegions(lines: readonly TextLine[]): PageRegio
     const adjacent = dateAnchors.some((anchor) => {
       const anchorX = anchor.bounds.x + anchor.bounds.width / 2;
       const anchorY = anchor.bounds.y + anchor.bounds.height / 2;
-      return Math.abs(centerX - anchorX) <= 0.12 && Math.abs(centerY - anchorY) <= 0.1;
+      return Math.abs(centerX - anchorX) <= 0.06 && Math.abs(centerY - anchorY) <= 0.05;
     });
     if (adjacent) add(line, "administrative date value");
   }
