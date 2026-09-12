@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { hashApprovedManifest } from "../lib/packets/manifestHash";
 import { Router, type IRouter, type Response } from "express";
 import {
   and,
@@ -24,6 +25,7 @@ import {
   attachmentsTable,
   usersTable,
   fieldOptionsTable,
+  manufacturerPacketsTable,
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
@@ -86,8 +88,20 @@ import {
   type AuthedRequest,
 } from "../middlewares/requireAuth";
 import { hasMeaningfulSignatureInk } from "../lib/validateSignaturePng";
+import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
+import { createSignedPacketDocument } from "../lib/packets/signoffDocument";
+import { loadApprovedManifest } from "../lib/packets/service";
+import {
+  manifestBudgetAllows,
+  MAX_SIGNOFF_PACKET_SOURCE_BYTES,
+} from "../lib/packets/documentBudget";
 
 const router: IRouter = Router();
+const packetStorage = new ObjectStorageService();
+const unsignedDocumentBuilds = new Map<string, Promise<void>>();
+let activeUnsignedDocumentBuilds = 0;
+const MAX_UNSIGNED_DOCUMENT_BUILDS = 2;
+export class UnsignedDocumentBuildCapacityError extends Error {}
 
 router.use(requireAuth);
 
@@ -229,7 +243,7 @@ export function serializeQuote(
  * approval disclaimer, etc.). Bump whenever that boilerplate text changes so
  * already-open documents become stale and must be reloaded before signing.
  */
-export const SIGNOFF_CONTENT_VERSION = 2;
+export const SIGNOFF_CONTENT_VERSION = 3;
 
 type SignoffSubmission = {
   customerName: string;
@@ -265,10 +279,27 @@ export function validateSignoffSubmission(
 export function computeDocumentVersion(
   quote: Pick<QuoteRow, "updatedAt">,
   includedRevisions: Array<{ id: number }>,
+  approvedPacket?: {
+    id: number;
+    sanitizedPdfSha256: string | null;
+  } | Array<{
+    packetId: number;
+    pageNumber: number;
+    pageOrder: number;
+    sanitizedPdfSha256: string | null;
+  }> | null,
 ): string {
+  const packetFingerprint = Array.isArray(approvedPacket)
+    ? approvedPacket
+        .map(
+          (entry) =>
+            `${entry.pageOrder}:${entry.packetId}:${entry.pageNumber}:${entry.sanitizedPdfSha256 ?? "none"}`,
+        )
+        .join("|")
+    : `${approvedPacket?.id ?? "none"}:${approvedPacket?.sanitizedPdfSha256 ?? "none"}`;
   return createHash("sha1")
     .update(
-      `v${SIGNOFF_CONTENT_VERSION}|${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}`,
+      `v${SIGNOFF_CONTENT_VERSION}|${quote.updatedAt.getTime()}|${includedRevisions.map((r) => r.id).join(",")}|packet:${packetFingerprint}`,
     )
     .digest("hex");
 }
@@ -306,6 +337,222 @@ export async function loadIncludedRevisions(
       ),
     )
     .orderBy(revisionsTable.createdAt);
+}
+
+/** The one packet currently eligible for public signoff, if this quote has one. */
+export async function loadApprovedPacket(
+  tx: Pick<typeof db, "select">,
+  quoteId: number,
+) {
+  const [packet] = await tx
+    .select({
+      id: manufacturerPacketsTable.id,
+      sanitizedPdfObjectPath: manufacturerPacketsTable.sanitizedPdfObjectPath,
+      sanitizedPdfSha256: manufacturerPacketsTable.sanitizedPdfSha256,
+    })
+    .from(manufacturerPacketsTable)
+    .where(
+      and(
+        eq(manufacturerPacketsTable.quoteId, quoteId),
+        eq(manufacturerPacketsTable.status, "approved"),
+      ),
+    );
+  return packet ?? null;
+}
+
+export async function loadManifestPdfPages(
+  manifest: Awaited<ReturnType<typeof loadApprovedManifest>>,
+) {
+  const maxSourceBytes = MAX_SIGNOFF_PACKET_SOURCE_BYTES;
+  const uniquePaths = [
+    ...new Set(
+      manifest.map((entry) => {
+        if (!entry.sanitizedPdfObjectPath) {
+          throw new Error("Approved packet manifest has no sanitized PDF.");
+        }
+        return entry.sanitizedPdfObjectPath;
+      }),
+    ),
+  ];
+  let totalBytes = 0;
+  const sizes = new Map<string, number>();
+  for (const path of uniquePaths) {
+    const { size } = await packetStorage.getObjectEntityMetadata(path);
+    totalBytes += size;
+    if (totalBytes > maxSourceBytes) {
+      throw new Error("Approved packet sources exceed the 100 MiB document limit.");
+    }
+    sizes.set(path, size);
+  }
+  const bytesByPath = new Map<string, Buffer>();
+  for (const entry of manifest) {
+    const path = entry.sanitizedPdfObjectPath!;
+    if (!bytesByPath.has(path)) {
+      bytesByPath.set(
+        path,
+        await packetStorage.downloadObjectBytesBounded(path, sizes.get(path)!),
+      );
+    }
+  }
+  return manifest.map((entry) => ({
+    pdfBytes: bytesByPath.get(entry.sanitizedPdfObjectPath!)!,
+    pageNumber: entry.pageNumber,
+  }));
+}
+
+export async function manifestFitsDocumentBudget(
+  paths: Array<string | null | undefined>,
+  pageCount: number,
+): Promise<boolean> {
+  if (paths.some((path) => !path)) return false;
+  const uniquePaths = [...new Set(paths.filter((path): path is string => !!path))];
+  const sizes: number[] = [];
+  for (const path of uniquePaths) {
+    const metadata = await packetStorage.getObjectEntityMetadata(path);
+    sizes.push(metadata.size);
+  }
+  return manifestBudgetAllows(pageCount, sizes);
+}
+
+export async function createUnsignedSignoffDocument(
+  quote: QuoteRow,
+  revisions: Array<typeof revisionsTable.$inferSelect>,
+  manifest?: Awaited<ReturnType<typeof loadApprovedManifest>>,
+) {
+  const approvedManifest = manifest ?? (await loadApprovedManifest(db, quote.id));
+  return createSignedPacketDocument({
+    quote,
+    revisions,
+    approvedPacketPages: await loadManifestPdfPages(approvedManifest),
+  });
+}
+
+export async function ensureUnsignedDocumentCached(
+  quote: QuoteRow,
+  revisions: Array<typeof revisionsTable.$inferSelect>,
+  manifest: Awaited<ReturnType<typeof loadApprovedManifest>>,
+  version: string,
+): Promise<string> {
+  const path = `/objects/signoff-documents/${quote.id}/unsigned/${version}.pdf`;
+  try {
+    await packetStorage.getObjectEntityFile(path);
+    return path;
+  } catch (error) {
+    if (!(error instanceof ObjectNotFoundError)) throw error;
+  }
+  const key = `${quote.id}:${version}`;
+  let build = unsignedDocumentBuilds.get(key);
+  if (!build) {
+    if (activeUnsignedDocumentBuilds >= MAX_UNSIGNED_DOCUMENT_BUILDS) {
+      throw new UnsignedDocumentBuildCapacityError(
+        "Too many combined document builds are currently in progress.",
+      );
+    }
+    activeUnsignedDocumentBuilds += 1;
+    build = (async () => {
+      const document = await createUnsignedSignoffDocument(
+        quote,
+        revisions,
+        manifest,
+      );
+      try {
+        await packetStorage.saveObjectEntityImmutable(
+          path,
+          document.bytes,
+          "application/pdf",
+        );
+      } catch (error) {
+        if ((error as { code?: number }).code !== 412) throw error;
+      }
+    })();
+    unsignedDocumentBuilds.set(key, build);
+    void build.then(
+      () => {
+        activeUnsignedDocumentBuilds -= 1;
+        unsignedDocumentBuilds.delete(key);
+      },
+      () => {
+        activeUnsignedDocumentBuilds -= 1;
+        unsignedDocumentBuilds.delete(key);
+      },
+    );
+  }
+  await build;
+  return path;
+}
+
+/**
+ * Backfills an immutable PDF for signatures created before signed document
+ * snapshots existed. It never changes the legal signature fields.
+ */
+export async function ensureLegacySignedDocumentSnapshot(
+  quoteId: number,
+  expected?: { id: number; signedAt: Date },
+) {
+  return db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, quoteId);
+    if (!quote) return null;
+    const [signoff] = await tx
+      .select()
+      .from(signoffsTable)
+      .where(eq(signoffsTable.quoteId, quoteId))
+      .for("update");
+    if (!signoff) return null;
+    if (
+      expected &&
+      (signoff.id !== expected.id ||
+        signoff.signedAt.getTime() !== expected.signedAt.getTime())
+    ) {
+      return null;
+    }
+    if (signoff.signedDocumentObjectPath) return signoff;
+    const revisions = await tx
+      .select()
+      .from(revisionsTable)
+      .where(
+        and(
+          eq(revisionsTable.quoteId, quoteId),
+          eq(revisionsTable.excludedFromSignoff, false),
+        ),
+      )
+      .orderBy(revisionsTable.createdAt);
+    const manifest = await loadApprovedManifest(tx, quoteId);
+    const document = await createSignedPacketDocument({
+      quote,
+      revisions,
+      signoff: {
+        customerName: signoff.customerName,
+        stakeholderRole: signoff.stakeholderRole,
+        signatureType: signoff.signatureType,
+        signatureData: signoff.signatureData,
+        signedAt: signoff.signedAt,
+      },
+      approvedPacketPages: await loadManifestPdfPages(manifest),
+    });
+    const path = `/objects/signoff-documents/${quoteId}/legacy-${randomUUID()}.pdf`;
+    await packetStorage.saveObjectEntityImmutable(
+      path,
+      document.bytes,
+      "application/pdf",
+    );
+    const [updated] = await tx
+      .update(signoffsTable)
+      .set({
+        signedDocumentObjectPath: path,
+        signedDocumentSha256: document.sha256,
+        signedPacketId: manifest[0]?.packetId ?? signoff.signedPacketId,
+        signedPacketSha256: hashApprovedManifest(manifest),
+      })
+      .where(
+        and(
+          eq(signoffsTable.id, signoff.id),
+          eq(signoffsTable.signedAt, signoff.signedAt),
+          isNull(signoffsTable.signedDocumentObjectPath),
+        ),
+      )
+      .returning();
+    return updated ?? null;
+  });
 }
 
 router.get("/share-info", async (_req, res): Promise<void> => {
@@ -473,6 +720,7 @@ router.get("/quotes/:id", async (req, res): Promise<void> => {
     .where(eq(signoffsTable.quoteId, quote.id));
 
   const stats = await quoteStats([quote.id]);
+  const approvedPacket = await loadApprovedManifest(db, quote.id);
   res.json(
     GetQuoteResponse.parse({
       quote: serializeQuote(quote, stats.get(quote.id)),
@@ -481,6 +729,7 @@ router.get("/quotes/:id", async (req, res): Promise<void> => {
       documentVersion: computeDocumentVersion(
         quote,
         revisions.filter((r) => !r.excludedFromSignoff),
+        approvedPacket,
       ),
     }),
   );
@@ -1275,8 +1524,43 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
     const current = await lockQuoteRow(tx, quote.id);
     if (!current || current.archivedAt) return null;
     const included = await loadIncludedRevisions(tx, quote.id);
-    if (computeDocumentVersion(current, included) !== parsed.data.documentVersion)
+    const approvedPacket = await loadApprovedManifest(tx, quote.id);
+    if (
+      computeDocumentVersion(current, included, approvedPacket) !==
+      parsed.data.documentVersion
+    )
       return null;
+    const revisions = await tx
+      .select()
+      .from(revisionsTable)
+      .where(
+        and(
+          eq(revisionsTable.quoteId, quote.id),
+          eq(revisionsTable.excludedFromSignoff, false),
+        ),
+      )
+      .orderBy(revisionsTable.createdAt);
+    const signedAt = new Date();
+    const approvedPacketPages = await loadManifestPdfPages(approvedPacket);
+    const signedDocument = await createSignedPacketDocument({
+      quote: current,
+      revisions,
+      signoff: {
+        customerName: validated.customerName,
+        stakeholderRole: parsed.data.stakeholderRole,
+        signatureType: parsed.data.signatureType,
+        signatureData: validated.signatureData,
+        signedAt,
+      },
+      approvedPacketPages,
+    });
+    const signedDocumentObjectPath = `/objects/signoff-documents/${quote.id}/${randomUUID()}.pdf`;
+    const approvedManifestHash = hashApprovedManifest(approvedPacket);
+    await packetStorage.saveObjectEntityImmutable(
+      signedDocumentObjectPath,
+      signedDocument.bytes,
+      "application/pdf",
+    );
     const [row] = await tx
       .insert(signoffsTable)
       .values({
@@ -1285,6 +1569,11 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
         stakeholderRole: parsed.data.stakeholderRole,
         signatureType: parsed.data.signatureType,
         signatureData: validated.signatureData,
+        signedPacketId: approvedPacket[0]?.packetId ?? null,
+        signedPacketSha256: approvedManifestHash,
+        signedDocumentObjectPath,
+        signedDocumentSha256: signedDocument.sha256,
+        signedAt,
       })
       .onConflictDoUpdate({
         target: signoffsTable.quoteId,
@@ -1293,7 +1582,11 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
           stakeholderRole: parsed.data.stakeholderRole,
           signatureType: parsed.data.signatureType,
           signatureData: validated.signatureData,
-          signedAt: new Date(),
+          signedAt,
+          signedPacketId: approvedPacket[0]?.packetId ?? null,
+          signedPacketSha256: approvedManifestHash,
+          signedDocumentObjectPath,
+          signedDocumentSha256: signedDocument.sha256,
         },
       })
       .returning();

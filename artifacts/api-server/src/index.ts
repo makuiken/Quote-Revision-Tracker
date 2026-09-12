@@ -1,6 +1,7 @@
 import { ensureSchema } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startPacketJobRecovery } from "./lib/packets/service";
 
 const rawPort = process.env["PORT"];
 
@@ -23,6 +24,7 @@ try {
   logger.error({ err }, "Database schema reconciliation failed");
   process.exit(1);
 }
+startPacketJobRecovery();
 
 app.listen(port, (err) => {
   if (err) {

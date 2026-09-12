@@ -5,6 +5,134 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+export type PacketStatus = typeof PacketStatus[keyof typeof PacketStatus];
+
+
+export const PacketStatus = {
+  awaiting_upload: 'awaiting_upload',
+  queued: 'queued',
+  processing: 'processing',
+  needs_review: 'needs_review',
+  ready_for_approval: 'ready_for_approval',
+  approved: 'approved',
+  failed: 'failed',
+} as const;
+
+export interface PacketRect {
+  /** @minimum 0 */
+  x: number;
+  /** @minimum 0 */
+  y: number;
+  /** @exclusiveMinimum 0 */
+  width: number;
+  /** @exclusiveMinimum 0 */
+  height: number;
+  /** @maxLength 250 */
+  reason?: string;
+}
+
+export interface PacketPageAnalysis {
+  /** @minimum 1 */
+  pageNumber: number;
+  /** @exclusiveMinimum 0 */
+  width: number;
+  /** @exclusiveMinimum 0 */
+  height: number;
+  pageType: string;
+  /** @maxItems 100 */
+  suggestedRects: PacketRect[];
+}
+
+/**
+ * @nullable
+ */
+export type ManufacturerPacketManualRedactions = {[key: string]: PacketRect[]} | null;
+
+export interface ManufacturerPacket {
+  id: number;
+  quoteId: number;
+  /** @nullable */
+  manufacturer?: string | null;
+  /** @nullable */
+  detectedManufacturer?: string | null;
+  originalName: string;
+  status: PacketStatus;
+  /** @nullable */
+  pageCount?: number | null;
+  /** @nullable */
+  analysis?: PacketPageAnalysis[] | null;
+  /** @nullable */
+  manualRedactions?: ManufacturerPacketManualRedactions;
+  /** @nullable */
+  failureMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  approvedAt?: string | null;
+}
+
+export interface PublicManufacturerPacket {
+  id: number;
+  /** @nullable */
+  manufacturer?: string | null;
+  pageCount: number;
+  approvedAt: string;
+}
+
+export type ManufacturerPacketUploadInputContentType = typeof ManufacturerPacketUploadInputContentType[keyof typeof ManufacturerPacketUploadInputContentType];
+
+
+export const ManufacturerPacketUploadInputContentType = {
+  'application/pdf': 'application/pdf',
+} as const;
+
+export interface ManufacturerPacketUploadInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 41943040
+     */
+  size: number;
+  contentType: ManufacturerPacketUploadInputContentType;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  manufacturer?: string | null;
+}
+
+export interface ManufacturerPacketUpload {
+  packet: ManufacturerPacket;
+  uploadURL: string;
+}
+
+export type PacketRedactionsInputRedactionsByPage = {[key: string]: PacketRect[]};
+
+export interface PacketRedactionsInput {
+  redactionsByPage: PacketRedactionsInputRedactionsByPage;
+}
+
+export interface ManufacturerPacketManifestEntry {
+  packetId: number;
+  /** @minimum 1 */
+  pageNumber: number;
+  /** @minimum 1 */
+  pageOrder: number;
+}
+
+export interface ManufacturerPacketManifest {
+  entries: ManufacturerPacketManifestEntry[];
+}
+
+export interface ManufacturerPacketManifestInput {
+  /** @maxItems 500 */
+  entries: ManufacturerPacketManifestEntry[];
+}
+
 export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;
@@ -571,5 +699,29 @@ limit?: number;
  * Only include activity on quotes created by the signed-in user
  */
 mine?: boolean;
+};
+
+export type GetManufacturerPacketManifestParams = {
+/**
+ * When supplied, validates the manifest against this exact signoff version.
+ * @minLength 1
+ */
+documentVersion?: string;
+};
+
+export type GetManufacturerPacketPageParams = {
+/**
+ * Signoff clients supply this to require current approved-manifest membership.
+ * @minLength 1
+ */
+documentVersion?: string;
+};
+
+export type GetPublicManufacturerPacketPageParams = {
+/**
+ * Version loaded with the public signoff document; stale versions cannot fetch newer pages.
+ * @minLength 1
+ */
+documentVersion: string;
 };
 

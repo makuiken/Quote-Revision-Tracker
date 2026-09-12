@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { ArrowLeft, Printer, Share2, Copy, Mail, Check } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,10 @@ import {
   getGetShareInfoQueryKey,
   useCreateShareLink,
   useSetRevisionSignoffExclusion,
+  useGetManufacturerPacketManifest,
+  useGetManufacturerPacketPage,
+  getGetSignedSignoffDocumentUrl,
+  getGetUnsignedSignoffDocumentUrl,
   type Revision,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -171,6 +175,80 @@ function ShareDialog({
   );
 }
 
+
+function InternalPacketViewer({ quoteId, documentVersion, onStateChange }: { quoteId: number, documentVersion: string, onStateChange: (state: { hasManifest: boolean, isReady: boolean, error?: string }) => void }) {
+  const { data: manifest, isLoading, isFetching, isError } = useGetManufacturerPacketManifest(quoteId, { documentVersion });
+
+  const pageCount = manifest?.entries.length || 0;
+  const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setLoadedPages(new Set());
+    setImageError(false);
+  }, [manifest]);
+
+  useEffect(() => {
+    if (isLoading || isFetching) {
+      onStateChange({ hasManifest: false, isReady: false });
+    } else if (isError || imageError) {
+      onStateChange({ hasManifest: pageCount > 0, isReady: false, error: "One or more packet images failed to load. Please refresh the page." });
+    } else if (pageCount > 0) {
+      onStateChange({ hasManifest: true, isReady: loadedPages.size === pageCount });
+    } else {
+      onStateChange({ hasManifest: false, isReady: true });
+    }
+  }, [isLoading, isFetching, isError, imageError, pageCount, loadedPages.size, onStateChange]);
+
+  const handlePageLoad = (pageOrder: number) => {
+    setLoadedPages(prev => {
+      const next = new Set(prev);
+      next.add(pageOrder);
+      return next;
+    });
+  };
+
+  if (!manifest || manifest.entries.length === 0) return null;
+
+  return (
+    <div className="mb-12">
+      <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2 mb-6">Manufacturer Specifications</h2>
+      <div className="space-y-8">
+        {manifest.entries.sort((a, b) => a.pageOrder - b.pageOrder).map((entry) => (
+          <InternalPacketPage key={`${documentVersion}:${entry.pageOrder}`} documentVersion={documentVersion} quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} onLoad={() => handlePageLoad(entry.pageOrder)} onError={() => setImageError(true)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InternalPacketPage({ quoteId, packetId, pageNumber, documentVersion, onLoad, onError }: { quoteId: number, packetId: number, pageNumber: number, documentVersion: string, onLoad: () => void, onError: () => void }) {
+  const { data: blob, isLoading, isError } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, { documentVersion });
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isError) onError();
+  }, [isError, onError]);
+
+  useEffect(() => {
+    if (blob) {
+      const u = URL.createObjectURL(blob);
+      setUrl(u);
+      return () => URL.revokeObjectURL(u);
+    }
+    return undefined;
+  }, [blob]);
+
+  if (isError) return <div className="h-64 bg-red-50 flex items-center justify-center text-red-500 rounded border border-red-200">Failed to load page</div>;
+  if (isLoading || !url) return <div className="h-64 bg-gray-100 animate-pulse rounded border border-gray-200"></div>;
+
+  return (
+    <div className="bg-white border border-gray-300 shadow-sm rounded overflow-hidden">
+      <img src={url} alt={`Packet Page ${pageNumber}`} className="w-full h-auto block" onLoad={onLoad} onError={onError} />
+    </div>
+  );
+}
+
 export default function SignoffPage() {
   const { id } = useParams();
   const quoteId = parseInt(id || "0", 10);
@@ -185,6 +263,15 @@ export default function SignoffPage() {
   const setExclusion = useSetRevisionSignoffExclusion();
   const [shareOpen, setShareOpen] = useState(false);
   const [pendingToggle, setPendingToggle] = useState<Revision | null>(null);
+  const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
+
+  const handleManifestStateChange = React.useCallback((newState: { hasManifest: boolean, isReady: boolean, error?: string }) => {
+    setManifestState(prev =>
+      prev.hasManifest === newState.hasManifest && prev.isReady === newState.isReady && prev.error === newState.error
+        ? prev
+        : newState
+    );
+  }, []);
 
   const toggleExclude = (revision: Revision) => {
     // Changing what appears on a signed document invalidates the signature —
@@ -265,6 +352,10 @@ export default function SignoffPage() {
     });
   };
 
+  const disabledReason = manifestState.error
+    ? manifestState.error
+    : (!manifestState.isReady ? "Loading manufacturer packet specifications..." : undefined);
+
   return (
     <div className="min-h-[100dvh] bg-gray-100 text-black font-sans print:bg-white print:p-0">
       <div className="max-w-4xl mx-auto p-4 sm:p-8 print:p-0">
@@ -284,8 +375,10 @@ export default function SignoffPage() {
             >
               <Share2 className="w-4 h-4 mr-2" /> Share
             </Button>
-            <Button onClick={() => window.print()} className="bg-black text-white hover:bg-gray-800">
-              <Printer className="w-4 h-4 mr-2" /> Print Document
+            <Button asChild className="bg-black text-white hover:bg-gray-800">
+              <a href={quote.signed ? getGetSignedSignoffDocumentUrl(quote.id) : getGetUnsignedSignoffDocumentUrl(quote.id)} target="_blank" rel="noopener noreferrer">
+                <Printer className="w-4 h-4 mr-2" /> Download PDF
+              </a>
             </Button>
           </div>
         </div>
@@ -296,6 +389,9 @@ export default function SignoffPage() {
           signoff={signoff ?? null}
           onSubmit={submitSignoff}
           onToggleExclude={toggleExclude}
+          hasManifest={manifestState.hasManifest}
+          disabledReason={disabledReason}
+          packetSection={<InternalPacketViewer key={detail.documentVersion} quoteId={quoteId} documentVersion={detail.documentVersion} onStateChange={handleManifestStateChange} />}
         />
       </div>
 

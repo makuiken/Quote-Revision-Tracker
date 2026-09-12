@@ -1,12 +1,98 @@
+import { Printer } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import React, { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetPublicSignoff,
   getGetPublicSignoffQueryKey,
   useSavePublicSignoff,
+  useGetPublicManufacturerPacket,
+  getGetPublicManufacturerPacketQueryKey,
+  useGetPublicManufacturerPacketPage,
+  getGetPublicSignoffDocumentUrl,
 } from "@workspace/api-client-react";
 import { useToast } from "@/components/ui/toaster";
 import { SignoffDocument } from "@/components/signoff-document";
+
+function PublicPacketViewer({ token, documentVersion, onStateChange }: { token: string, documentVersion: string, onStateChange: (state: { hasManifest: boolean, isReady: boolean, error?: string }) => void }) {
+  const { data: packet, isLoading, isError, error } = useGetPublicManufacturerPacket(token, {
+    query: {
+      retry: false,
+      queryKey: [...getGetPublicManufacturerPacketQueryKey(token), documentVersion]
+    }
+  });
+
+  const pageCount = packet?.pageCount || 0;
+  const noPacket = isError && (error as { status?: number } | null)?.status === 404;
+  const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setLoadedPages(new Set());
+    setImageError(false);
+  }, [packet]);
+
+  useEffect(() => {
+    if (isLoading) {
+      onStateChange({ hasManifest: false, isReady: false });
+    } else if ((isError && !noPacket) || imageError) {
+      onStateChange({ hasManifest: pageCount > 0, isReady: false, error: "One or more packet images failed to load. Please refresh the page." });
+    } else if (pageCount > 0) {
+      onStateChange({ hasManifest: true, isReady: loadedPages.size === pageCount });
+    } else {
+      onStateChange({ hasManifest: false, isReady: true });
+    }
+  }, [isLoading, isError, noPacket, imageError, pageCount, loadedPages.size, onStateChange]);
+
+  const handlePageLoad = (pageNum: number) => {
+    setLoadedPages(prev => {
+      const next = new Set(prev);
+      next.add(pageNum);
+      return next;
+    });
+  };
+
+  if (!packet || pageCount === 0) return null;
+
+  return (
+    <div className="mb-12">
+      <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2 mb-6">Manufacturer Specifications</h2>
+      <div className="space-y-8">
+        {Array.from({ length: pageCount }).map((_, i) => (
+          <PublicPacketPage key={i} token={token} pageNumber={i + 1} documentVersion={documentVersion} onLoad={() => handlePageLoad(i + 1)} onError={() => setImageError(true)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PublicPacketPage({ token, pageNumber, documentVersion, onLoad, onError }: { token: string, pageNumber: number, documentVersion: string, onLoad: () => void, onError: () => void }) {
+  const { data: blob, isLoading, isError } = useGetPublicManufacturerPacketPage(token, pageNumber, { documentVersion });
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isError) onError();
+  }, [isError, onError]);
+
+  useEffect(() => {
+    if (blob) {
+      const u = URL.createObjectURL(blob);
+      setUrl(u);
+      return () => URL.revokeObjectURL(u);
+    }
+    return undefined;
+  }, [blob]);
+
+  if (isError) return <div className="h-64 bg-red-50 flex items-center justify-center text-red-500 rounded border border-red-200">Failed to load page</div>;
+  if (isLoading || !url) return <div className="h-64 bg-gray-100 animate-pulse rounded border border-gray-200"></div>;
+
+  return (
+    <div className="bg-white border border-gray-300 shadow-sm rounded overflow-hidden">
+      <img src={url} alt={`Packet Page ${pageNumber}`} className="w-full h-auto block" onLoad={onLoad} onError={onError} />
+    </div>
+  );
+}
 
 /**
  * Public, customer-facing signing page. Reached via a tokenized share link —
@@ -16,6 +102,15 @@ export default function PublicSignoffPage() {
   const { token } = useParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
+
+  const handleManifestStateChange = React.useCallback((newState: { hasManifest: boolean, isReady: boolean, error?: string }) => {
+    setManifestState(prev =>
+      prev.hasManifest === newState.hasManifest && prev.isReady === newState.isReady && prev.error === newState.error
+        ? prev
+        : newState
+    );
+  }, []);
 
   const { data: detail, isLoading, isError } = useGetPublicSignoff(token ?? "", {
     query: { enabled: !!token, queryKey: getGetPublicSignoffQueryKey(token ?? "") },
@@ -84,14 +179,28 @@ export default function PublicSignoffPage() {
     );
   };
 
+  const disabledReason = manifestState.error
+    ? manifestState.error
+    : (!manifestState.isReady ? "Loading manufacturer packet specifications..." : undefined);
+
   return (
     <div className="min-h-[100dvh] bg-gray-100 text-black font-sans print:bg-white print:p-0">
       <div className="max-w-4xl mx-auto p-4 sm:p-8 print:p-0">
+        <div className="print:hidden flex justify-end mb-8 pb-4 border-b-2 border-gray-300">
+          <Button asChild className="bg-black text-white hover:bg-gray-800">
+            <a href={getGetPublicSignoffDocumentUrl(token!)} target="_blank" rel="noopener noreferrer">
+              <Printer className="w-4 h-4 mr-2" /> Download PDF
+            </a>
+          </Button>
+        </div>
         <SignoffDocument
           quote={quote}
           revisions={revisions}
           signoff={signoff ?? null}
           onSubmit={submitSignoff}
+          hasManifest={manifestState.hasManifest}
+          disabledReason={disabledReason}
+          packetSection={<PublicPacketViewer key={detail.documentVersion} token={token!} documentVersion={detail.documentVersion} onStateChange={handleManifestStateChange} />}
         />
       </div>
     </div>

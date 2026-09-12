@@ -133,30 +133,121 @@ export class ObjectStorageService {
     });
   }
 
-  async getObjectEntityFile(objectPath: string): Promise<File> {
-    if (!objectPath.startsWith('/objects/')) {
+  /**
+   * Generates a PUT URL for a server-selected private path. Callers must never
+   * pass a browser-controlled path here: packet uploads use this to bind the
+   * one-time upload URL to a quote and packet row before bytes arrive.
+   */
+  async getObjectEntityUploadURLForPath(objectPath: string): Promise<string> {
+    const file = this.getObjectEntityFileReference(objectPath);
+    const { bucketName, objectName } = parseObjectPath(
+      `/${file.bucket.name}/${file.name}`,
+    );
+    return signObjectURL({ bucketName, objectName, method: 'PUT', ttlSec: 900 });
+  }
+
+  private getObjectEntityFileReference(objectPath: string): File {
+    if (
+      !objectPath.startsWith('/objects/') ||
+      objectPath.includes('..') ||
+      objectPath.includes('\\')
+    ) {
       throw new ObjectNotFoundError();
     }
-
     const parts = objectPath.slice(1).split('/');
-    if (parts.length < 2) {
+    if (parts.length < 2 || parts.slice(1).some((part) => !part)) {
       throw new ObjectNotFoundError();
     }
 
-    const entityId = parts.slice(1).join('/');
     let entityDir = this.getPrivateObjectDir();
     if (!entityDir.endsWith('/')) {
       entityDir = `${entityDir}/`;
     }
-    const objectEntityPath = `${entityDir}${entityId}`;
+    const objectEntityPath = `${entityDir}${parts.slice(1).join('/')}`;
     const { bucketName, objectName } = parseObjectPath(objectEntityPath);
-    const bucket = objectStorageClient.bucket(bucketName);
-    const objectFile = bucket.file(objectName);
+    return objectStorageClient.bucket(bucketName).file(objectName);
+  }
+
+  async getObjectEntityFile(objectPath: string): Promise<File> {
+    const objectFile = this.getObjectEntityFileReference(objectPath);
     const [exists] = await objectFile.exists();
     if (!exists) {
       throw new ObjectNotFoundError();
     }
     return objectFile;
+  }
+
+  async downloadObjectBytes(objectPath: string): Promise<Buffer> {
+    const file = await this.getObjectEntityFile(objectPath);
+    const [bytes] = await file.download();
+    return bytes;
+  }
+
+  async getObjectEntityMetadata(objectPath: string): Promise<{
+    size: number;
+    generation: string | undefined;
+  }> {
+    const file = await this.getObjectEntityFile(objectPath);
+    const [metadata] = await file.getMetadata();
+    const size = Number(metadata.size);
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new Error("Object has an invalid size.");
+    }
+    return { size, generation: metadata.generation ? String(metadata.generation) : undefined };
+  }
+
+  async downloadObjectBytesBounded(
+    objectPath: string,
+    maxBytes: number,
+  ): Promise<Buffer> {
+    const metadata = await this.getObjectEntityMetadata(objectPath);
+    if (metadata.size > maxBytes) throw new Error("Object exceeds the allowed size.");
+    const file = await this.getObjectEntityFile(objectPath);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const stream = file.createReadStream();
+    for await (const chunk of stream) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buffer.length;
+      if (total > maxBytes) {
+        stream.destroy(new Error("Object exceeded the allowed size while downloading."));
+        throw new Error("Object exceeds the allowed size.");
+      }
+      chunks.push(buffer);
+    }
+    return Buffer.concat(chunks, total);
+  }
+
+  /**
+   * Copies uploaded bytes to a distinct immutable key. The generation
+   * precondition means a retry can never replace a source or approved render.
+   */
+  async copyObjectEntityImmutable(
+    sourcePath: string,
+    destinationPath: string,
+    sourceGeneration?: string,
+  ): Promise<void> {
+    const source = await this.getObjectEntityFile(sourcePath);
+    const destination = this.getObjectEntityFileReference(destinationPath);
+    await source.copy(destination, {
+      preconditionOpts: {
+        ifGenerationMatch: 0,
+        ...(sourceGeneration ? { ifSourceGenerationMatch: sourceGeneration } : {}),
+      },
+    });
+  }
+
+  async saveObjectEntityImmutable(
+    objectPath: string,
+    bytes: Uint8Array,
+    contentType: string,
+  ): Promise<void> {
+    const file = this.getObjectEntityFileReference(objectPath);
+    await file.save(Buffer.from(bytes), {
+      contentType,
+      resumable: false,
+      preconditionOpts: { ifGenerationMatch: 0 },
+    });
   }
 
   normalizeObjectEntityPath(rawPath: string): string {

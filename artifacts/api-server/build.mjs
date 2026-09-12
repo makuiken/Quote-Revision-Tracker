@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -13,6 +13,13 @@ const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
+  // DejaVu is bundled with its license so Unicode quote/revision/signature
+  // text renders identically in production rather than relying on host fonts.
+  await cp(
+    path.resolve(artifactDir, "assets"),
+    path.resolve(distDir, "assets"),
+    { recursive: true },
+  );
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
@@ -29,6 +36,8 @@ async function buildAll() {
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
+      "@napi-rs/canvas",
+      "pdfjs-dist",
       "sharp",
       "better-sqlite3",
       "sqlite3",
@@ -117,6 +126,20 @@ globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
+  });
+
+  // The packet engine executes parsing/rasterization in an isolated worker.
+  // Keep this as an independently deployable entry rather than relying on a
+  // source-relative .ts path at runtime.
+  await esbuild({
+    entryPoints: [path.resolve(artifactDir, "src/lib/packets/engineWorker.ts")],
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    outfile: path.resolve(distDir, "packets-engine-worker.mjs"),
+    logLevel: "info",
+    external: ["*.node", "@napi-rs/canvas", "pdfjs-dist", "pdfjs-dist/*"],
+    sourcemap: "linked",
   });
 }
 

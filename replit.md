@@ -16,3 +16,8 @@ Internal tool for the Kuiken Brothers millwork sales team. Logs customer quote r
 ## User preferences
 - Team is non-technical: keep UI extremely simple, plain language, big targets.
 - Printed documents branded "Kuiken Brothers".
+
+## Manufacturer quote cleanup policy
+- Preserve prices and totals, technical brand names within specifications, and manufacturer terms and warranties alongside the app's signoff terms (explicitly confirmed by the user).
+- Suggest removal only of decorative manufacturer logos and administrative quote details. Salespeople must review the cleaned pages before publication; unknown layouts require manual review.
+- Use no external AI inference for PDF cleanup. Never treat a visual overlay or page crop as secure redaction.

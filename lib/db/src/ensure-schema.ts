@@ -61,6 +61,12 @@ const RECONCILIATION_STATEMENTS: string[] = [
   // Signer identity: pre-existing signoffs remain readable as "Other", while
   // all new signoffs must send an explicit role through API validation.
   `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS stakeholder_role text NOT NULL DEFAULT 'Other'`,
+  // A signoff records immutable packet/PDF snapshot identifiers. Paths remain
+  // private and are never emitted by public token routes.
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_packet_id integer`,
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_packet_sha256 text`,
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_document_object_path text`,
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_document_sha256 text`,
 
   // Admin-managed dropdown option lists for product spec fields.
   `CREATE TABLE IF NOT EXISTS field_options (
@@ -91,6 +97,55 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS field_options_scope_unique
     ON field_options (category, field, parent_field, parent_value, grand_field, grand_value)`,
   `DROP INDEX IF EXISTS field_options_category_field_parent_value_unique`,
+
+  // Manufacturer source packets are durable processing jobs. Object bytes live
+  // in App Storage only; these paths and review decisions are metadata.
+  `CREATE TABLE IF NOT EXISTS manufacturer_packets (
+    id serial PRIMARY KEY,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    manufacturer text,
+    detected_manufacturer text,
+    original_name text NOT NULL,
+    declared_size integer NOT NULL DEFAULT 0,
+    upload_object_path text NOT NULL UNIQUE,
+    source_object_path text UNIQUE,
+    sanitized_pdf_object_path text UNIQUE,
+    sanitized_pdf_sha256 text,
+    sanitized_page_object_paths jsonb,
+    analysis jsonb,
+    manual_redactions jsonb,
+    status text NOT NULL DEFAULT 'awaiting_upload',
+    page_count integer,
+    attempt_count integer NOT NULL DEFAULT 0,
+    processing_attempt_token text,
+    processing_started_at timestamptz,
+    failure_message text,
+    approved_at timestamptz,
+    approved_by_id text,
+    approved_by_name text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_packets_quote_id_idx
+    ON manufacturer_packets (quote_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_packets_recovery_idx
+    ON manufacturer_packets (status, processing_started_at)
+    WHERE status IN ('queued', 'processing')`,
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS detected_manufacturer text`,
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS declared_size integer NOT NULL DEFAULT 0`,
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS processing_attempt_token text`,
+  `CREATE TABLE IF NOT EXISTS manufacturer_packet_manifest (
+    id serial PRIMARY KEY,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    packet_id integer NOT NULL REFERENCES manufacturer_packets(id) ON DELETE CASCADE,
+    page_number integer NOT NULL,
+    page_order integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT manufacturer_packet_manifest_order_unique UNIQUE (quote_id, page_order),
+    CONSTRAINT manufacturer_packet_manifest_page_unique UNIQUE (quote_id, packet_id, page_number)
+  )`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_packet_manifest_quote_order_idx
+    ON manufacturer_packet_manifest (quote_id, page_order)`,
 ];
 
 export async function ensureSchema(): Promise<void> {

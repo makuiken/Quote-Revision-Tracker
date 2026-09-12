@@ -4,12 +4,14 @@ import publicRouter from "./public";
 import quotesRouter from "./quotes";
 import adminRouter from "./admin";
 import storageRouter from "./storage";
+import packetsRouter from "./packets";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(publicRouter);
 router.use(adminRouter);
+router.use(packetsRouter);
 router.use(quotesRouter);
 router.use(storageRouter);
 

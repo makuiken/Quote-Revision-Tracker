@@ -17,6 +17,7 @@ import QuoteDetailPage from "@/pages/quote-detail";
 import PrintLogPage from "@/pages/print-log";
 import SignoffPage from "@/pages/signoff";
 import PublicSignoffPage from "@/pages/signoff-public";
+import ManufacturerPacketsPage from "@/pages/manufacturer-packets";
 import TeamPage from "@/pages/team";
 import FieldOptionsPage from "@/pages/field-options";
 import NotFound from "@/pages/not-found";
@@ -199,6 +200,7 @@ function ClerkProviderWithRoutes() {
               <Route path="/quotes/new" component={NewQuotePage} />
               <Route path="/quotes/:id" component={QuoteDetailPage} />
               <Route path="/quotes/:id/print-log" component={PrintLogPage} />
+              <Route path="/quotes/:id/packets" component={ManufacturerPacketsPage} />
               <Route path="/quotes/:id/signoff" component={SignoffPage} />
               <Route path="/sign/:token" component={PublicSignoffPage} />
               <Route path="/team" component={TeamPage} />

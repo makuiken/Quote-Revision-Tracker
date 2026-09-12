@@ -163,6 +163,9 @@ export function SignoffDocument({
   signoff,
   onSubmit,
   onToggleExclude,
+  packetSection,
+  hasManifest,
+  disabledReason,
 }: {
   quote: Quote;
   revisions: Revision[];
@@ -175,6 +178,9 @@ export function SignoffDocument({
   ) => void;
   /** When provided (internal view), shows hide/show controls per revision. */
   onToggleExclude?: (revision: Revision) => void;
+  hasManifest?: boolean;
+  packetSection?: React.ReactNode;
+  disabledReason?: string;
 }) {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
   const [signMethod, setSignMethod] = useState<"draw" | "type">("draw");
@@ -330,6 +336,8 @@ export function SignoffDocument({
         })()}
       </div>
 
+      {packetSection}
+
       <div className="mb-12 break-inside-avoid">
         <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2 mb-4">Terms &amp; Conditions</h2>
         <ul className="list-disc pl-6 text-sm space-y-2 text-gray-800">
@@ -345,7 +353,7 @@ export function SignoffDocument({
         <h2 className="text-xl font-bold uppercase tracking-widest mb-6">Customer Approval</h2>
 
         <p className="text-sm text-gray-700 mb-6 italic">
-          I have reviewed all quoted line-item in detail and agree that the product specifications, unit handing, divided lite patterns, and pricing are accurate, and I approve the project for order. I acknowledge that additional charges, tax or Terms and Conditions may apply.
+          I have reviewed all quoted line-item in detail and agree that the product specifications, unit handing, divided lite patterns, and pricing are accurate, and I approve the project for order. I acknowledge that additional charges, tax or Terms and Conditions may apply.{hasManifest ? " The approved manufacturer packet pages attached to this document are included as part of this approval." : ""}
         </p>
 
         {quote.signed && signoff ? (
@@ -388,9 +396,15 @@ export function SignoffDocument({
 
             {/* Digital Signing UI (hidden on print) */}
             <div className="print:hidden bg-gray-50 border border-gray-200 p-6 sm:p-8 rounded-lg">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                <div className="space-y-2">
-                  <Label htmlFor="signerName">Your full legal name</Label>
+              {disabledReason ? (
+                <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded text-sm font-medium">
+                  Cannot sign: {disabledReason}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="signerName">Your full legal name</Label>
                   <Input
                     id="signerName"
                     value={signerName}
@@ -470,6 +484,8 @@ export function SignoffDocument({
                     Confirm Signature
                   </Button>
                 </div>
+              )}
+              </>
               )}
             </div>
           </div>

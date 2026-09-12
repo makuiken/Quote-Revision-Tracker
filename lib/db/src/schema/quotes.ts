@@ -45,6 +45,22 @@ export type QuoteSpecs = {
   millworkDescription?: string | null;
 };
 
+export type PacketRedaction = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  reason?: string;
+};
+
+export type PacketPageAnalysis = {
+  pageNumber: number;
+  width: number;
+  height: number;
+  pageType: string;
+  suggestedRects: PacketRedaction[];
+};
+
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   clerkUserId: text("clerk_user_id").notNull().unique(),
@@ -147,6 +163,15 @@ export const signoffsTable = pgTable("signoffs", {
     .default("Other"),
   signatureType: text("signature_type").notNull(),
   signatureData: text("signature_data").notNull(),
+  // Snapshot binding: an approval is evidence for this exact current packet
+  // and this server-produced combined PDF, not merely the mutable quote row.
+  signedPacketId: integer("signed_packet_id").references(
+    () => manufacturerPacketsTable.id,
+    { onDelete: "set null" },
+  ),
+  signedPacketSha256: text("signed_packet_sha256"),
+  signedDocumentObjectPath: text("signed_document_object_path"),
+  signedDocumentSha256: text("signed_document_sha256"),
   signedAt: timestamp("signed_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -167,6 +192,89 @@ export const attachmentsTable = pgTable("attachments", {
     .notNull()
     .defaultNow(),
 });
+
+// Packet bytes are intentionally stored only in App Storage. This table is the
+// durable job/audit record and holds opaque object paths plus review metadata.
+export const manufacturerPacketsTable = pgTable("manufacturer_packets", {
+  id: serial("id").primaryKey(),
+  quoteId: integer("quote_id")
+    .notNull()
+    .references(() => quotesTable.id, { onDelete: "cascade" }),
+  manufacturer: text("manufacturer"),
+  detectedManufacturer: text("detected_manufacturer"),
+  originalName: text("original_name").notNull(),
+  declaredSize: integer("declared_size").notNull(),
+  uploadObjectPath: text("upload_object_path").notNull().unique(),
+  sourceObjectPath: text("source_object_path").unique(),
+  sanitizedPdfObjectPath: text("sanitized_pdf_object_path").unique(),
+  sanitizedPdfSha256: text("sanitized_pdf_sha256"),
+  sanitizedPageObjectPaths: jsonb("sanitized_page_object_paths")
+    .$type<string[] | null>(),
+  analysis: jsonb("analysis").$type<PacketPageAnalysis[] | null>(),
+  manualRedactions: jsonb("manual_redactions")
+    .$type<Record<string, PacketRedaction[]> | null>(),
+  status: text("status")
+    .$type<
+      | "awaiting_upload"
+      | "queued"
+      | "processing"
+      | "needs_review"
+      | "ready_for_approval"
+      | "approved"
+      | "failed"
+    >()
+    .notNull()
+    .default("awaiting_upload"),
+  pageCount: integer("page_count"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  processingAttemptToken: text("processing_attempt_token"),
+  processingStartedAt: timestamp("processing_started_at", {
+    withTimezone: true,
+  }),
+  failureMessage: text("failure_message"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedById: text("approved_by_id"),
+  approvedByName: text("approved_by_name"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+// The current customer-visible packet order. It is intentionally a single
+// mutable manifest, not a historical approval log; signed snapshots keep their
+// own immutable combined PDF bytes in App Storage.
+export const manufacturerPacketManifestTable = pgTable(
+  "manufacturer_packet_manifest",
+  {
+    id: serial("id").primaryKey(),
+    quoteId: integer("quote_id")
+      .notNull()
+      .references(() => quotesTable.id, { onDelete: "cascade" }),
+    packetId: integer("packet_id")
+      .notNull()
+      .references(() => manufacturerPacketsTable.id, { onDelete: "cascade" }),
+    pageNumber: integer("page_number").notNull(),
+    pageOrder: integer("page_order").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("manufacturer_packet_manifest_order_unique").on(
+      table.quoteId,
+      table.pageOrder,
+    ),
+    unique("manufacturer_packet_manifest_page_unique").on(
+      table.quoteId,
+      table.packetId,
+      table.pageNumber,
+    ),
+  ],
+);
 
 // Admin-managed dropdown option lists for product spec fields, keyed by spec
 // section (window/interiorDoor/exteriorDoor) + field name. A field with a row
@@ -220,5 +328,6 @@ export type Revision = typeof revisionsTable.$inferSelect;
 export type RevisionDraft = typeof revisionDraftsTable.$inferSelect;
 export type Signoff = typeof signoffsTable.$inferSelect;
 export type Attachment = typeof attachmentsTable.$inferSelect;
+export type ManufacturerPacket = typeof manufacturerPacketsTable.$inferSelect;
 export type AppUser = typeof usersTable.$inferSelect;
 export type FieldOptions = typeof fieldOptionsTable.$inferSelect;

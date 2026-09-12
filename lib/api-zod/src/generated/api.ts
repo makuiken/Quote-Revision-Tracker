@@ -1390,3 +1390,744 @@ export const DeleteAttachmentParams = zod.object({
 export const DeleteAttachmentResponse = zod.void()
 
 
+/**
+ * @summary List manufacturer packet processing records for a quote
+ */
+export const ListManufacturerPacketsParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+export const listManufacturerPacketsResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const listManufacturerPacketsResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const listManufacturerPacketsResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const listManufacturerPacketsResponseManualRedactionsItemXMin = 0;
+
+export const listManufacturerPacketsResponseManualRedactionsItemYMin = 0;
+
+export const listManufacturerPacketsResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const listManufacturerPacketsResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const listManufacturerPacketsResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const ListManufacturerPacketsResponseItem = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(listManufacturerPacketsResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(listManufacturerPacketsResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(listManufacturerPacketsResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(listManufacturerPacketsResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(listManufacturerPacketsResponseManualRedactionsItemXMin),
+  "y": zod.number().min(listManufacturerPacketsResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(listManufacturerPacketsResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(listManufacturerPacketsResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(listManufacturerPacketsResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+export const ListManufacturerPacketsResponse = zod.array(ListManufacturerPacketsResponseItem)
+
+
+/**
+ * @summary Create a quote-bound PDF packet upload URL
+ */
+export const RequestManufacturerPacketUploadParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const requestManufacturerPacketUploadBodyNameMax = 200;
+
+export const requestManufacturerPacketUploadBodySizeMax = 41943040;
+
+export const requestManufacturerPacketUploadBodyManufacturerMax = 120;
+
+
+
+export const RequestManufacturerPacketUploadBody = zod.object({
+  "name": zod.string().min(1).max(requestManufacturerPacketUploadBodyNameMax),
+  "size": zod.int().min(1).max(requestManufacturerPacketUploadBodySizeMax),
+  "contentType": zod.enum(['application/pdf']),
+  "manufacturer": zod.string().max(requestManufacturerPacketUploadBodyManufacturerMax).nullish()
+})
+
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemWidthExclusiveMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemHeightExclusiveMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsMax = 100;
+
+export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemXMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemYMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemWidthExclusiveMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemHeightExclusiveMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemReasonMax = 250;
+
+
+
+export const RequestManufacturerPacketUploadResponse = zod.object({
+  "packet": zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(requestManufacturerPacketUploadResponsePacketAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(requestManufacturerPacketUploadResponsePacketAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(requestManufacturerPacketUploadResponsePacketAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(requestManufacturerPacketUploadResponsePacketManualRedactionsItemXMin),
+  "y": zod.number().min(requestManufacturerPacketUploadResponsePacketManualRedactionsItemYMin),
+  "width": zod.number().gt(requestManufacturerPacketUploadResponsePacketManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(requestManufacturerPacketUploadResponsePacketManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(requestManufacturerPacketUploadResponsePacketManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+}),
+  "uploadURL": zod.url()
+})
+
+
+/**
+ * @summary Get the current ordered approved packet page manifest
+ */
+export const GetManufacturerPacketManifestParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const GetManufacturerPacketManifestQueryParams = zod.object({
+  "documentVersion": zod.coerce.string().min(1).optional().describe('When supplied, validates the manifest against this exact signoff version.')
+})
+
+
+
+
+
+export const GetManufacturerPacketManifestResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "packetId": zod.int(),
+  "pageNumber": zod.int().min(1),
+  "pageOrder": zod.int().min(1)
+}))
+})
+
+
+/**
+ * @summary Publish the complete selected and ordered packet page manifest
+ */
+export const SetManufacturerPacketManifestParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+export const setManufacturerPacketManifestBodyEntriesMax = 500;
+
+
+
+export const SetManufacturerPacketManifestBody = zod.object({
+  "entries": zod.array(zod.object({
+  "packetId": zod.int(),
+  "pageNumber": zod.int().min(1),
+  "pageOrder": zod.int().min(1)
+})).max(setManufacturerPacketManifestBodyEntriesMax)
+})
+
+
+
+
+
+export const SetManufacturerPacketManifestResponse = zod.object({
+  "entries": zod.array(zod.object({
+  "packetId": zod.int(),
+  "pageNumber": zod.int().min(1),
+  "pageOrder": zod.int().min(1)
+}))
+})
+
+
+/**
+ * @summary Unpublish all packet pages from customer signoff
+ */
+export const ClearManufacturerPacketManifestParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ClearManufacturerPacketManifestResponse = zod.void()
+
+
+/**
+ * @summary Get an internal packet review record
+ */
+export const GetManufacturerPacketParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+
+export const getManufacturerPacketResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const getManufacturerPacketResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const getManufacturerPacketResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const getManufacturerPacketResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const getManufacturerPacketResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const getManufacturerPacketResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const getManufacturerPacketResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const getManufacturerPacketResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const getManufacturerPacketResponseManualRedactionsItemXMin = 0;
+
+export const getManufacturerPacketResponseManualRedactionsItemYMin = 0;
+
+export const getManufacturerPacketResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const getManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const getManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const GetManufacturerPacketResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(getManufacturerPacketResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(getManufacturerPacketResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(getManufacturerPacketResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(getManufacturerPacketResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(getManufacturerPacketResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(getManufacturerPacketResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(getManufacturerPacketResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(getManufacturerPacketResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(getManufacturerPacketResponseManualRedactionsItemXMin),
+  "y": zod.number().min(getManufacturerPacketResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(getManufacturerPacketResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(getManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(getManufacturerPacketResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Delete a packet record and remove it from the approved manifest
+ */
+export const DeleteManufacturerPacketParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+export const DeleteManufacturerPacketResponse = zod.void()
+
+
+/**
+ * @summary Copy the uploaded PDF to immutable private source storage and queue review analysis
+ */
+export const CompleteManufacturerPacketUploadParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+
+export const completeManufacturerPacketUploadResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const completeManufacturerPacketUploadResponseManualRedactionsItemXMin = 0;
+
+export const completeManufacturerPacketUploadResponseManualRedactionsItemYMin = 0;
+
+export const completeManufacturerPacketUploadResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const completeManufacturerPacketUploadResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const completeManufacturerPacketUploadResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const CompleteManufacturerPacketUploadResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(completeManufacturerPacketUploadResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(completeManufacturerPacketUploadResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(completeManufacturerPacketUploadResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(completeManufacturerPacketUploadResponseManualRedactionsItemXMin),
+  "y": zod.number().min(completeManufacturerPacketUploadResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(completeManufacturerPacketUploadResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(completeManufacturerPacketUploadResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(completeManufacturerPacketUploadResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Confirm manual administrative redactions and generate a sanitized review version
+ */
+export const SetManufacturerPacketRedactionsParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+export const setManufacturerPacketRedactionsBodyRedactionsByPageItemXMin = 0;
+
+export const setManufacturerPacketRedactionsBodyRedactionsByPageItemYMin = 0;
+
+export const setManufacturerPacketRedactionsBodyRedactionsByPageItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsBodyRedactionsByPageItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsBodyRedactionsByPageItemReasonMax = 250;
+
+export const setManufacturerPacketRedactionsBodyRedactionsByPageMaxOne = 100;
+
+
+
+export const SetManufacturerPacketRedactionsBody = zod.object({
+  "redactionsByPage": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketRedactionsBodyRedactionsByPageItemXMin),
+  "y": zod.number().min(setManufacturerPacketRedactionsBodyRedactionsByPageItemYMin),
+  "width": zod.number().gt(setManufacturerPacketRedactionsBodyRedactionsByPageItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketRedactionsBodyRedactionsByPageItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketRedactionsBodyRedactionsByPageItemReasonMax).optional()
+})).max(setManufacturerPacketRedactionsBodyRedactionsByPageMaxOne))
+})
+
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const setManufacturerPacketRedactionsResponseManualRedactionsItemXMin = 0;
+
+export const setManufacturerPacketRedactionsResponseManualRedactionsItemYMin = 0;
+
+export const setManufacturerPacketRedactionsResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketRedactionsResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const SetManufacturerPacketRedactionsResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(setManufacturerPacketRedactionsResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketRedactionsResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(setManufacturerPacketRedactionsResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketRedactionsResponseManualRedactionsItemXMin),
+  "y": zod.number().min(setManufacturerPacketRedactionsResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(setManufacturerPacketRedactionsResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketRedactionsResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketRedactionsResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Approve the current sanitized packet for customer signoff
+ */
+export const ApproveManufacturerPacketParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+
+export const approveManufacturerPacketResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const approveManufacturerPacketResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const approveManufacturerPacketResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const approveManufacturerPacketResponseManualRedactionsItemXMin = 0;
+
+export const approveManufacturerPacketResponseManualRedactionsItemYMin = 0;
+
+export const approveManufacturerPacketResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const approveManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const approveManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const ApproveManufacturerPacketResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(approveManufacturerPacketResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(approveManufacturerPacketResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(approveManufacturerPacketResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(approveManufacturerPacketResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(approveManufacturerPacketResponseManualRedactionsItemXMin),
+  "y": zod.number().min(approveManufacturerPacketResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(approveManufacturerPacketResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(approveManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(approveManufacturerPacketResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Recover a failed or abandoned packet processing job
+ */
+export const RetryManufacturerPacketParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+
+export const retryManufacturerPacketResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const retryManufacturerPacketResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const retryManufacturerPacketResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const retryManufacturerPacketResponseManualRedactionsItemXMin = 0;
+
+export const retryManufacturerPacketResponseManualRedactionsItemYMin = 0;
+
+export const retryManufacturerPacketResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const retryManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const retryManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const RetryManufacturerPacketResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(retryManufacturerPacketResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(retryManufacturerPacketResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(retryManufacturerPacketResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(retryManufacturerPacketResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(retryManufacturerPacketResponseManualRedactionsItemXMin),
+  "y": zod.number().min(retryManufacturerPacketResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(retryManufacturerPacketResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(retryManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(retryManufacturerPacketResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Stream the original private PDF for employee manual review
+ */
+export const GetManufacturerPacketSourceParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+export const GetManufacturerPacketSourceResponse = zod.unknown()
+
+
+/**
+ * @summary Render an original private PDF PNG page for employee rectangle review
+ */
+
+
+
+export const GetManufacturerPacketSourcePageParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int(),
+  "pageNumber": zod.coerce.number().int().min(1)
+})
+
+export const GetManufacturerPacketSourcePageResponse = zod.unknown()
+
+
+/**
+ * @summary Stream a sanitized PNG page for internal review
+ */
+
+
+
+export const GetManufacturerPacketPageParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int(),
+  "pageNumber": zod.coerce.number().int().min(1)
+})
+
+
+
+
+export const GetManufacturerPacketPageQueryParams = zod.object({
+  "documentVersion": zod.coerce.string().min(1).optional().describe('Signoff clients supply this to require current approved-manifest membership.')
+})
+
+export const GetManufacturerPacketPageResponse = zod.unknown()
+
+
+/**
+ * @summary Download the current signed immutable combined PDF snapshot
+ */
+export const GetSignedSignoffDocumentParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetSignedSignoffDocumentResponse = zod.unknown()
+
+
+/**
+ * @summary Download the current unsigned combined PDF
+ */
+export const GetUnsignedSignoffDocumentParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetUnsignedSignoffDocumentResponse = zod.unknown()
+
+
+/**
+ * @summary Get public metadata for the current approved packet only
+ */
+export const GetPublicManufacturerPacketParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicManufacturerPacketResponse = zod.object({
+  "id": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "pageCount": zod.int(),
+  "approvedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Stream an approved sanitized packet PNG page
+ */
+
+
+
+export const GetPublicManufacturerPacketPageParams = zod.object({
+  "token": zod.coerce.string(),
+  "pageNumber": zod.coerce.number().int().min(1)
+})
+
+
+
+
+export const GetPublicManufacturerPacketPageQueryParams = zod.object({
+  "documentVersion": zod.coerce.string().min(1).describe('Version loaded with the public signoff document; stale versions cannot fetch newer pages.')
+})
+
+export const GetPublicManufacturerPacketPageResponse = zod.unknown()
+
+
+/**
+ * @summary Download the current unsigned or immutable signed combined PDF
+ */
+export const GetPublicSignoffDocumentParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicSignoffDocumentResponse = zod.unknown()
+
+

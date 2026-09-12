@@ -22,6 +22,8 @@ tags:
     description: Object storage upload and serving endpoints
   - name: attachments
     description: Quote file attachments
+  - name: manufacturer-packets
+    description: Manufacturer PDF packet review, approval, and signoff inclusion
   - name: admin
     description: Team member administration (admin only)
 paths:
@@ -1152,8 +1154,425 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /quotes/{id}/manufacturer-packets:
+    get:
+      operationId: listManufacturerPackets
+      tags: [manufacturer-packets]
+      summary: List manufacturer packet processing records for a quote
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "200":
+          description: Packets
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ManufacturerPacket" }
+    post:
+      operationId: requestManufacturerPacketUpload
+      tags: [manufacturer-packets]
+      summary: Create a quote-bound PDF packet upload URL
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManufacturerPacketUploadInput" }
+      responses:
+        "201":
+          description: Packet record and direct-upload URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacketUpload" }
+        "400":
+          description: Invalid PDF metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /quotes/{id}/manufacturer-packet-manifest:
+    get:
+      operationId: getManufacturerPacketManifest
+      tags: [manufacturer-packets]
+      summary: Get the current ordered approved packet page manifest
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - name: documentVersion
+          in: query
+          required: false
+          description: When supplied, validates the manifest against this exact signoff version.
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Approved packet manifest
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacketManifest" }
+    put:
+      operationId: setManufacturerPacketManifest
+      tags: [manufacturer-packets]
+      summary: Publish the complete selected and ordered packet page manifest
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManufacturerPacketManifestInput" }
+      responses:
+        "200":
+          description: Approved packet manifest
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacketManifest" }
+    delete:
+      operationId: clearManufacturerPacketManifest
+      tags: [manufacturer-packets]
+      summary: Unpublish all packet pages from customer signoff
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "204": { description: Manifest unpublished }
+  /quotes/{id}/manufacturer-packets/{packetId}:
+    get:
+      operationId: getManufacturerPacket
+      tags: [manufacturer-packets]
+      summary: Get an internal packet review record
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "200":
+          description: Packet review detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
+        "404":
+          description: Packet not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteManufacturerPacket
+      tags: [manufacturer-packets]
+      summary: Delete a packet record and remove it from the approved manifest
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "204": { description: Deleted }
+  /quotes/{id}/manufacturer-packets/{packetId}/complete-upload:
+    post:
+      operationId: completeManufacturerPacketUpload
+      tags: [manufacturer-packets]
+      summary: Copy the uploaded PDF to immutable private source storage and queue review analysis
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "202":
+          description: Packet queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
+  /quotes/{id}/manufacturer-packets/{packetId}/redactions:
+    patch:
+      operationId: setManufacturerPacketRedactions
+      tags: [manufacturer-packets]
+      summary: Confirm manual administrative redactions and generate a sanitized review version
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PacketRedactionsInput" }
+      responses:
+        "202":
+          description: Sanitized render queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
+  /quotes/{id}/manufacturer-packets/{packetId}/approve:
+    post:
+      operationId: approveManufacturerPacket
+      tags: [manufacturer-packets]
+      summary: Approve the current sanitized packet for customer signoff
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "200":
+          description: Approved packet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
+        "409":
+          description: Packet is not ready for approval
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /quotes/{id}/manufacturer-packets/{packetId}/retry:
+    post:
+      operationId: retryManufacturerPacket
+      tags: [manufacturer-packets]
+      summary: Recover a failed or abandoned packet processing job
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "202":
+          description: Packet queued for bounded retry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
+  /quotes/{id}/manufacturer-packets/{packetId}/source:
+    get:
+      operationId: getManufacturerPacketSource
+      tags: [manufacturer-packets]
+      summary: Stream the original private PDF for employee manual review
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "200":
+          description: Original PDF (employee-only)
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+  /quotes/{id}/manufacturer-packets/{packetId}/source/pages/{pageNumber}:
+    get:
+      operationId: getManufacturerPacketSourcePage
+      tags: [manufacturer-packets]
+      summary: Render an original private PDF PNG page for employee rectangle review
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+        - $ref: "#/components/parameters/PacketPageNumber"
+      responses:
+        "200":
+          description: Original private PNG page (employee-only)
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+  /quotes/{id}/manufacturer-packets/{packetId}/pages/{pageNumber}:
+    get:
+      operationId: getManufacturerPacketPage
+      tags: [manufacturer-packets]
+      summary: Stream a sanitized PNG page for internal review
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+        - $ref: "#/components/parameters/PacketPageNumber"
+        - name: documentVersion
+          in: query
+          required: false
+          description: Signoff clients supply this to require current approved-manifest membership.
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Sanitized PNG page
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+  /quotes/{id}/signoff/document:
+    get:
+      operationId: getSignedSignoffDocument
+      tags: [signoff]
+      summary: Download the current signed immutable combined PDF snapshot
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "200":
+          description: Combined signoff PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+  /quotes/{id}/signoff/document/unsigned:
+    get:
+      operationId: getUnsignedSignoffDocument
+      tags: [signoff]
+      summary: Download the current unsigned combined PDF
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "200":
+          description: Combined unsigned PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+  /public/signoff/{token}/packet:
+    get:
+      operationId: getPublicManufacturerPacket
+      tags: [manufacturer-packets]
+      summary: Get public metadata for the current approved packet only
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Approved packet metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicManufacturerPacket" }
+  /public/signoff/{token}/packet/pages/{pageNumber}:
+    get:
+      operationId: getPublicManufacturerPacketPage
+      tags: [manufacturer-packets]
+      summary: Stream an approved sanitized packet PNG page
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+        - $ref: "#/components/parameters/PacketPageNumber"
+        - name: documentVersion
+          in: query
+          required: true
+          description: Version loaded with the public signoff document; stale versions cannot fetch newer pages.
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Approved sanitized PNG page
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+  /public/signoff/{token}/document:
+    get:
+      operationId: getPublicSignoffDocument
+      tags: [signoff]
+      summary: Download the current unsigned or immutable signed combined PDF
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Combined signoff PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
 components:
+  parameters:
+    QuoteId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    PacketId:
+      name: packetId
+      in: path
+      required: true
+      schema: { type: integer }
+    PacketPageNumber:
+      name: pageNumber
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ShareToken:
+      name: token
+      in: path
+      required: true
+      schema: { type: string }
   schemas:
+    PacketStatus:
+      type: string
+      enum: [awaiting_upload, queued, processing, needs_review, ready_for_approval, approved, failed]
+    PacketRect:
+      type: object
+      properties:
+        x: { type: number, minimum: 0 }
+        y: { type: number, minimum: 0 }
+        width: { type: number, exclusiveMinimum: 0 }
+        height: { type: number, exclusiveMinimum: 0 }
+        reason: { type: string, maxLength: 250 }
+      required: [x, y, width, height]
+    PacketPageAnalysis:
+      type: object
+      properties:
+        pageNumber: { type: integer, minimum: 1 }
+        width: { type: number, exclusiveMinimum: 0 }
+        height: { type: number, exclusiveMinimum: 0 }
+        pageType: { type: string }
+        suggestedRects:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/PacketRect" }
+      required: [pageNumber, width, height, pageType, suggestedRects]
+    ManufacturerPacket:
+      type: object
+      properties:
+        id: { type: integer }
+        quoteId: { type: integer }
+        manufacturer: { type: ["string", "null"] }
+        detectedManufacturer: { type: ["string", "null"] }
+        originalName: { type: string }
+        status: { $ref: "#/components/schemas/PacketStatus" }
+        pageCount: { type: ["integer", "null"] }
+        analysis:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/PacketPageAnalysis" }
+        manualRedactions:
+          type: ["object", "null"]
+          additionalProperties:
+            type: array
+            items: { $ref: "#/components/schemas/PacketRect" }
+        failureMessage: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        approvedAt: { type: ["string", "null"], format: date-time }
+      required: [id, quoteId, originalName, status, createdAt, updatedAt]
+    PublicManufacturerPacket:
+      type: object
+      properties:
+        id: { type: integer }
+        manufacturer: { type: ["string", "null"] }
+        pageCount: { type: integer }
+        approvedAt: { type: string, format: date-time }
+      required: [id, pageCount, approvedAt]
+    ManufacturerPacketUploadInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        size: { type: integer, minimum: 1, maximum: 41943040 }
+        contentType: { type: string, enum: [application/pdf] }
+        manufacturer: { type: ["string", "null"], maxLength: 120 }
+      required: [name, size, contentType]
+    ManufacturerPacketUpload:
+      type: object
+      properties:
+        packet: { $ref: "#/components/schemas/ManufacturerPacket" }
+        uploadURL: { type: string, format: uri }
+      required: [packet, uploadURL]
+    PacketRedactionsInput:
+      type: object
+      properties:
+        redactionsByPage:
+          type: object
+          maxProperties: 500
+          additionalProperties:
+            type: array
+            maxItems: 100
+            items: { $ref: "#/components/schemas/PacketRect" }
+      required: [redactionsByPage]
+    ManufacturerPacketManifestEntry:
+      type: object
+      properties:
+        packetId: { type: integer }
+        pageNumber: { type: integer, minimum: 1 }
+        pageOrder: { type: integer, minimum: 1 }
+      required: [packetId, pageNumber, pageOrder]
+    ManufacturerPacketManifest:
+      type: object
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/ManufacturerPacketManifestEntry" }
+      required: [entries]
+    ManufacturerPacketManifestInput:
+      type: object
+      properties:
+        entries:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/ManufacturerPacketManifestEntry" }
+      required: [entries]
     UploadUrlRequest:
       type: object
       required: [name, size, contentType]

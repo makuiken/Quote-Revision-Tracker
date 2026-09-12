@@ -32,9 +32,19 @@ import type {
   ErrorResponse,
   FieldOptions,
   FieldOptionsInput,
+  GetManufacturerPacketManifestParams,
+  GetManufacturerPacketPageParams,
+  GetPublicManufacturerPacketPageParams,
   GetRecentActivityParams,
   HealthStatus,
   ListQuotesParams,
+  ManufacturerPacket,
+  ManufacturerPacketManifest,
+  ManufacturerPacketManifestInput,
+  ManufacturerPacketUpload,
+  ManufacturerPacketUploadInput,
+  PacketRedactionsInput,
+  PublicManufacturerPacket,
   Quote,
   QuoteDetail,
   QuoteInput,
@@ -3220,3 +3230,1495 @@ export const useDeleteAttachment = <TError = ErrorType<ErrorResponse>,
       return useMutation(getDeleteAttachmentMutationOptions(options));
     }
 
+export const getListManufacturerPacketsUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets`
+}
+
+/**
+ * @summary List manufacturer packet processing records for a quote
+ */
+export const listManufacturerPackets = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacket[]> => {
+
+  return customFetch<ManufacturerPacket[]>(getListManufacturerPacketsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListManufacturerPacketsQueryKey = (id: number,) => {
+    return [
+    `/api/quotes/${id}/manufacturer-packets`
+    ] as const;
+    }
+
+
+export const getListManufacturerPacketsQueryOptions = <TData = Awaited<ReturnType<typeof listManufacturerPackets>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listManufacturerPackets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListManufacturerPacketsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listManufacturerPackets>>> = ({ signal }) => listManufacturerPackets(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listManufacturerPackets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListManufacturerPacketsQueryResult = NonNullable<Awaited<ReturnType<typeof listManufacturerPackets>>>
+export type ListManufacturerPacketsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List manufacturer packet processing records for a quote
+ */
+
+export function useListManufacturerPackets<TData = Awaited<ReturnType<typeof listManufacturerPackets>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listManufacturerPackets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListManufacturerPacketsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestManufacturerPacketUploadUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets`
+}
+
+/**
+ * @summary Create a quote-bound PDF packet upload URL
+ */
+export const requestManufacturerPacketUpload = async (id: number,
+    manufacturerPacketUploadInput: ManufacturerPacketUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacketUpload> => {
+
+  return customFetch<ManufacturerPacketUpload>(getRequestManufacturerPacketUploadUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(manufacturerPacketUploadInput)
+  }
+);}
+
+
+
+
+
+export const getRequestManufacturerPacketUploadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestManufacturerPacketUpload>>, TError,{id: number;data: BodyType<ManufacturerPacketUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestManufacturerPacketUpload>>, TError,{id: number;data: BodyType<ManufacturerPacketUploadInput>}, TContext> => {
+
+const mutationKey = ['requestManufacturerPacketUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestManufacturerPacketUpload>>, {id: number;data: BodyType<ManufacturerPacketUploadInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  requestManufacturerPacketUpload(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestManufacturerPacketUploadMutationResult = NonNullable<Awaited<ReturnType<typeof requestManufacturerPacketUpload>>>
+    export type RequestManufacturerPacketUploadMutationBody = BodyType<ManufacturerPacketUploadInput>
+    export type RequestManufacturerPacketUploadMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a quote-bound PDF packet upload URL
+ */
+export const useRequestManufacturerPacketUpload = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestManufacturerPacketUpload>>, TError,{id: number;data: BodyType<ManufacturerPacketUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestManufacturerPacketUpload>>,
+        TError,
+        {id: number;data: BodyType<ManufacturerPacketUploadInput>},
+        TContext
+      > => {
+      return useMutation(getRequestManufacturerPacketUploadMutationOptions(options));
+    }
+
+export const getGetManufacturerPacketManifestUrl = (id: number,
+    params?: GetManufacturerPacketManifestParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/quotes/${id}/manufacturer-packet-manifest?${stringifiedParams}` : `/api/quotes/${id}/manufacturer-packet-manifest`
+}
+
+/**
+ * @summary Get the current ordered approved packet page manifest
+ */
+export const getManufacturerPacketManifest = async (id: number,
+    params?: GetManufacturerPacketManifestParams, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacketManifest> => {
+
+  return customFetch<ManufacturerPacketManifest>(getGetManufacturerPacketManifestUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetManufacturerPacketManifestQueryKey = (id: number,
+    params?: GetManufacturerPacketManifestParams,) => {
+    return [
+    `/api/quotes/${id}/manufacturer-packet-manifest`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetManufacturerPacketManifestQueryOptions = <TData = Awaited<ReturnType<typeof getManufacturerPacketManifest>>, TError = ErrorType<unknown>>(id: number,
+    params?: GetManufacturerPacketManifestParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketManifest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetManufacturerPacketManifestQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getManufacturerPacketManifest>>> = ({ signal }) => getManufacturerPacketManifest(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketManifest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetManufacturerPacketManifestQueryResult = NonNullable<Awaited<ReturnType<typeof getManufacturerPacketManifest>>>
+export type GetManufacturerPacketManifestQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the current ordered approved packet page manifest
+ */
+
+export function useGetManufacturerPacketManifest<TData = Awaited<ReturnType<typeof getManufacturerPacketManifest>>, TError = ErrorType<unknown>>(
+ id: number,
+    params?: GetManufacturerPacketManifestParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketManifest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetManufacturerPacketManifestQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetManufacturerPacketManifestUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packet-manifest`
+}
+
+/**
+ * @summary Publish the complete selected and ordered packet page manifest
+ */
+export const setManufacturerPacketManifest = async (id: number,
+    manufacturerPacketManifestInput: ManufacturerPacketManifestInput, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacketManifest> => {
+
+  return customFetch<ManufacturerPacketManifest>(getSetManufacturerPacketManifestUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(manufacturerPacketManifestInput)
+  }
+);}
+
+
+
+
+
+export const getSetManufacturerPacketManifestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setManufacturerPacketManifest>>, TError,{id: number;data: BodyType<ManufacturerPacketManifestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setManufacturerPacketManifest>>, TError,{id: number;data: BodyType<ManufacturerPacketManifestInput>}, TContext> => {
+
+const mutationKey = ['setManufacturerPacketManifest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setManufacturerPacketManifest>>, {id: number;data: BodyType<ManufacturerPacketManifestInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setManufacturerPacketManifest(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetManufacturerPacketManifestMutationResult = NonNullable<Awaited<ReturnType<typeof setManufacturerPacketManifest>>>
+    export type SetManufacturerPacketManifestMutationBody = BodyType<ManufacturerPacketManifestInput>
+    export type SetManufacturerPacketManifestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Publish the complete selected and ordered packet page manifest
+ */
+export const useSetManufacturerPacketManifest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setManufacturerPacketManifest>>, TError,{id: number;data: BodyType<ManufacturerPacketManifestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setManufacturerPacketManifest>>,
+        TError,
+        {id: number;data: BodyType<ManufacturerPacketManifestInput>},
+        TContext
+      > => {
+      return useMutation(getSetManufacturerPacketManifestMutationOptions(options));
+    }
+
+export const getClearManufacturerPacketManifestUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packet-manifest`
+}
+
+/**
+ * @summary Unpublish all packet pages from customer signoff
+ */
+export const clearManufacturerPacketManifest = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getClearManufacturerPacketManifestUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getClearManufacturerPacketManifestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearManufacturerPacketManifest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearManufacturerPacketManifest>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['clearManufacturerPacketManifest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearManufacturerPacketManifest>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  clearManufacturerPacketManifest(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearManufacturerPacketManifestMutationResult = NonNullable<Awaited<ReturnType<typeof clearManufacturerPacketManifest>>>
+
+    export type ClearManufacturerPacketManifestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Unpublish all packet pages from customer signoff
+ */
+export const useClearManufacturerPacketManifest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearManufacturerPacketManifest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearManufacturerPacketManifest>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getClearManufacturerPacketManifestMutationOptions(options));
+    }
+
+export const getGetManufacturerPacketUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}`
+}
+
+/**
+ * @summary Get an internal packet review record
+ */
+export const getManufacturerPacket = async (id: number,
+    packetId: number, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacket> => {
+
+  return customFetch<ManufacturerPacket>(getGetManufacturerPacketUrl(id,packetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetManufacturerPacketQueryKey = (id: number,
+    packetId: number,) => {
+    return [
+    `/api/quotes/${id}/manufacturer-packets/${packetId}`
+    ] as const;
+    }
+
+
+export const getGetManufacturerPacketQueryOptions = <TData = Awaited<ReturnType<typeof getManufacturerPacket>>, TError = ErrorType<ErrorResponse>>(id: number,
+    packetId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacket>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetManufacturerPacketQueryKey(id,packetId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getManufacturerPacket>>> = ({ signal }) => getManufacturerPacket(id,packetId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && packetId !== null && packetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacket>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetManufacturerPacketQueryResult = NonNullable<Awaited<ReturnType<typeof getManufacturerPacket>>>
+export type GetManufacturerPacketQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get an internal packet review record
+ */
+
+export function useGetManufacturerPacket<TData = Awaited<ReturnType<typeof getManufacturerPacket>>, TError = ErrorType<ErrorResponse>>(
+ id: number,
+    packetId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacket>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetManufacturerPacketQueryOptions(id,packetId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteManufacturerPacketUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}`
+}
+
+/**
+ * @summary Delete a packet record and remove it from the approved manifest
+ */
+export const deleteManufacturerPacket = async (id: number,
+    packetId: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteManufacturerPacketUrl(id,packetId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteManufacturerPacketMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteManufacturerPacket>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteManufacturerPacket>>, TError,{id: number;packetId: number}, TContext> => {
+
+const mutationKey = ['deleteManufacturerPacket'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteManufacturerPacket>>, {id: number;packetId: number}> = (props) => {
+          const {id,packetId} = props ?? {};
+
+          return  deleteManufacturerPacket(id,packetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteManufacturerPacketMutationResult = NonNullable<Awaited<ReturnType<typeof deleteManufacturerPacket>>>
+
+    export type DeleteManufacturerPacketMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a packet record and remove it from the approved manifest
+ */
+export const useDeleteManufacturerPacket = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteManufacturerPacket>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteManufacturerPacket>>,
+        TError,
+        {id: number;packetId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteManufacturerPacketMutationOptions(options));
+    }
+
+export const getCompleteManufacturerPacketUploadUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}/complete-upload`
+}
+
+/**
+ * @summary Copy the uploaded PDF to immutable private source storage and queue review analysis
+ */
+export const completeManufacturerPacketUpload = async (id: number,
+    packetId: number, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacket> => {
+
+  return customFetch<ManufacturerPacket>(getCompleteManufacturerPacketUploadUrl(id,packetId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCompleteManufacturerPacketUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeManufacturerPacketUpload>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeManufacturerPacketUpload>>, TError,{id: number;packetId: number}, TContext> => {
+
+const mutationKey = ['completeManufacturerPacketUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeManufacturerPacketUpload>>, {id: number;packetId: number}> = (props) => {
+          const {id,packetId} = props ?? {};
+
+          return  completeManufacturerPacketUpload(id,packetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteManufacturerPacketUploadMutationResult = NonNullable<Awaited<ReturnType<typeof completeManufacturerPacketUpload>>>
+
+    export type CompleteManufacturerPacketUploadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Copy the uploaded PDF to immutable private source storage and queue review analysis
+ */
+export const useCompleteManufacturerPacketUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeManufacturerPacketUpload>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeManufacturerPacketUpload>>,
+        TError,
+        {id: number;packetId: number},
+        TContext
+      > => {
+      return useMutation(getCompleteManufacturerPacketUploadMutationOptions(options));
+    }
+
+export const getSetManufacturerPacketRedactionsUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}/redactions`
+}
+
+/**
+ * @summary Confirm manual administrative redactions and generate a sanitized review version
+ */
+export const setManufacturerPacketRedactions = async (id: number,
+    packetId: number,
+    packetRedactionsInput: PacketRedactionsInput, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacket> => {
+
+  return customFetch<ManufacturerPacket>(getSetManufacturerPacketRedactionsUrl(id,packetId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packetRedactionsInput)
+  }
+);}
+
+
+
+
+
+export const getSetManufacturerPacketRedactionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setManufacturerPacketRedactions>>, TError,{id: number;packetId: number;data: BodyType<PacketRedactionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setManufacturerPacketRedactions>>, TError,{id: number;packetId: number;data: BodyType<PacketRedactionsInput>}, TContext> => {
+
+const mutationKey = ['setManufacturerPacketRedactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setManufacturerPacketRedactions>>, {id: number;packetId: number;data: BodyType<PacketRedactionsInput>}> = (props) => {
+          const {id,packetId,data} = props ?? {};
+
+          return  setManufacturerPacketRedactions(id,packetId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetManufacturerPacketRedactionsMutationResult = NonNullable<Awaited<ReturnType<typeof setManufacturerPacketRedactions>>>
+    export type SetManufacturerPacketRedactionsMutationBody = BodyType<PacketRedactionsInput>
+    export type SetManufacturerPacketRedactionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Confirm manual administrative redactions and generate a sanitized review version
+ */
+export const useSetManufacturerPacketRedactions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setManufacturerPacketRedactions>>, TError,{id: number;packetId: number;data: BodyType<PacketRedactionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setManufacturerPacketRedactions>>,
+        TError,
+        {id: number;packetId: number;data: BodyType<PacketRedactionsInput>},
+        TContext
+      > => {
+      return useMutation(getSetManufacturerPacketRedactionsMutationOptions(options));
+    }
+
+export const getApproveManufacturerPacketUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}/approve`
+}
+
+/**
+ * @summary Approve the current sanitized packet for customer signoff
+ */
+export const approveManufacturerPacket = async (id: number,
+    packetId: number, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacket> => {
+
+  return customFetch<ManufacturerPacket>(getApproveManufacturerPacketUrl(id,packetId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getApproveManufacturerPacketMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveManufacturerPacket>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveManufacturerPacket>>, TError,{id: number;packetId: number}, TContext> => {
+
+const mutationKey = ['approveManufacturerPacket'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveManufacturerPacket>>, {id: number;packetId: number}> = (props) => {
+          const {id,packetId} = props ?? {};
+
+          return  approveManufacturerPacket(id,packetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveManufacturerPacketMutationResult = NonNullable<Awaited<ReturnType<typeof approveManufacturerPacket>>>
+
+    export type ApproveManufacturerPacketMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Approve the current sanitized packet for customer signoff
+ */
+export const useApproveManufacturerPacket = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveManufacturerPacket>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveManufacturerPacket>>,
+        TError,
+        {id: number;packetId: number},
+        TContext
+      > => {
+      return useMutation(getApproveManufacturerPacketMutationOptions(options));
+    }
+
+export const getRetryManufacturerPacketUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}/retry`
+}
+
+/**
+ * @summary Recover a failed or abandoned packet processing job
+ */
+export const retryManufacturerPacket = async (id: number,
+    packetId: number, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerPacket> => {
+
+  return customFetch<ManufacturerPacket>(getRetryManufacturerPacketUrl(id,packetId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetryManufacturerPacketMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryManufacturerPacket>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryManufacturerPacket>>, TError,{id: number;packetId: number}, TContext> => {
+
+const mutationKey = ['retryManufacturerPacket'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryManufacturerPacket>>, {id: number;packetId: number}> = (props) => {
+          const {id,packetId} = props ?? {};
+
+          return  retryManufacturerPacket(id,packetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryManufacturerPacketMutationResult = NonNullable<Awaited<ReturnType<typeof retryManufacturerPacket>>>
+
+    export type RetryManufacturerPacketMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Recover a failed or abandoned packet processing job
+ */
+export const useRetryManufacturerPacket = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryManufacturerPacket>>, TError,{id: number;packetId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryManufacturerPacket>>,
+        TError,
+        {id: number;packetId: number},
+        TContext
+      > => {
+      return useMutation(getRetryManufacturerPacketMutationOptions(options));
+    }
+
+export const getGetManufacturerPacketSourceUrl = (id: number,
+    packetId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}/source`
+}
+
+/**
+ * @summary Stream the original private PDF for employee manual review
+ */
+export const getManufacturerPacketSource = async (id: number,
+    packetId: number, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetManufacturerPacketSourceUrl(id,packetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetManufacturerPacketSourceQueryKey = (id: number,
+    packetId: number,) => {
+    return [
+    `/api/quotes/${id}/manufacturer-packets/${packetId}/source`
+    ] as const;
+    }
+
+
+export const getGetManufacturerPacketSourceQueryOptions = <TData = Awaited<ReturnType<typeof getManufacturerPacketSource>>, TError = ErrorType<unknown>>(id: number,
+    packetId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketSource>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetManufacturerPacketSourceQueryKey(id,packetId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getManufacturerPacketSource>>> = ({ signal }) => getManufacturerPacketSource(id,packetId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && packetId !== null && packetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketSource>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetManufacturerPacketSourceQueryResult = NonNullable<Awaited<ReturnType<typeof getManufacturerPacketSource>>>
+export type GetManufacturerPacketSourceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Stream the original private PDF for employee manual review
+ */
+
+export function useGetManufacturerPacketSource<TData = Awaited<ReturnType<typeof getManufacturerPacketSource>>, TError = ErrorType<unknown>>(
+ id: number,
+    packetId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketSource>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetManufacturerPacketSourceQueryOptions(id,packetId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetManufacturerPacketSourcePageUrl = (id: number,
+    packetId: number,
+    pageNumber: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/manufacturer-packets/${packetId}/source/pages/${pageNumber}`
+}
+
+/**
+ * @summary Render an original private PDF PNG page for employee rectangle review
+ */
+export const getManufacturerPacketSourcePage = async (id: number,
+    packetId: number,
+    pageNumber: number, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetManufacturerPacketSourcePageUrl(id,packetId,pageNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetManufacturerPacketSourcePageQueryKey = (id: number,
+    packetId: number,
+    pageNumber: number,) => {
+    return [
+    `/api/quotes/${id}/manufacturer-packets/${packetId}/source/pages/${pageNumber}`
+    ] as const;
+    }
+
+
+export const getGetManufacturerPacketSourcePageQueryOptions = <TData = Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>, TError = ErrorType<unknown>>(id: number,
+    packetId: number,
+    pageNumber: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetManufacturerPacketSourcePageQueryKey(id,packetId,pageNumber);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>> = ({ signal }) => getManufacturerPacketSourcePage(id,packetId,pageNumber, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && packetId !== null && packetId !== undefined && pageNumber !== null && pageNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetManufacturerPacketSourcePageQueryResult = NonNullable<Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>>
+export type GetManufacturerPacketSourcePageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Render an original private PDF PNG page for employee rectangle review
+ */
+
+export function useGetManufacturerPacketSourcePage<TData = Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>, TError = ErrorType<unknown>>(
+ id: number,
+    packetId: number,
+    pageNumber: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketSourcePage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetManufacturerPacketSourcePageQueryOptions(id,packetId,pageNumber,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetManufacturerPacketPageUrl = (id: number,
+    packetId: number,
+    pageNumber: number,
+    params?: GetManufacturerPacketPageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/quotes/${id}/manufacturer-packets/${packetId}/pages/${pageNumber}?${stringifiedParams}` : `/api/quotes/${id}/manufacturer-packets/${packetId}/pages/${pageNumber}`
+}
+
+/**
+ * @summary Stream a sanitized PNG page for internal review
+ */
+export const getManufacturerPacketPage = async (id: number,
+    packetId: number,
+    pageNumber: number,
+    params?: GetManufacturerPacketPageParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetManufacturerPacketPageUrl(id,packetId,pageNumber,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetManufacturerPacketPageQueryKey = (id: number,
+    packetId: number,
+    pageNumber: number,
+    params?: GetManufacturerPacketPageParams,) => {
+    return [
+    `/api/quotes/${id}/manufacturer-packets/${packetId}/pages/${pageNumber}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetManufacturerPacketPageQueryOptions = <TData = Awaited<ReturnType<typeof getManufacturerPacketPage>>, TError = ErrorType<unknown>>(id: number,
+    packetId: number,
+    pageNumber: number,
+    params?: GetManufacturerPacketPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetManufacturerPacketPageQueryKey(id,packetId,pageNumber,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getManufacturerPacketPage>>> = ({ signal }) => getManufacturerPacketPage(id,packetId,pageNumber,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && packetId !== null && packetId !== undefined && pageNumber !== null && pageNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetManufacturerPacketPageQueryResult = NonNullable<Awaited<ReturnType<typeof getManufacturerPacketPage>>>
+export type GetManufacturerPacketPageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Stream a sanitized PNG page for internal review
+ */
+
+export function useGetManufacturerPacketPage<TData = Awaited<ReturnType<typeof getManufacturerPacketPage>>, TError = ErrorType<unknown>>(
+ id: number,
+    packetId: number,
+    pageNumber: number,
+    params?: GetManufacturerPacketPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManufacturerPacketPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetManufacturerPacketPageQueryOptions(id,packetId,pageNumber,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSignedSignoffDocumentUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/signoff/document`
+}
+
+/**
+ * @summary Download the current signed immutable combined PDF snapshot
+ */
+export const getSignedSignoffDocument = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetSignedSignoffDocumentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSignedSignoffDocumentQueryKey = (id: number,) => {
+    return [
+    `/api/quotes/${id}/signoff/document`
+    ] as const;
+    }
+
+
+export const getGetSignedSignoffDocumentQueryOptions = <TData = Awaited<ReturnType<typeof getSignedSignoffDocument>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSignedSignoffDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSignedSignoffDocumentQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSignedSignoffDocument>>> = ({ signal }) => getSignedSignoffDocument(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSignedSignoffDocument>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSignedSignoffDocumentQueryResult = NonNullable<Awaited<ReturnType<typeof getSignedSignoffDocument>>>
+export type GetSignedSignoffDocumentQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Download the current signed immutable combined PDF snapshot
+ */
+
+export function useGetSignedSignoffDocument<TData = Awaited<ReturnType<typeof getSignedSignoffDocument>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSignedSignoffDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSignedSignoffDocumentQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetUnsignedSignoffDocumentUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/signoff/document/unsigned`
+}
+
+/**
+ * @summary Download the current unsigned combined PDF
+ */
+export const getUnsignedSignoffDocument = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetUnsignedSignoffDocumentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUnsignedSignoffDocumentQueryKey = (id: number,) => {
+    return [
+    `/api/quotes/${id}/signoff/document/unsigned`
+    ] as const;
+    }
+
+
+export const getGetUnsignedSignoffDocumentQueryOptions = <TData = Awaited<ReturnType<typeof getUnsignedSignoffDocument>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUnsignedSignoffDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUnsignedSignoffDocumentQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUnsignedSignoffDocument>>> = ({ signal }) => getUnsignedSignoffDocument(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUnsignedSignoffDocument>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUnsignedSignoffDocumentQueryResult = NonNullable<Awaited<ReturnType<typeof getUnsignedSignoffDocument>>>
+export type GetUnsignedSignoffDocumentQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Download the current unsigned combined PDF
+ */
+
+export function useGetUnsignedSignoffDocument<TData = Awaited<ReturnType<typeof getUnsignedSignoffDocument>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUnsignedSignoffDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUnsignedSignoffDocumentQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicManufacturerPacketUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/signoff/${token}/packet`
+}
+
+/**
+ * @summary Get public metadata for the current approved packet only
+ */
+export const getPublicManufacturerPacket = async (token: string, options?: Parameters<typeof customFetch>[1]): Promise<PublicManufacturerPacket> => {
+
+  return customFetch<PublicManufacturerPacket>(getGetPublicManufacturerPacketUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicManufacturerPacketQueryKey = (token: string,) => {
+    return [
+    `/api/public/signoff/${token}/packet`
+    ] as const;
+    }
+
+
+export const getGetPublicManufacturerPacketQueryOptions = <TData = Awaited<ReturnType<typeof getPublicManufacturerPacket>>, TError = ErrorType<unknown>>(token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicManufacturerPacket>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicManufacturerPacketQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicManufacturerPacket>>> = ({ signal }) => getPublicManufacturerPacket(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicManufacturerPacket>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicManufacturerPacketQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicManufacturerPacket>>>
+export type GetPublicManufacturerPacketQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get public metadata for the current approved packet only
+ */
+
+export function useGetPublicManufacturerPacket<TData = Awaited<ReturnType<typeof getPublicManufacturerPacket>>, TError = ErrorType<unknown>>(
+ token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicManufacturerPacket>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicManufacturerPacketQueryOptions(token,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicManufacturerPacketPageUrl = (token: string,
+    pageNumber: number,
+    params: GetPublicManufacturerPacketPageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/public/signoff/${token}/packet/pages/${pageNumber}?${stringifiedParams}` : `/api/public/signoff/${token}/packet/pages/${pageNumber}`
+}
+
+/**
+ * @summary Stream an approved sanitized packet PNG page
+ */
+export const getPublicManufacturerPacketPage = async (token: string,
+    pageNumber: number,
+    params: GetPublicManufacturerPacketPageParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetPublicManufacturerPacketPageUrl(token,pageNumber,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicManufacturerPacketPageQueryKey = (token: string,
+    pageNumber: number,
+    params?: GetPublicManufacturerPacketPageParams,) => {
+    return [
+    `/api/public/signoff/${token}/packet/pages/${pageNumber}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPublicManufacturerPacketPageQueryOptions = <TData = Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>, TError = ErrorType<unknown>>(token: string,
+    pageNumber: number,
+    params: GetPublicManufacturerPacketPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicManufacturerPacketPageQueryKey(token,pageNumber,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>> = ({ signal }) => getPublicManufacturerPacketPage(token,pageNumber,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined && pageNumber !== null && pageNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicManufacturerPacketPageQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>>
+export type GetPublicManufacturerPacketPageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Stream an approved sanitized packet PNG page
+ */
+
+export function useGetPublicManufacturerPacketPage<TData = Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>, TError = ErrorType<unknown>>(
+ token: string,
+    pageNumber: number,
+    params: GetPublicManufacturerPacketPageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicManufacturerPacketPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicManufacturerPacketPageQueryOptions(token,pageNumber,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicSignoffDocumentUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/signoff/${token}/document`
+}
+
+/**
+ * @summary Download the current unsigned or immutable signed combined PDF
+ */
+export const getPublicSignoffDocument = async (token: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetPublicSignoffDocumentUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicSignoffDocumentQueryKey = (token: string,) => {
+    return [
+    `/api/public/signoff/${token}/document`
+    ] as const;
+    }
+
+
+export const getGetPublicSignoffDocumentQueryOptions = <TData = Awaited<ReturnType<typeof getPublicSignoffDocument>>, TError = ErrorType<unknown>>(token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSignoffDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicSignoffDocumentQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicSignoffDocument>>> = ({ signal }) => getPublicSignoffDocument(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicSignoffDocument>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicSignoffDocumentQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicSignoffDocument>>>
+export type GetPublicSignoffDocumentQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Download the current unsigned or immutable signed combined PDF
+ */
+
+export function useGetPublicSignoffDocument<TData = Awaited<ReturnType<typeof getPublicSignoffDocument>>, TError = ErrorType<unknown>>(
+ token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSignoffDocument>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicSignoffDocumentQueryOptions(token,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

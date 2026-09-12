@@ -696,6 +696,12 @@ export default function QuoteDetailPage() {
                 </Link>
               </Button>
             )}
+            <Button asChild variant="secondary" className="bg-slate-200 text-slate-900 hover:bg-slate-300" disabled={isEditing}>
+              <Link href={`/quotes/${quote.id}/packets`}>
+                <FileImage className="w-4 h-4 mr-2" />
+                Manufacturer Packets
+              </Link>
+            </Button>
           </div>
         </div>
       </div>
