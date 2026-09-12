@@ -19,3 +19,9 @@ Formatting improvements apply to newly generated documents, not previously store
 **Why:** Replacing an issued signed artifact for cosmetic reasons would silently change the customer's approval record.
 
 **How to apply:** Version the unsigned rendering cache when layout changes, preserve existing signed snapshot bytes, and explain that distinction when improving PDF exports.
+
+Use browser printing of the signoff HTML for the customer-facing Print / Save PDF action, rather than substituting a separately designed PDF.
+
+**Why:** The user explicitly requires the same formatting as the visible signoff document and rejected the separately typeset PDF even after a redesign.
+
+**How to apply:** Keep the print action on internal and public signoff views; retain server-generated snapshots for record integrity without replacing the print workflow.

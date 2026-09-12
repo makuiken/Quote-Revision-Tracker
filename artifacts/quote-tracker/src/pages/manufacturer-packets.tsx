@@ -210,13 +210,14 @@ function WorkflowGuide({ quoteId, quoteSigned, hasPublishedDocument, nextStep }:
 
   return (
     <Card className="mb-6 border-primary/20 bg-primary/5" data-testid="card-manufacturer-workflow">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-xl">Six steps from quote PDF to customer signoff</CardTitle>
-        <CardDescription>
-          Follow the steps in order. A clean preview is never published until you choose the pages and click Publish Customer Document.
-        </CardDescription>
-      </CardHeader>
+      <details>
+      <summary className="cursor-pointer px-6 py-4 text-sm font-semibold text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+        How to prepare or replace a customer document
+      </summary>
       <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Follow the steps in order. A clean preview is never published until you choose the pages and click Publish Customer Document.
+        </p>
         <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {steps.map(([number, title, description]) => (
             <li key={number} className="flex gap-3 rounded-md border border-primary/15 bg-white/70 p-3">
@@ -255,6 +256,7 @@ function WorkflowGuide({ quoteId, quoteSigned, hasPublishedDocument, nextStep }:
           </p>
         </div>
       </CardContent>
+      </details>
     </Card>
   );
 }

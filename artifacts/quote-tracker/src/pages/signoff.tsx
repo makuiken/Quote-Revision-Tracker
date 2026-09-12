@@ -12,8 +12,6 @@ import {
   useSetRevisionSignoffExclusion,
   useGetManufacturerPacketManifest,
   useGetManufacturerPacketPage,
-  getGetSignedSignoffDocumentUrl,
-  getGetUnsignedSignoffDocumentUrl,
   type Revision,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -375,10 +373,13 @@ export default function SignoffPage() {
             >
               <Share2 className="w-4 h-4 mr-2" /> Share
             </Button>
-            <Button asChild className="bg-black text-white hover:bg-gray-800">
-              <a href={quote.signed ? getGetSignedSignoffDocumentUrl(quote.id) : getGetUnsignedSignoffDocumentUrl(quote.id)} target="_blank" rel="noopener noreferrer">
-                <Printer className="w-4 h-4 mr-2" /> Download PDF
-              </a>
+            <Button
+              onClick={() => window.print()}
+              disabled={!manifestState.isReady || !!manifestState.error}
+              title="Print this document, or choose Save as PDF in the print dialog."
+              className="bg-black text-white hover:bg-gray-800"
+            >
+              <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
             </Button>
           </div>
         </div>

@@ -10,7 +10,6 @@ import {
   useGetPublicManufacturerPacket,
   getGetPublicManufacturerPacketQueryKey,
   useGetPublicManufacturerPacketPage,
-  getGetPublicSignoffDocumentUrl,
 } from "@workspace/api-client-react";
 import { useToast } from "@/components/ui/toaster";
 import { SignoffDocument } from "@/components/signoff-document";
@@ -187,10 +186,13 @@ export default function PublicSignoffPage() {
     <div className="min-h-[100dvh] bg-gray-100 text-black font-sans print:bg-white print:p-0">
       <div className="max-w-4xl mx-auto p-4 sm:p-8 print:p-0">
         <div className="print:hidden flex justify-end mb-8 pb-4 border-b-2 border-gray-300">
-          <Button asChild className="bg-black text-white hover:bg-gray-800">
-            <a href={getGetPublicSignoffDocumentUrl(token!)} target="_blank" rel="noopener noreferrer">
-              <Printer className="w-4 h-4 mr-2" /> Download PDF
-            </a>
+          <Button
+            onClick={() => window.print()}
+            disabled={!manifestState.isReady || !!manifestState.error}
+            title="Print this document, or choose Save as PDF in the print dialog."
+            className="bg-black text-white hover:bg-gray-800"
+          >
+            <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
           </Button>
         </div>
         <SignoffDocument
