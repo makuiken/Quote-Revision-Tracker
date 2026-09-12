@@ -687,7 +687,7 @@ export default function QuoteDetailPage() {
             <Button asChild variant="secondary" className="bg-slate-200 text-slate-900 hover:bg-slate-300" disabled={isEditing}>
               <Link href={`/quotes/${quote.id}/packets`}>
                 <FileImage className="w-4 h-4 mr-2" />
-                Add Manufacturer Quote
+                Add Manufacturer Quote(s)
               </Link>
             </Button>
             {quote.archived && !quote.signed ? (
