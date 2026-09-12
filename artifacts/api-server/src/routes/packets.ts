@@ -6,6 +6,7 @@ import {
   db,
   manufacturerPacketManifestTable,
   manufacturerPacketsTable,
+  manufacturerRedactionTemplatesTable,
   revisionsTable,
   signoffsTable,
   scopedApprovalsTable,
@@ -21,6 +22,7 @@ import {
   GetManufacturerPacketResponse,
   GetSignedSignoffDocumentParams,
   GetUnsignedSignoffDocumentParams,
+  ListManufacturerRedactionTemplateOptionsResponse,
   ListManufacturerPacketsParams,
   ListManufacturerPacketsResponse,
   GetManufacturerPacketManifestParams,
@@ -75,6 +77,24 @@ const router: IRouter = Router();
 const storage = new ObjectStorageService();
 
 router.use(requireAuth, requireApproved);
+
+router.get("/manufacturer-redaction-template-options", async (_req, res): Promise<void> => {
+  const templates = await db
+    .select({
+      manufacturer: manufacturerRedactionTemplatesTable.manufacturer,
+      productType: manufacturerRedactionTemplatesTable.productType,
+    })
+    .from(manufacturerRedactionTemplatesTable)
+    .where(eq(manufacturerRedactionTemplatesTable.active, true))
+    .orderBy(manufacturerRedactionTemplatesTable.manufacturer);
+  const unique = Array.from(
+    new Map(templates.map((template) => [
+      `${template.productType}:${template.manufacturer.trim().toLocaleLowerCase("en-US")}`,
+      template,
+    ])).values(),
+  );
+  res.json(ListManufacturerRedactionTemplateOptionsResponse.parse(unique));
+});
 
 function parseParams<T>(
   parser: { safeParse(value: unknown): { success: true; data: T } | { success: false } },

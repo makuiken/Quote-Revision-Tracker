@@ -152,6 +152,23 @@ export interface ManufacturerRedactionTemplate {
   updatedAt: string;
 }
 
+export type ManufacturerRedactionTemplateOptionProductType = typeof ManufacturerRedactionTemplateOptionProductType[keyof typeof ManufacturerRedactionTemplateOptionProductType];
+
+
+export const ManufacturerRedactionTemplateOptionProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export interface ManufacturerRedactionTemplateOption {
+  manufacturer: string;
+  productType: ManufacturerRedactionTemplateOptionProductType;
+}
+
 export interface ManufacturerRedactionTemplateFromPacketInput {
   /** @minimum 1 */
   quoteId: number;

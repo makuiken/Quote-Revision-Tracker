@@ -112,6 +112,16 @@ export const DeleteFieldOptionsResponse = zod.void()
 
 
 /**
+ * @summary List active manufacturer choices available to approved salespeople
+ */
+export const ListManufacturerRedactionTemplateOptionsResponseItem = zod.object({
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+})
+export const ListManufacturerRedactionTemplateOptionsResponse = zod.array(ListManufacturerRedactionTemplateOptionsResponseItem)
+
+
+/**
  * @summary List manufacturer redaction templates (admin only)
  */
 

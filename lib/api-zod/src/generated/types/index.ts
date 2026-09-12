@@ -53,6 +53,8 @@ export * from './manufacturerPacketUploadInputContentType';
 export * from './manufacturerPacketUploadInputProductType';
 export * from './manufacturerRedactionTemplate';
 export * from './manufacturerRedactionTemplateFromPacketInput';
+export * from './manufacturerRedactionTemplateOption';
+export * from './manufacturerRedactionTemplateOptionProductType';
 export * from './manufacturerRedactionTemplatePage';
 export * from './manufacturerRedactionTemplateProductType';
 export * from './manufacturerRedactionTemplateUpdateInput';

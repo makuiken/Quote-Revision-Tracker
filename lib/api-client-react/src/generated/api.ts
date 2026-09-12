@@ -46,6 +46,7 @@ import type {
   ManufacturerPacketUploadInput,
   ManufacturerRedactionTemplate,
   ManufacturerRedactionTemplateFromPacketInput,
+  ManufacturerRedactionTemplateOption,
   ManufacturerRedactionTemplateUpdateInput,
   PacketManufacturerInput,
   PacketProductTypeInput,
@@ -635,6 +636,83 @@ export const useDeleteFieldOptions = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getDeleteFieldOptionsMutationOptions(options));
     }
+
+export const getListManufacturerRedactionTemplateOptionsUrl = () => {
+
+
+
+
+  return `/api/manufacturer-redaction-template-options`
+}
+
+/**
+ * @summary List active manufacturer choices available to approved salespeople
+ */
+export const listManufacturerRedactionTemplateOptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerRedactionTemplateOption[]> => {
+
+  return customFetch<ManufacturerRedactionTemplateOption[]>(getListManufacturerRedactionTemplateOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListManufacturerRedactionTemplateOptionsQueryKey = () => {
+    return [
+    `/api/manufacturer-redaction-template-options`
+    ] as const;
+    }
+
+
+export const getListManufacturerRedactionTemplateOptionsQueryOptions = <TData = Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListManufacturerRedactionTemplateOptionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>> = ({ signal }) => listManufacturerRedactionTemplateOptions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListManufacturerRedactionTemplateOptionsQueryResult = NonNullable<Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>>
+export type ListManufacturerRedactionTemplateOptionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active manufacturer choices available to approved salespeople
+ */
+
+export function useListManufacturerRedactionTemplateOptions<TData = Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listManufacturerRedactionTemplateOptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListManufacturerRedactionTemplateOptionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListManufacturerRedactionTemplatesUrl = () => {
 

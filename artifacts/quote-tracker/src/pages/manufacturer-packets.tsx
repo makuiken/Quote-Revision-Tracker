@@ -35,6 +35,7 @@ import {
   useCreateManufacturerRedactionTemplate,
   useListManufacturerRedactionTemplates,
   getListManufacturerRedactionTemplatesQueryKey,
+  useListManufacturerRedactionTemplateOptions,
   useReplaceManufacturerRedactionTemplateFromPacket,
   type ManufacturerPacket,
   type QuoteCategoriesItem,
@@ -387,8 +388,15 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
   const [isUploading, setIsUploading] = useState(false);
   const [productType, setProductType] = useState<ProductType | "">("");
   const [manufacturer, setManufacturer] = useState("");
+  const [customManufacturer, setCustomManufacturer] = useState(false);
+  const { data: templateOptions = [], isLoading: isLoadingTemplates } = useListManufacturerRedactionTemplateOptions();
   const requestUpload = useRequestManufacturerPacketUpload();
   const completeUpload = useCompleteManufacturerPacketUpload();
+  const manufacturers = Array.from(new Set(
+    templateOptions
+      .filter((option) => option.productType === productType)
+      .map((option) => option.manufacturer),
+  ));
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -434,18 +442,12 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
       <CardContent className="pt-4 p-4">
          <div className="mb-4 space-y-3">
            <div className="space-y-1.5">
-             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Manufacturer</label>
-             <Input
-               placeholder="e.g. Andersen, Reeb"
-               value={manufacturer}
-               onChange={(e) => setManufacturer(e.target.value)}
-               disabled={isUploading}
-               className="h-10 text-sm font-medium"
-             />
-           </div>
-           <div className="space-y-1.5">
              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Product Type</label>
-             <Select value={productType} onValueChange={(value) => setProductType(value as ProductType)} disabled={isUploading || productTypes.length === 0}>
+             <Select value={productType} onValueChange={(value) => {
+               setProductType(value as ProductType);
+               setManufacturer("");
+               setCustomManufacturer(false);
+             }} disabled={isUploading || productTypes.length === 0}>
                <SelectTrigger className="bg-card font-medium text-sm h-10 border-border">
                  <SelectValue placeholder={productTypes.length ? "Select product type..." : "No quote product types"} />
                </SelectTrigger>
@@ -453,6 +455,37 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
                  {productTypes.map((type) => <SelectItem key={type} value={type}>{categoryLabel(type)}</SelectItem>)}
                </SelectContent>
              </Select>
+           </div>
+           <div className="space-y-1.5">
+             <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Manufacturer</label>
+             <Select
+               value={customManufacturer ? "__other" : manufacturer}
+               onValueChange={(value) => {
+                 const isOther = value === "__other";
+                 setCustomManufacturer(isOther);
+                 setManufacturer(isOther ? "" : value);
+               }}
+               disabled={isUploading || !productType || isLoadingTemplates}
+             >
+               <SelectTrigger className="bg-card font-medium text-sm h-10 border-border">
+                 <SelectValue placeholder={!productType ? "Select product type first..." : isLoadingTemplates ? "Loading manufacturers..." : "Select manufacturer..."} />
+               </SelectTrigger>
+               <SelectContent>
+                 {manufacturers.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                 <SelectItem value="__other">Other manufacturer...</SelectItem>
+               </SelectContent>
+             </Select>
+             {customManufacturer && (
+               <Input
+                 aria-label="Other manufacturer name"
+                 placeholder="e.g. Andersen, Reeb"
+                 value={manufacturer}
+                 onChange={(e) => setManufacturer(e.target.value)}
+                 disabled={isUploading}
+                 className="h-10 text-sm font-medium"
+                 autoFocus
+               />
+             )}
            </div>
          </div>
         <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleFileChange} disabled={isUploading || !productType || !manufacturer.trim()} />

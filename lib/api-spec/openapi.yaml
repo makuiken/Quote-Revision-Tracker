@@ -163,6 +163,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /manufacturer-redaction-template-options:
+    get:
+      operationId: listManufacturerRedactionTemplateOptions
+      tags: [manufacturer-packets]
+      summary: List active manufacturer choices available to approved salespeople
+      responses:
+        "200":
+          description: Active manufacturer and product type combinations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManufacturerRedactionTemplateOption"
   /admin/manufacturer-redaction-templates:
     get:
       operationId: listManufacturerRedactionTemplates
@@ -1882,6 +1896,15 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [id, manufacturer, manufacturerCanonical, productType, name, active, pages, createdById, createdByName, updatedById, updatedByName, createdAt, updatedAt]
+    ManufacturerRedactionTemplateOption:
+      type: object
+      required: [manufacturer, productType]
+      properties:
+        manufacturer:
+          type: string
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
     ManufacturerRedactionTemplateFromPacketInput:
       type: object
       properties:
