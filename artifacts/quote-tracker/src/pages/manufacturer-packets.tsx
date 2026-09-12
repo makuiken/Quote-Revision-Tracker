@@ -1104,9 +1104,9 @@ function ManifestBuilder({ quoteId, quoteSigned, packets }: { quoteId: number, q
         <div className="flex flex-col items-end gap-2">
           {entries.length > 0 && (
             <div className="flex items-center space-x-2 bg-white/50 p-2 rounded border">
-              <Checkbox id="policy" data-testid="checkbox-preserved-terms" aria-label="Confirm prices, terms, and warranties are preserved" checked={policyConfirmed} onCheckedChange={(c) => setPolicyConfirmed(!!c)} />
+              <Checkbox id="policy" data-testid="checkbox-preserved-terms" aria-label="Confirm all pages were reviewed and manufacturer branding and quote numbers were redacted" checked={policyConfirmed} onCheckedChange={(c) => setPolicyConfirmed(!!c)} />
               <label htmlFor="policy" className="text-xs font-medium leading-none cursor-pointer">
-                I checked that prices, terms, and warranties are preserved
+                I have reviewed all pages and redacted all manufacturer branding and quote numbers
               </label>
             </div>
           )}
