@@ -158,10 +158,23 @@ function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readO
   return (
     <Card>
       <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2">
-          <Paperclip className="w-5 h-5" />
-          Attachments
-        </CardTitle>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Paperclip className="w-5 h-5" />
+            Attachments
+          </CardTitle>
+          {!readOnly && (
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              {isUploading ? `Uploading... ${progress}%` : "Upload Drawings or Photos"}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-4">
         <input
@@ -172,18 +185,6 @@ function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readO
           accept="image/*,.pdf,.dwg,.dxf,.doc,.docx,.xls,.xlsx"
           onChange={(e) => handleFiles(e.target.files)}
         />
-        {!readOnly && (
-          <Button
-            variant="outline"
-            className="w-full"
-            disabled={isUploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            {isUploading ? `Uploading... ${progress}%` : "Upload Drawings or Photos"}
-          </Button>
-        )}
-
         {isLoading ? (
           <p className="text-center text-sm text-muted-foreground font-medium py-2">Loading attachments...</p>
         ) : attachments.length === 0 ? (
