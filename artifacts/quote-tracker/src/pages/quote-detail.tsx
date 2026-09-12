@@ -684,6 +684,12 @@ export default function QuoteDetailPage() {
                 Print Log
               </Link>
             </Button>
+            <Button asChild variant="secondary" className="bg-slate-200 text-slate-900 hover:bg-slate-300" disabled={isEditing}>
+              <Link href={`/quotes/${quote.id}/packets`}>
+                <FileImage className="w-4 h-4 mr-2" />
+                Add Manufacturer Quote
+              </Link>
+            </Button>
             {quote.archived && !quote.signed ? (
               <Button disabled title="Archived quotes can't be signed. Restore the quote first.">
                 <PenTool className="w-4 h-4 mr-2" />
@@ -697,12 +703,6 @@ export default function QuoteDetailPage() {
                 </Link>
               </Button>
             )}
-            <Button asChild variant="secondary" className="bg-slate-200 text-slate-900 hover:bg-slate-300" disabled={isEditing}>
-              <Link href={`/quotes/${quote.id}/packets`}>
-                <FileImage className="w-4 h-4 mr-2" />
-                Manufacturer Packets
-              </Link>
-            </Button>
           </div>
         </div>
       </div>
