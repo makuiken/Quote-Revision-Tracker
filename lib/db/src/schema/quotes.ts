@@ -61,6 +61,13 @@ export type PacketPageAnalysis = {
   suggestedRects: PacketRedaction[];
 };
 
+export type ManufacturerRedactionTemplatePage = {
+  pageNumber: number;
+  width: number;
+  height: number;
+  rects: PacketRedaction[];
+};
+
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   clerkUserId: text("clerk_user_id").notNull().unique(),
@@ -172,6 +179,15 @@ export const signoffsTable = pgTable("signoffs", {
   signedPacketSha256: text("signed_packet_sha256"),
   signedDocumentObjectPath: text("signed_document_object_path"),
   signedDocumentSha256: text("signed_document_sha256"),
+  // Legacy whole-quote records remain immutable evidence. This state answers
+  // only whether the record is current for legacy whole-quote status; it never
+  // invents per-product-type coverage.
+  legacyStatus: text("legacy_status")
+    .$type<"signed" | "needs_resigning">()
+    .notNull()
+    .default("signed"),
+  legacyInvalidatedAt: timestamp("legacy_invalidated_at", { withTimezone: true }),
+  legacyInvalidationReason: text("legacy_invalidation_reason"),
   signedAt: timestamp("signed_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -201,6 +217,9 @@ export const manufacturerPacketsTable = pgTable("manufacturer_packets", {
     .notNull()
     .references(() => quotesTable.id, { onDelete: "cascade" }),
   manufacturer: text("manufacturer"),
+  // Null is intentionally reserved for records uploaded before Task 29. New
+  // uploads must be classified by the API; old rows are never guessed.
+  productType: text("product_type"),
   detectedManufacturer: text("detected_manufacturer"),
   originalName: text("original_name").notNull(),
   declaredSize: integer("declared_size").notNull(),
@@ -213,6 +232,8 @@ export const manufacturerPacketsTable = pgTable("manufacturer_packets", {
   analysis: jsonb("analysis").$type<PacketPageAnalysis[] | null>(),
   manualRedactions: jsonb("manual_redactions")
     .$type<Record<string, PacketRedaction[]> | null>(),
+  appliedRedactionTemplateId: integer("applied_redaction_template_id"),
+  appliedRedactionTemplateName: text("applied_redaction_template_name"),
   status: text("status")
     .$type<
       | "awaiting_upload"
@@ -243,6 +264,100 @@ export const manufacturerPacketsTable = pgTable("manufacturer_packets", {
     .defaultNow()
     .$onUpdate(() => new Date()),
 });
+
+// Reusable, administrator-approved redaction geometry for a manufacturer's
+// packet/product type. Pages are snapshots of analyzed page dimensions so a
+// template can only be applied to matching pages.
+export const manufacturerRedactionTemplatesTable = pgTable(
+  "manufacturer_redaction_templates",
+  {
+    id: serial("id").primaryKey(),
+    manufacturer: text("manufacturer").notNull(),
+    manufacturerCanonical: text("manufacturer_canonical").notNull(),
+    productType: text("product_type").notNull(),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    pages: jsonb("pages").$type<ManufacturerRedactionTemplatePage[]>().notNull(),
+    createdById: text("created_by_id").notNull(),
+    createdByName: text("created_by_name").notNull(),
+    updatedById: text("updated_by_id").notNull(),
+    updatedByName: text("updated_by_name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("manufacturer_redaction_templates_key_unique").on(
+      table.manufacturerCanonical,
+      table.productType,
+    ),
+  ],
+);
+
+// An issued scoped link locks the exact content the customer is asked to
+// review. Requests are append-only: expired/stale requests are retained as
+// audit evidence and a later request never mutates their scope.
+export const scopedApprovalRequestsTable = pgTable("scoped_approval_requests", {
+  id: serial("id").primaryKey(),
+  quoteId: integer("quote_id")
+    .notNull()
+    .references(() => quotesTable.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  productTypes: text("product_types").array().notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  documentVersion: text("document_version").notNull(),
+  status: text("status").$type<"open" | "signed" | "stale" | "revoked">().notNull().default("open"),
+  createdById: text("created_by_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+});
+
+// Immutable customer approval evidence. No scoped sign route updates this row;
+// replacement approvals create another row and coverage selects the current
+// one per product type.
+export const scopedApprovalsTable = pgTable("scoped_approvals", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id")
+    .notNull()
+    .unique()
+    .references(() => scopedApprovalRequestsTable.id, { onDelete: "restrict" }),
+  quoteId: integer("quote_id")
+    .notNull()
+    .references(() => quotesTable.id, { onDelete: "cascade" }),
+  productTypes: text("product_types").array().notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  documentVersion: text("document_version").notNull(),
+  customerName: text("customer_name").notNull(),
+  stakeholderRole: text("stakeholder_role").notNull(),
+  signatureType: text("signature_type").notNull(),
+  signatureData: text("signature_data").notNull(),
+  signedDocumentObjectPath: text("signed_document_object_path").notNull().unique(),
+  signedDocumentSha256: text("signed_document_sha256").notNull(),
+  signedAt: timestamp("signed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Mutable coverage is deliberately separate from immutable approval evidence.
+// An invalidation only changes types affected by the mutation.
+export const scopedApprovalCoverageTable = pgTable(
+  "scoped_approval_coverage",
+  {
+    id: serial("id").primaryKey(),
+    quoteId: integer("quote_id")
+      .notNull()
+      .references(() => quotesTable.id, { onDelete: "cascade" }),
+    productType: text("product_type").notNull(),
+    approvalId: integer("approval_id").references(() => scopedApprovalsTable.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").$type<"open" | "signed" | "needs_resigning">().notNull().default("open"),
+    invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
+    invalidationReason: text("invalidation_reason"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("scoped_approval_coverage_quote_type_unique").on(table.quoteId, table.productType)],
+);
 
 // The current customer-visible packet order. It is intentionally a single
 // mutable manifest, not a historical approval log; signed snapshots keep their
@@ -329,5 +444,10 @@ export type RevisionDraft = typeof revisionDraftsTable.$inferSelect;
 export type Signoff = typeof signoffsTable.$inferSelect;
 export type Attachment = typeof attachmentsTable.$inferSelect;
 export type ManufacturerPacket = typeof manufacturerPacketsTable.$inferSelect;
+export type ScopedApprovalRequest = typeof scopedApprovalRequestsTable.$inferSelect;
+export type ScopedApproval = typeof scopedApprovalsTable.$inferSelect;
+export type ScopedApprovalCoverage = typeof scopedApprovalCoverageTable.$inferSelect;
 export type AppUser = typeof usersTable.$inferSelect;
 export type FieldOptions = typeof fieldOptionsTable.$inferSelect;
+export type ManufacturerRedactionTemplate =
+  typeof manufacturerRedactionTemplatesTable.$inferSelect;

@@ -9,6 +9,11 @@ import {
 } from "pdf-lib";
 import type { Quote, Revision, Signoff } from "@workspace/db";
 
+type SignoffQuote = Pick<
+  Quote,
+  "quoteNumber" | "customerName" | "projectName" | "jobAddress" | "categories" | "specs" | "notes"
+>;
+
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN = 54;
@@ -86,7 +91,7 @@ type SpecificationSection = {
   value: unknown;
 };
 
-function specificationSections(quote: Quote): SpecificationSection[] {
+function specificationSections(quote: SignoffQuote): SpecificationSection[] {
   const specs = quote.specs ?? {};
   const active = new Set(quote.categories ?? []);
   const sections: SpecificationSection[] = [];
@@ -395,7 +400,7 @@ class BrandedDocumentLayout {
     this.y -= options.gap ?? 7;
   }
 
-  drawQuoteDetails(quote: Quote, documentDate: Date): void {
+  drawQuoteDetails(quote: SignoffQuote, documentDate: Date): void {
     const fields = [
       { label: "Quote number", value: quote.quoteNumber || "—" },
       { label: "Prepared", value: formatDate(documentDate) },
@@ -883,7 +888,7 @@ async function appendApprovedPages(
 }
 
 export async function createSignedPacketDocument(input: {
-  quote: Quote;
+  quote: SignoffQuote;
   revisions: Revision[];
   signoff?: Pick<
     Signoff,
@@ -891,6 +896,9 @@ export async function createSignedPacketDocument(input: {
   >;
   approvedPacketPdf?: Uint8Array | null;
   approvedPacketPages?: Array<{ pdfBytes: Uint8Array; pageNumber: number }>;
+  scope?: { included: string[]; notIncluded: string[] };
+  /** Locked request creation time for unsigned scoped preview rendering. */
+  documentDate?: Date;
 }): Promise<{ bytes: Uint8Array; sha256: string }> {
   const deadline = Date.now() + COMBINED_DOCUMENT_DEADLINE_MS;
   const assertWithinDeadline = () => {
@@ -909,7 +917,10 @@ export async function createSignedPacketDocument(input: {
     headingFont,
     input.quote.quoteNumber,
   );
-  const documentDate = input.signoff?.signedAt ?? new Date();
+  // A scoped request's prepared date is locked approval content. A signature
+  // can occur later; it belongs in the signature/status block, not the
+  // Prepared/detail date rendered from the locked request.
+  const documentDate = input.documentDate ?? input.signoff?.signedAt ?? new Date();
   const sections = specificationSections(input.quote);
   const includedRevisions = input.revisions.filter((revision) => !revision.excludedFromSignoff);
   const hasManifest = Boolean(input.approvedPacketPages?.length || input.approvedPacketPdf);
@@ -921,6 +932,8 @@ export async function createSignedPacketDocument(input: {
     CUSTOMER_APPROVAL_TERMS,
     CUSTOMER_APPROVAL_DISCLAIMER,
     ATTACHMENT_INCLUSION_STATEMENT,
+    ...(input.scope?.included ?? []),
+    ...(input.scope?.notIncluded ?? []),
     ...sections.flatMap((section) => [
       section.title,
       ...specificationEntries(section.value).flatMap((entry) => [entry.label, entry.value]),
@@ -941,6 +954,12 @@ export async function createSignedPacketDocument(input: {
     input.signoff ? `Signed ${formatDate(input.signoff.signedAt)}` : `Prepared ${formatDate(documentDate)}`,
   );
   layout.drawQuoteDetails(input.quote, documentDate);
+  if (input.scope) {
+    layout.drawCallout(
+      `This approval includes only: ${input.scope.included.join(", ") || "none"}. Not included in this approval: ${input.scope.notIncluded.join(", ") || "none"}.`,
+      { color: COLORS.panelBlue, label: "Approval scope" },
+    );
+  }
   layout.drawSectionHeading("Final specifications", `${sections.length} ${sections.length === 1 ? "category" : "categories"}`);
   layout.drawParagraph(
     "By signing this document, you are approving the specifications exactly as detailed below. Any subsequent changes will require a new signoff.",

@@ -17,7 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type StatusFilter = "all" | "awaiting" | "signed" | "archived";
+type StatusFilter = "all" | "awaiting" | "partial" | "signed" | "needs_resigning" | "archived";
 type CategoryFilter = "all" | "interiorDoors" | "exteriorDoors" | "windows" | "trim" | "millwork";
 const PAGE_SIZE = 25;
 const categoryLabel: Record<CategoryFilter, string> = { all: "All", interiorDoors: "Int. Doors", exteriorDoors: "Ext. Doors", windows: "Windows", trim: "Moulding", millwork: "Misc." };
@@ -149,6 +149,18 @@ export default function DashboardPage() {
                 className={`rounded ${statusFilter === "awaiting" ? "" : "hover:bg-accent/50"} h-8 px-4`}
                 onClick={() => setStatusFilter("awaiting")}
               >Awaiting</Button>
+              <Button
+                variant={statusFilter === "partial" ? "default" : "ghost"}
+                size="sm"
+                className={`rounded ${statusFilter === "partial" ? "" : "hover:bg-accent/50"} h-8 px-4`}
+                onClick={() => setStatusFilter("partial")}
+              >Partial</Button>
+              <Button
+                variant={statusFilter === "needs_resigning" ? "default" : "ghost"}
+                size="sm"
+                className={`rounded ${statusFilter === "needs_resigning" ? "" : "hover:bg-accent/50"} h-8 px-4`}
+                onClick={() => setStatusFilter("needs_resigning")}
+              >Needs Re-signing</Button>
               <Button 
                 variant={statusFilter === "signed" ? "default" : "ghost"} 
                 size="sm" 
@@ -209,7 +221,9 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="divide-y-2 divide-border">
-                {filteredQuotes?.map(quote => (
+                {filteredQuotes?.map(quote => {
+                  const approvalStatus = quote.approvalStatus;
+                  return (
                   <Link key={quote.id} href={`/quotes/${quote.id}`} className="block hover:bg-muted/30 transition-colors p-4 sm:p-6 outline-none focus-visible:bg-muted/30">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="space-y-1">
@@ -217,6 +231,12 @@ export default function DashboardPage() {
                           <span className="font-bold text-lg text-foreground">{quote.quoteNumber}</span>
                           {quote.archived ? (
                             <Badge variant="outline" className="text-muted-foreground">Archived</Badge>
+                          ) : approvalStatus === "needs_resigning" ? (
+                            <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-950">Needs Re-signing</Badge>
+                          ) : approvalStatus === "partial" ? (
+                            <Badge variant="outline" className="border-primary/40 bg-primary/5 text-primary">Partially Approved</Badge>
+                          ) : approvalStatus === "signed" ? (
+                            <Badge variant="success">Signed</Badge>
                           ) : quote.signed ? (
                             <Badge variant="success">Signed</Badge>
                           ) : (
@@ -243,7 +263,8 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </Link>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>

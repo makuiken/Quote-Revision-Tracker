@@ -5,6 +5,8 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ApprovalCoverage } from './approvalCoverage';
+import type { LegacyApproval } from './legacyApproval';
 import type { Quote } from './quote';
 import type { Revision } from './revision';
 import type { Signoff } from './signoff';
@@ -15,4 +17,6 @@ export interface QuoteDetail {
   signoff?: Signoff | null;
   /** Opaque version of the signoff document content; must be echoed back when signing */
   documentVersion: string;
+  approvalCoverage?: ApprovalCoverage[];
+  legacyApproval?: LegacyApproval | null;
 }

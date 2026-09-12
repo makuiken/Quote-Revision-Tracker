@@ -1,6 +1,6 @@
 import { Show, useClerk, useUser } from "@clerk/react";
 import { Link, Redirect, useLocation } from "wouter";
-import { LogOut, Home, FileText, Users, Clock, Settings } from "lucide-react";
+import { LogOut, Home, FileText, Users, Clock, Settings, LayoutTemplate } from "lucide-react";
 import { useGetCurrentUser, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 
@@ -81,6 +81,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
                         <Settings className="w-5 h-5" />
                         Field Options
                       </Link>
+                      <Link href="/admin/templates" className={`flex items-center gap-2 font-bold transition-colors ${location === "/admin/templates" ? "text-primary" : "text-foreground hover:text-primary"}`}>
+                        <LayoutTemplate className="w-5 h-5" />
+                        Templates
+                      </Link>
                     </>
                   )}
                 </nav>
@@ -124,6 +128,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   <Link href="/field-options" className={`flex items-center gap-2 text-sm font-bold whitespace-nowrap px-3 py-2 rounded-md transition-colors ${location === "/field-options" ? "bg-primary/10 text-primary" : "text-foreground hover:text-primary"}`}>
                     <Settings className="w-4 h-4" />
                     Field Options
+                  </Link>
+                  <Link href="/admin/templates" className={`flex items-center gap-2 text-sm font-bold whitespace-nowrap px-3 py-2 rounded-md transition-colors ${location === "/admin/templates" ? "bg-primary/10 text-primary" : "text-foreground hover:text-primary"}`}>
+                    <LayoutTemplate className="w-4 h-4" />
+                    Templates
                   </Link>
                 </>
               )}

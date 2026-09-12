@@ -13,6 +13,12 @@ try {
       "src/lib/packets/signoffDocument.test.ts",
       "src/lib/packets/recovery.test.ts",
       "src/lib/packets/documentBudget.test.ts",
+      "src/lib/scopedApprovalModel.test.ts",
+      "src/lib/quoteApprovalImpact.test.ts",
+      "src/lib/legacyApproval.test.ts",
+      "src/lib/scopedPublicQuote.test.ts",
+      "src/lib/packets/manifestScope.test.ts",
+      "src/lib/packets/templates.test.ts",
     ],
     outdir,
     bundle: true,
@@ -21,13 +27,21 @@ try {
     target: "node20",
     external: ["*.node", "@napi-rs/canvas", "pdfjs-dist", "pdfjs-dist/*"],
   });
-  await cp("assets", join(outdir, "assets"), { recursive: true });
+  // Bundled packet modules retain their `src/lib/packets` relative layout;
+  // signoffDocument resolves embedded fonts adjacent to that output folder.
+  await cp("assets", join(outdir, "packets", "assets"), { recursive: true });
   const files = [
-    "engine.test.js",
-    "workerClient.test.js",
-    "signoffDocument.test.js",
-    "recovery.test.js",
-    "documentBudget.test.js",
+    "packets/engine.test.js",
+    "packets/workerClient.test.js",
+    "packets/signoffDocument.test.js",
+    "packets/recovery.test.js",
+    "packets/documentBudget.test.js",
+    "scopedApprovalModel.test.js",
+    "quoteApprovalImpact.test.js",
+    "legacyApproval.test.js",
+    "scopedPublicQuote.test.js",
+    "packets/manifestScope.test.js",
+    "packets/templates.test.js",
   ].map((file) => join(outdir, file));
   const child = spawn(process.execPath, ["--test", ...files], {
     stdio: "inherit",

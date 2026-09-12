@@ -8,6 +8,7 @@ import {
   manufacturerPacketsTable,
   revisionsTable,
   signoffsTable,
+  scopedApprovalsTable,
 } from "@workspace/db";
 import {
   ApproveManufacturerPacketParams,
@@ -38,6 +39,9 @@ import {
   SetManufacturerPacketRedactionsBody,
   SetManufacturerPacketRedactionsParams,
   SetManufacturerPacketRedactionsResponse,
+  SetManufacturerPacketManufacturerParams,
+  SetManufacturerPacketManufacturerBody,
+  SetManufacturerPacketManufacturerResponse,
 } from "@workspace/api-zod";
 import {
   requireApproved,
@@ -64,6 +68,8 @@ import {
 } from "./quotes";
 import { loadApprovedManifest } from "../lib/packets/service";
 import { renderPdfPreviewInWorker } from "../lib/packets/engine";
+import { invalidateApprovalCoverage, invalidateLegacyApproval } from "../lib/scopedApprovals";
+import { changedManifestProductTypes, manifestChanged } from "../lib/packets/manifestScope";
 
 const router: IRouter = Router();
 const storage = new ObjectStorageService();
@@ -131,6 +137,156 @@ router.get("/quotes/:id/manufacturer-packets", async (req, res): Promise<void> =
   res.json(ListManufacturerPacketsResponse.parse(packets.map(serializePacket)));
 });
 
+router.patch(
+  "/quotes/:id/manufacturer-packets/:packetId/product-type",
+  async (req, res): Promise<void> => {
+    const id = Number(req.params.id);
+    const packetId = Number(req.params.packetId);
+    const productType = (req.body as { productType?: unknown } | undefined)?.productType;
+    if (!Number.isInteger(id) || !Number.isInteger(packetId) || typeof productType !== "string") {
+      res.status(400).json({ error: "A valid productType is required." }); return;
+    }
+    const outcome = await db.transaction(async (tx) => {
+      const quote = await lockQuoteRow(tx, id);
+      if (!quote) return { kind: "notFound" as const };
+      if (quote.archivedAt) return { kind: "archived" as const };
+      if (!quote.categories.includes(productType)) return { kind: "invalid" as const };
+      const [packet] = await tx.select().from(manufacturerPacketsTable).where(
+        and(eq(manufacturerPacketsTable.id, packetId), eq(manufacturerPacketsTable.quoteId, id)),
+      ).for("update");
+      if (!packet) return { kind: "notFound" as const };
+      const changed = packet.productType !== productType;
+      const requiresReviewReset = changed && packet.productType !== null;
+      if (requiresReviewReset && (packet.status === "queued" || packet.status === "processing")) {
+        return { kind: "notEditable" as const };
+      }
+      if (requiresReviewReset) {
+        // Published manifest membership is mutable projection state. Remove
+        // this packet's pages before resetting it for reprocessing; immutable
+        // scoped approval snapshots remain untouched.
+        await tx
+          .delete(manufacturerPacketManifestTable)
+          .where(
+            and(
+              eq(manufacturerPacketManifestTable.quoteId, id),
+              eq(manufacturerPacketManifestTable.packetId, packetId),
+            ),
+          );
+      }
+      const [updated] = await tx
+        .update(manufacturerPacketsTable)
+        .set(
+          !requiresReviewReset || packet.status === "awaiting_upload"
+            ? { productType }
+            : {
+                productType,
+                status: "queued",
+                manualRedactions: null,
+                appliedRedactionTemplateId: null,
+                appliedRedactionTemplateName: null,
+                sanitizedPdfObjectPath: null,
+                sanitizedPdfSha256: null,
+                sanitizedPageObjectPaths: null,
+                failureMessage: null,
+                attemptCount: 0,
+                processingStartedAt: null,
+                processingAttemptToken: null,
+              },
+        )
+        .where(eq(manufacturerPacketsTable.id, packetId))
+        .returning();
+      if (changed && packet.status === "approved") {
+        // A reassigned published packet changes both the old and new category's
+        // content; all immutable snapshots stay downloadable.
+        await invalidateApprovalCoverage(tx, id, [...new Set([packet.productType, productType].filter(Boolean) as string[])], "A manufacturer packet assignment changed.");
+      }
+      return {
+        kind: "ok" as const,
+        packet: updated!,
+        shouldProcess: requiresReviewReset && packet.status !== "awaiting_upload",
+      };
+    });
+    if (outcome.kind === "notFound") { res.status(404).json({ error: "Packet or quote not found." }); return; }
+    if (outcome.kind === "archived") { res.status(400).json({ error: "This quote is archived. Restore it to edit packet assignment." }); return; }
+    if (outcome.kind === "invalid") { res.status(400).json({ error: "productType must be an active product type on this quote." }); return; }
+    if (outcome.kind === "notEditable") { res.status(409).json({ error: "Wait for packet processing to finish before changing its product type." }); return; }
+    if (outcome.shouldProcess) kickPacketProcessing(outcome.packet.id);
+    res.json(serializePacket(outcome.packet));
+  },
+);
+
+router.patch(
+  "/quotes/:id/manufacturer-packets/:packetId/manufacturer",
+  async (req, res): Promise<void> => {
+    const params = parseParams(SetManufacturerPacketManufacturerParams, req.params, res);
+    if (!params) return;
+    const body = SetManufacturerPacketManufacturerBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: "A non-empty manufacturer is required." });
+      return;
+    }
+    const manufacturer = body.data.manufacturer.trim().replace(/\s+/g, " ");
+    if (!manufacturer) {
+      res.status(400).json({ error: "A non-empty manufacturer is required." });
+      return;
+    }
+    const outcome = await db.transaction(async (tx) => {
+      const quote = await lockQuoteRow(tx, params.id);
+      if (!quote) return { kind: "notFound" as const };
+      if (quote.archivedAt) return { kind: "archived" as const };
+      const [packet] = await tx
+        .select()
+        .from(manufacturerPacketsTable)
+        .where(
+          and(
+            eq(manufacturerPacketsTable.id, params.packetId),
+            eq(manufacturerPacketsTable.quoteId, params.id),
+          ),
+        )
+        .for("update");
+      if (!packet) return { kind: "notFound" as const };
+      if (packet.status === "queued" || packet.status === "processing" || packet.status === "approved") {
+        return { kind: "notEditable" as const };
+      }
+      const [updated] = await tx
+        .update(manufacturerPacketsTable)
+        .set(
+          packet.status === "awaiting_upload"
+            ? { manufacturer }
+            : {
+                manufacturer,
+                status: "queued",
+                manualRedactions: null,
+                appliedRedactionTemplateId: null,
+                appliedRedactionTemplateName: null,
+                sanitizedPdfObjectPath: null,
+                sanitizedPdfSha256: null,
+                sanitizedPageObjectPaths: null,
+                failureMessage: null,
+                 attemptCount: 0,
+              },
+        )
+        .where(eq(manufacturerPacketsTable.id, packet.id))
+        .returning();
+      return { kind: "ok" as const, packet: updated! };
+    });
+    if (outcome.kind === "notFound") {
+      res.status(404).json({ error: "Packet not found." });
+      return;
+    }
+    if (outcome.kind === "archived") {
+      res.status(400).json({ error: "This quote is archived. Restore it to edit packet metadata." });
+      return;
+    }
+    if (outcome.kind === "notEditable") {
+      res.status(409).json({ error: "Manufacturer cannot be changed while processing or after approval." });
+      return;
+    }
+    if (outcome.packet.status === "queued") kickPacketProcessing(outcome.packet.id);
+    res.json(SetManufacturerPacketManufacturerResponse.parse(serializePacket(outcome.packet)));
+  },
+);
+
 router.get("/quotes/:id/manufacturer-packet-manifest", async (req, res): Promise<void> => {
   const params = parseParams(GetManufacturerPacketManifestParams, req.params, res);
   if (!params) return;
@@ -167,7 +323,16 @@ router.get("/quotes/:id/manufacturer-packet-manifest", async (req, res): Promise
       pageOrder: manufacturerPacketManifestTable.pageOrder,
     })
     .from(manufacturerPacketManifestTable)
-    .where(eq(manufacturerPacketManifestTable.quoteId, params.id))
+    .innerJoin(
+      manufacturerPacketsTable,
+      eq(manufacturerPacketManifestTable.packetId, manufacturerPacketsTable.id),
+    )
+    .where(
+      and(
+        eq(manufacturerPacketManifestTable.quoteId, params.id),
+        eq(manufacturerPacketsTable.status, "approved"),
+      ),
+    )
     .orderBy(manufacturerPacketManifestTable.pageOrder);
   res.json(GetManufacturerPacketManifestResponse.parse({ entries }));
 });
@@ -214,6 +379,19 @@ router.put("/quotes/:id/manufacturer-packet-manifest", async (req: AuthedRequest
           )
       : [];
     const byId = new Map(packets.map((packet) => [packet.id, packet]));
+    const previousEntries = await tx
+      .select({
+        packetId: manufacturerPacketManifestTable.packetId,
+        pageNumber: manufacturerPacketManifestTable.pageNumber,
+        pageOrder: manufacturerPacketManifestTable.pageOrder,
+        productType: manufacturerPacketsTable.productType,
+      })
+      .from(manufacturerPacketManifestTable)
+      .innerJoin(manufacturerPacketsTable, eq(manufacturerPacketManifestTable.packetId, manufacturerPacketsTable.id))
+      .where(eq(manufacturerPacketManifestTable.quoteId, params.id));
+    if (entries.some((entry) => !byId.get(entry.packetId)?.productType)) {
+      return "unclassifiedPackets" as const;
+    }
     if (
       entries.some((entry) => {
         const packet = byId.get(entry.packetId);
@@ -269,7 +447,18 @@ router.put("/quotes/:id/manufacturer-packet-manifest", async (req: AuthedRequest
         })
         .where(inArray(manufacturerPacketsTable.id, packetIds));
     }
-    await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, params.id));
+    const changedTypes = changedManifestProductTypes(
+      previousEntries,
+      entries.map((entry) => ({ ...entry, productType: byId.get(entry.packetId)?.productType ?? null })),
+    );
+    const nextEntries = entries.map((entry) => ({ ...entry, productType: byId.get(entry.packetId)?.productType ?? null }));
+    if (changedTypes.length) {
+      await invalidateApprovalCoverage(tx, params.id, changedTypes, "Published manufacturer packet pages changed.");
+    } else if (manifestChanged(previousEntries, nextEntries)) {
+      // Legacy approval is whole-quote only; an unclassified page change is
+      // relevant but must not be guessed into scoped coverage.
+      await invalidateLegacyApproval(tx, params.id, "Published manufacturer packet pages changed.");
+    }
     return "ok" as const;
   });
   if (outcome === "notFound") {
@@ -282,6 +471,10 @@ router.put("/quotes/:id/manufacturer-packet-manifest", async (req: AuthedRequest
   }
   if (outcome === "invalidPackets") {
     res.status(409).json({ error: "Every manifest page must come from a sanitized packet ready for approval." });
+    return;
+  }
+  if (outcome === "unclassifiedPackets") {
+    res.status(400).json({ error: "Assign a product type to every packet before publishing it." });
     return;
   }
   if (outcome === "overLimit") {
@@ -298,12 +491,27 @@ router.delete("/quotes/:id/manufacturer-packet-manifest", async (req, res): Prom
     const quote = await lockQuoteRow(tx, params.id);
     if (!quote) return "notFound" as const;
     if (quote.archivedAt) return "archived" as const;
+    const previousEntries = await tx
+      .select({
+        packetId: manufacturerPacketManifestTable.packetId,
+        pageNumber: manufacturerPacketManifestTable.pageNumber,
+        pageOrder: manufacturerPacketManifestTable.pageOrder,
+        productType: manufacturerPacketsTable.productType,
+      })
+      .from(manufacturerPacketManifestTable)
+      .innerJoin(manufacturerPacketsTable, eq(manufacturerPacketManifestTable.packetId, manufacturerPacketsTable.id))
+      .where(eq(manufacturerPacketManifestTable.quoteId, params.id));
     await tx.delete(manufacturerPacketManifestTable).where(eq(manufacturerPacketManifestTable.quoteId, params.id));
     await tx
       .update(manufacturerPacketsTable)
       .set({ status: "ready_for_approval", approvedAt: null, approvedById: null, approvedByName: null })
       .where(and(eq(manufacturerPacketsTable.quoteId, params.id), eq(manufacturerPacketsTable.status, "approved")));
-    await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, params.id));
+    const changedTypes = changedManifestProductTypes(previousEntries, []);
+    if (changedTypes.length) {
+      await invalidateApprovalCoverage(tx, params.id, changedTypes, "Published manufacturer packet pages were unpublished.");
+    } else if (previousEntries.length) {
+      await invalidateLegacyApproval(tx, params.id, "Published manufacturer packet pages were unpublished.");
+    }
     return "ok" as const;
   });
   if (outcome === "notFound") {
@@ -323,7 +531,11 @@ router.post(
     const params = parseParams(RequestManufacturerPacketUploadParams, req.params, res);
     if (!params) return;
     const body = RequestManufacturerPacketUploadBody.safeParse(req.body);
-    if (!body.success || !body.data.name.toLowerCase().endsWith(".pdf")) {
+    if (
+      !body.success ||
+      !body.data.name.toLowerCase().endsWith(".pdf") ||
+      !body.data.manufacturer.trim()
+    ) {
       res.status(400).json({ error: "A PDF filename, PDF content type, and size up to 50 MiB are required." });
       return;
     }
@@ -331,6 +543,7 @@ router.post(
       const quote = await lockQuoteRow(tx, params.id);
       if (!quote) return { kind: "notFound" as const };
       if (quote.archivedAt) return { kind: "archived" as const };
+      if (!quote.categories.includes(body.data.productType)) return { kind: "invalidProductType" as const };
       // The initial unique placeholder obtains a serial ID; the final staging
       // path is generated from that ID and is therefore quote/packet-bound.
       const placeholder = `/objects/manufacturer-packet-staging/pending/${randomUUID()}`;
@@ -339,6 +552,7 @@ router.post(
         .values({
           quoteId: quote.id,
           manufacturer: body.data.manufacturer?.trim() || null,
+          productType: body.data.productType,
           originalName: body.data.name,
           declaredSize: body.data.size,
           uploadObjectPath: placeholder,
@@ -352,6 +566,10 @@ router.post(
     }
     if (createOutcome.kind === "archived") {
       res.status(400).json({ error: "This quote is archived. Restore it to add a packet." });
+      return;
+    }
+    if (createOutcome.kind === "invalidProductType") {
+      res.status(400).json({ error: "productType must be an active product type on this quote." });
       return;
     }
     const { pending } = createOutcome;
@@ -399,6 +617,11 @@ router.delete(
     const deleted = await db.transaction(async (tx) => {
       const quote = await lockQuoteRow(tx, params.id);
       if (!quote || quote.archivedAt) return null;
+      const priorManifest = await tx
+        .select({ packetId: manufacturerPacketManifestTable.packetId })
+        .from(manufacturerPacketManifestTable)
+        .where(and(eq(manufacturerPacketManifestTable.quoteId, params.id), eq(manufacturerPacketManifestTable.packetId, params.packetId)))
+        .limit(1);
       const [packet] = await tx
         .delete(manufacturerPacketsTable)
         .where(
@@ -409,8 +632,12 @@ router.delete(
         )
         .returning();
       if (!packet) return null;
-      // Cascading manifest removal changes the signed packet order/content.
-      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, params.id));
+       // Cascading manifest removal changes only this packet's category.
+       if (priorManifest.length && packet.productType) {
+         await invalidateApprovalCoverage(tx, params.id, [packet.productType], "A published manufacturer packet was deleted.");
+       } else if (priorManifest.length) {
+         await invalidateLegacyApproval(tx, params.id, "A published manufacturer packet was deleted.");
+       }
       return packet;
     });
     if (!deleted) {
@@ -660,6 +887,7 @@ router.post(
         .for("update");
       if (!packet) return { kind: "notFound" as const };
       if (packet.status === "approved") return { kind: "ok" as const, packet };
+      if (!packet.productType) return { kind: "unclassified" as const };
       if (
         packet.status !== "ready_for_approval" ||
         !packet.sanitizedPdfObjectPath ||
@@ -679,6 +907,36 @@ router.post(
         ))
       ) {
         return { kind: "overLimit" as const };
+      }
+      // A packet being reprocessed must not retain old manifest rows. Keep
+      // this defensive cleanup here as well so a retry/recovery race or a
+      // legacy inconsistent row can never hit the page uniqueness constraint.
+      const staleManifestRows = await tx
+        .select({ id: manufacturerPacketManifestTable.id })
+        .from(manufacturerPacketManifestTable)
+        .where(
+          and(
+            eq(manufacturerPacketManifestTable.quoteId, params.id),
+            eq(manufacturerPacketManifestTable.packetId, packet.id),
+          ),
+        );
+      if (staleManifestRows.length) {
+        await tx
+          .delete(manufacturerPacketManifestTable)
+          .where(
+            and(
+              eq(manufacturerPacketManifestTable.quoteId, params.id),
+              eq(manufacturerPacketManifestTable.packetId, packet.id),
+            ),
+          );
+        if (packet.productType) {
+          await invalidateApprovalCoverage(
+            tx,
+            params.id,
+            [packet.productType],
+            "A manufacturer packet was reprocessed before approval.",
+          );
+        }
       }
       const [updated] = await tx
         .update(manufacturerPacketsTable)
@@ -708,7 +966,7 @@ router.post(
       );
       // The document version changes with the approved bytes; clear the old
       // signature under the same quote lock to force explicit re-review.
-      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, params.id));
+       if (packet.productType) await invalidateApprovalCoverage(tx, params.id, [packet.productType], "A manufacturer packet was published.");
       return { kind: "ok" as const, packet: updated! };
     });
     if (outcome.kind === "notFound") {
@@ -721,6 +979,10 @@ router.post(
     }
     if (outcome.kind === "notReady") {
       res.status(409).json({ error: "Packet must be sanitized and manually reviewed before approval." });
+      return;
+    }
+    if (outcome.kind === "unclassified") {
+      res.status(400).json({ error: "Assign a product type before approving this packet." });
       return;
     }
     if (outcome.kind === "overLimit") {
@@ -822,6 +1084,25 @@ router.get("/quotes/:id/signoff/document", async (req, res): Promise<void> => {
     }
     req.log.error({ err: error }, "Unable to stream signed packet document");
     res.status(404).json({ error: "No current signed document is available." });
+  }
+});
+
+router.get("/quotes/:id/scoped-approvals/:approvalId/document", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const approvalId = Number(req.params.approvalId);
+  if (!Number.isInteger(id) || !Number.isInteger(approvalId)) {
+    res.status(400).json({ error: "Invalid scoped approval id." }); return;
+  }
+  const [approval] = await db.select().from(scopedApprovalsTable).where(
+    and(eq(scopedApprovalsTable.id, approvalId), eq(scopedApprovalsTable.quoteId, id)),
+  );
+  if (!approval) { res.status(404).json({ error: "Scoped approval not found." }); return; }
+  try {
+    res.setHeader("Content-Disposition", `attachment; filename="quote-${id}-scoped-approval-${approvalId}.pdf"`);
+    await streamPrivateObject(approval.signedDocumentObjectPath, res);
+  } catch (error) {
+    req.log.error({ err: error, approvalId }, "Unable to stream immutable scoped approval");
+    res.status(404).json({ error: "Scoped approval document is not available." });
   }
 });
 

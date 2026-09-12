@@ -5,6 +5,7 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { PublicManufacturerPacketProductTypesItem } from './publicManufacturerPacketProductTypesItem';
 
 export interface PublicManufacturerPacket {
   id: number;
@@ -12,4 +13,5 @@ export interface PublicManufacturerPacket {
   manufacturer?: string | null;
   pageCount: number;
   approvedAt: Date;
+  productTypes?: PublicManufacturerPacketProductTypesItem[];
 }

@@ -1,429 +1,517 @@
-import React, { useState, useEffect } from "react";
-import { useParams, Link } from "wouter";
-import { ArrowLeft, Printer, Share2, Copy, Mail, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link, useParams } from "wouter";
+import { Check, Copy, ExternalLink, Mail, Printer, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useGetQuote,
   getGetQuoteQueryKey,
-  useSaveSignoff,
-  useGetShareInfo,
   getGetShareInfoQueryKey,
-  useCreateShareLink,
+  getListScopedApprovalsQueryKey,
+  useCancelScopedApproval,
+  useCreateScopedApproval,
+  useGetQuote,
+  useGetShareInfo,
+  useListScopedApprovals,
   useSetRevisionSignoffExclusion,
-  useGetManufacturerPacketManifest,
-  useGetManufacturerPacketPage,
-  type Revision,
+  getSignedSignoffDocument,
+  type QuoteCategoriesItem,
+  type ScopedApproval,
+  type ScopedApprovalsResponse,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
-import { SignoffDocument } from "@/components/signoff-document";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { categoryLabel } from "@/lib/revision-categories";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-function ShareDialog({
-  open,
-  onOpenChange,
-  quoteId,
+function ScopedShareDialog({
+  approval,
   quoteNumber,
   customerName,
+  open,
+  onOpenChange,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  quoteId: number;
+  approval: ScopedApproval | null;
   quoteNumber: string;
   customerName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const [email, setEmail] = useState("");
   const [copied, setCopied] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
-
+  const { data: shareInfo } = useGetShareInfo({ query: { enabled: open, queryKey: getGetShareInfoQueryKey() } });
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-  const { data: shareInfo } = useGetShareInfo({
-    query: { queryKey: getGetShareInfoQueryKey(), enabled: open },
-  });
-  const createShareLink = useCreateShareLink();
+  const origin = shareInfo?.publicOrigin ?? window.location.origin;
+  const url = approval ? `${origin}${basePath}/scoped-sign/${approval.token}` : "";
+  const scope = approval?.productTypes.map(categoryLabel).join(", ") ?? "";
+  const mailto = `mailto:${email}?subject=${encodeURIComponent(`Approval requested – Quote #${quoteNumber}`)}&body=${encodeURIComponent(`Hi ${customerName},\n\nPlease review and approve ${scope} for Quote #${quoteNumber}.\n\n${url}\n\nThis link includes only the product types listed above.\n\nThank you,\nKuiken Brothers`)}`;
 
-  // Generate (or fetch the existing) public share token when the dialog opens
-  useEffect(() => {
-    if (open && !token && !createShareLink.isPending) {
-      createShareLink.mutate(
-        { id: quoteId },
-        { onSuccess: (data) => setToken(data.token) },
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  // Public customer link: no login required, token-gated
-  const shareOrigin = shareInfo?.publicOrigin ?? window.location.origin;
-  const shareUrl = token ? `${shareOrigin}${basePath}/sign/${token}` : null;
-
-  const subject = encodeURIComponent(`Signoff Document – Quote #${quoteNumber}`);
-  const body = shareUrl
-    ? encodeURIComponent(
-        `Hi ${customerName},\n\nPlease review and sign your quote document (Quote #${quoteNumber}) using the link below:\n\n${shareUrl}\n\nIf you have any questions, don't hesitate to reach out.\n\nThank you,\nKuiken Brothers`
-      )
-    : "";
-
-  const mailtoHref = `mailto:${email}?subject=${subject}&body=${body}`;
-
-  const handleCopyLink = async () => {
-    if (!shareUrl) return;
+  const copy = async () => {
+    if (!url) return;
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(url);
     } catch {
-      const el = document.createElement("textarea");
-      el.value = shareUrl;
-      document.body.appendChild(el);
-      el.select();
+      const input = document.createElement("textarea");
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
       document.execCommand("copy");
-      document.body.removeChild(el);
+      input.remove();
     }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-serif text-xl uppercase tracking-widest">
-            Share Signoff Document
-          </DialogTitle>
-          <DialogDescription>
-            Send the signing link for <strong>Quote #{quoteNumber}</strong> to the customer.
-            No account or login is needed — anyone with the link can view and sign.
+          <DialogTitle className="font-serif text-xl font-bold">Share Approval Link</DialogTitle>
+          <DialogDescription className="text-muted-foreground mt-2">
+            This link allows the customer to review and approve only the selected products. If you need to change selections later, you will need to prepare a new link.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Copy link section */}
-        <div className="space-y-2">
-          <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
-            Customer Signing Link
-          </Label>
+        <div className="rounded-md border border-border bg-muted p-4 text-sm mt-2">
+          <div className="flex gap-2 mb-2">
+            <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+            <div>
+              <strong className="text-foreground block mb-0.5">Included in this link:</strong>
+              <span className="text-foreground">{scope}</span>
+            </div>
+          </div>
+          {approval?.notIncludedProductTypes.length ? (
+            <div className="flex gap-2 mt-3 pt-3 border-t border-border">
+              <span className="w-4 h-4 rounded-full border border-border bg-card mt-0.5 shrink-0"></span>
+              <div>
+                <strong className="text-muted-foreground block mb-0.5">Not included:</strong>
+                <span className="text-muted-foreground">{approval.notIncludedProductTypes.map(categoryLabel).join(", ")}</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="space-y-2 mt-2">
+          <Label htmlFor="scoped-share-link">Customer signing link</Label>
           <div className="flex gap-2">
-            <Input
-              readOnly
-              value={shareUrl ?? "Generating link..."}
-              className="font-mono text-xs bg-gray-50"
-              onClick={(e) => (e.target as HTMLInputElement).select()}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={handleCopyLink}
-              disabled={!shareUrl}
-              className="shrink-0"
-              title="Copy link"
-            >
-              {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            <Input id="scoped-share-link" readOnly value={url} onClick={(event) => event.currentTarget.select()} className=" text-sm bg-card" />
+            <Button variant="outline" size="icon" onClick={copy} title="Copy scope-bound link" className="shrink-0 bg-card">
+              {copied ? <Check className="h-4 w-4 text-green-700" /> : <Copy className="h-4 w-4 text-foreground" />}
             </Button>
           </div>
         </div>
-
-        <div className="relative my-2">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-gray-200" />
+        <div className="space-y-2 mt-4">
+          <Label htmlFor="scoped-share-email">Customer email</Label>
+          <div className="flex gap-2">
+            <Input id="scoped-share-email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="customer@example.com" className="bg-card" />
+            <Button asChild className="shrink-0">
+              <a href={mailto}><Mail className="mr-2 h-4 w-4" />Open Email</a>
+            </Button>
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-2 text-gray-400 font-bold tracking-widest">or email</span>
-          </div>
-        </div>
-
-        {/* Email section */}
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="share-email" className="text-xs font-bold uppercase tracking-widest text-gray-500">
-              Customer Email
-            </Label>
-            <Input
-              id="share-email"
-              type="email"
-              placeholder="customer@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="bg-white"
-            />
-          </div>
-          <Button
-            asChild
-            className="w-full bg-black text-white hover:bg-gray-800"
-            disabled={!shareUrl}
-          >
-            <a href={shareUrl ? mailtoHref : undefined} aria-disabled={!shareUrl}>
-              <Mail className="w-4 h-4 mr-2" />
-              Open in Email Client
-            </a>
-          </Button>
-          <p className="text-xs text-gray-500 text-center">
-            Opens your default email app with the link and message pre-filled.
-          </p>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-
-function InternalPacketViewer({ quoteId, documentVersion, onStateChange }: { quoteId: number, documentVersion: string, onStateChange: (state: { hasManifest: boolean, isReady: boolean, error?: string }) => void }) {
-  const { data: manifest, isLoading, isFetching, isError } = useGetManufacturerPacketManifest(quoteId, { documentVersion });
-
-  const pageCount = manifest?.entries.length || 0;
-  const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
-  const [imageError, setImageError] = useState(false);
-
-  useEffect(() => {
-    setLoadedPages(new Set());
-    setImageError(false);
-  }, [manifest]);
-
-  useEffect(() => {
-    if (isLoading || isFetching) {
-      onStateChange({ hasManifest: false, isReady: false });
-    } else if (isError || imageError) {
-      onStateChange({ hasManifest: pageCount > 0, isReady: false, error: "One or more packet images failed to load. Please refresh the page." });
-    } else if (pageCount > 0) {
-      onStateChange({ hasManifest: true, isReady: loadedPages.size === pageCount });
-    } else {
-      onStateChange({ hasManifest: false, isReady: true });
-    }
-  }, [isLoading, isFetching, isError, imageError, pageCount, loadedPages.size, onStateChange]);
-
-  const handlePageLoad = (pageOrder: number) => {
-    setLoadedPages(prev => {
-      const next = new Set(prev);
-      next.add(pageOrder);
-      return next;
-    });
-  };
-
-  if (!manifest || manifest.entries.length === 0) return null;
-
-  return (
-    <div className="mb-12">
-      <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2 mb-6">Manufacturer Specifications</h2>
-      <div className="space-y-8">
-        {manifest.entries.sort((a, b) => a.pageOrder - b.pageOrder).map((entry) => (
-          <InternalPacketPage key={`${documentVersion}:${entry.pageOrder}`} documentVersion={documentVersion} quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} onLoad={() => handlePageLoad(entry.pageOrder)} onError={() => setImageError(true)} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function InternalPacketPage({ quoteId, packetId, pageNumber, documentVersion, onLoad, onError }: { quoteId: number, packetId: number, pageNumber: number, documentVersion: string, onLoad: () => void, onError: () => void }) {
-  const { data: blob, isLoading, isError } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, { documentVersion });
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isError) onError();
-  }, [isError, onError]);
-
-  useEffect(() => {
-    if (blob) {
-      const u = URL.createObjectURL(blob);
-      setUrl(u);
-      return () => URL.revokeObjectURL(u);
-    }
-    return undefined;
-  }, [blob]);
-
-  if (isError) return <div className="h-64 bg-red-50 flex items-center justify-center text-red-500 rounded border border-red-200">Failed to load page</div>;
-  if (isLoading || !url) return <div className="h-64 bg-gray-100 animate-pulse rounded border border-gray-200"></div>;
-
-  return (
-    <div className="bg-white border border-gray-300 shadow-sm rounded overflow-hidden">
-      <img src={url} alt={`Packet Page ${pageNumber}`} className="w-full h-auto block" onLoad={onLoad} onError={onError} />
-    </div>
-  );
-}
-
 export default function SignoffPage() {
   const { id } = useParams();
-  const quoteId = parseInt(id || "0", 10);
+  const quoteId = Number(id);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-  const { data: detail, isLoading } = useGetQuote(quoteId, { 
-    query: { enabled: !!quoteId, queryKey: getGetQuoteQueryKey(quoteId) } 
+  const { data: detail, isLoading } = useGetQuote(quoteId, { query: { enabled: Number.isFinite(quoteId), queryKey: getGetQuoteQueryKey(quoteId) } });
+  const { data: approvalResponse } = useListScopedApprovals(quoteId, {
+    query: { enabled: Number.isFinite(quoteId), queryKey: getListScopedApprovalsQueryKey(quoteId) },
   });
-  
-  const saveSignoff = useSaveSignoff();
-  const setExclusion = useSetRevisionSignoffExclusion();
+  const [selected, setSelected] = useState<QuoteCategoriesItem[]>([]);
+  const [prepared, setPrepared] = useState<ScopedApproval | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
-  const [pendingToggle, setPendingToggle] = useState<Revision | null>(null);
-  const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
+  const [isOpeningLegacyDocument, setIsOpeningLegacyDocument] = useState(false);
+  const initializedQuoteRef = useRef<number | null>(null);
 
-  const handleManifestStateChange = React.useCallback((newState: { hasManifest: boolean, isReady: boolean, error?: string }) => {
-    setManifestState(prev =>
-      prev.hasManifest === newState.hasManifest && prev.isReady === newState.isReady && prev.error === newState.error
-        ? prev
-        : newState
-    );
-  }, []);
-
-  const toggleExclude = (revision: Revision) => {
-    // Changing what appears on a signed document invalidates the signature —
-    // confirm with the user before proceeding.
-    if (detail?.quote.signed) {
-      setPendingToggle(revision);
-      return;
+  useEffect(() => {
+    if (detail && initializedQuoteRef.current !== quoteId) {
+      initializedQuoteRef.current = quoteId;
+      setSelected(detail.quote.categories);
     }
-    executeToggle(revision);
-  };
+  }, [detail, quoteId]);
 
-  const executeToggle = (revision: Revision) => {
-    setExclusion.mutate(
-      {
-        id: quoteId,
-        revisionId: revision.id,
-        data: { excludedFromSignoff: !revision.excludedFromSignoff },
-      },
-      {
-        onSuccess: (updated) => {
-          setPendingToggle(null);
-          queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
-          toast({
-            title: updated.excludedFromSignoff ? "Hidden from signoff" : "Included on signoff",
-            description: updated.excludedFromSignoff
-              ? "The revision stays in the full log but won't appear on the signoff document."
-              : "The revision will appear on the signoff document again.",
-          });
-        },
-        onError: () => {
-          toast({ title: "Error", description: "Failed to update the revision.", variant: "destructive" });
-        },
-      },
+  const openRequests = (approvalResponse?.approvals ?? []).filter(
+    (approval) => approval.status === "open",
+  );
+
+  useEffect(() => {
+    if (!prepared || !approvalResponse) return;
+    const currentRequest = approvalResponse.approvals.find(
+      (approval) => approval.id === prepared.id,
     );
-  };
+    if (!currentRequest || currentRequest.status !== "open") {
+      setPrepared(null);
+      setShareOpen(false);
+    }
+  }, [approvalResponse, prepared]);
 
-  if (isLoading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
-  }
-
-  if (!detail) {
-    return <div className="p-8 text-center text-destructive">Quote not found.</div>;
-  }
-
-  const { quote, revisions, signoff } = detail;
-
-  const submitSignoff = (
-    signerName: string,
-    stakeholderRole: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
-    type: "typed" | "drawn",
-    data: string,
-  ) => {
-    saveSignoff.mutate({ 
-      id: quoteId, 
-      data: {
-        customerName: signerName,
-        stakeholderRole,
-        signatureType: type,
-        signatureData: data,
-        documentVersion: detail.documentVersion,
-      } 
-    }, {
-      onSuccess: () => {
-        toast({ title: "Signoff Saved", description: "The document has been successfully signed." });
+  const create = useCreateScopedApproval({
+    mutation: {
+      onSuccess: (approval) => {
+        setPrepared(approval);
+        queryClient.setQueryData<ScopedApprovalsResponse>(
+          getListScopedApprovalsQueryKey(quoteId),
+          (current) => current
+            ? {
+                ...current,
+                approvals: [
+                  approval,
+                  ...current.approvals.filter((candidate) => candidate.token !== approval.token),
+                ],
+              }
+            : current,
+        );
+        queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
         queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+        toast({ title: "Scoped approval prepared", description: "The preview and customer link contain only the selected product types." });
       },
-      onError: (err: any) => {
-        const stale = err?.status === 409;
+      onError: (error) => toast({ title: "Could not prepare approval", description: error.message, variant: "destructive" }),
+    },
+  });
+  const cancel = useCancelScopedApproval({
+    mutation: {
+      onSuccess: (_result, variables) => {
+        if (prepared?.id === variables.requestId) {
+          setPrepared(null);
+          setShareOpen(false);
+        }
+        queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
+        queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
         toast({
-          title: stale ? "Document Changed" : "Error",
-          description: stale
-            ? "This document was updated since it was loaded. It has been refreshed — please review and sign again."
-            : "Failed to save signoff.",
-          variant: "destructive",
+          title: "Approval request cancelled",
+          description: "Its customer link has been revoked. You can now prepare a different scope.",
         });
-        if (stale) queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
-      }
+      },
+      onError: (error) => toast({
+        title: "Could not cancel approval request",
+        description: error.message,
+        variant: "destructive",
+      }),
+    },
+  });
+  const setRevisionExclusion = useSetRevisionSignoffExclusion({
+    mutation: {
+      onSuccess: (_revision, variables) => {
+        setPrepared(null);
+        queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+        queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
+        toast({
+          title: variables.data.excludedFromSignoff ? "Revision excluded from customer documents" : "Revision included in customer documents",
+          description: "The revision remains in the internal quote log. Any prepared scoped preview was cleared.",
+        });
+      },
+      onError: (error) => toast({ title: "Could not update revision inclusion", description: error.message, variant: "destructive" }),
+    },
+  });
+
+  if (isLoading) return <div className="p-8 flex items-center justify-center min-h-[100dvh] text-muted-foreground font-medium text-lg">Loading approval setup…</div>;
+  if (!detail) return <div className="p-8 text-center text-destructive min-h-[100dvh] flex items-center justify-center">Quote not found.</div>;
+  const categories = detail.quote.categories;
+  const coverage = approvalResponse?.coverage ?? detail.approvalCoverage ?? [];
+  const allSelected = selected.length === categories.length;
+  
+  const updateSelection = (next: QuoteCategoriesItem[]) => {
+    setSelected(next);
+    setPrepared(null);
+  };
+  
+  const toggle = (type: QuoteCategoriesItem) => updateSelection(selected.includes(type) ? selected.filter((item) => item !== type) : [...selected, type]);
+  const scopeLabel = selected.map(categoryLabel).join(", ");
+  const hasOverlappingOpenRequest = openRequests.some((approval) =>
+    approval.productTypes.some((type) => selected.includes(type)),
+  );
+  
+  const reuseOpenRequest = (approval: ScopedApproval) => {
+    setSelected([...approval.productTypes]);
+    setPrepared(approval);
+    setShareOpen(false);
+    toast({
+      title: "Existing request selected",
+      description: "Reusing its original locked scope and customer link.",
     });
   };
 
-  const disabledReason = manifestState.error
-    ? manifestState.error
-    : (!manifestState.isReady ? "Loading manufacturer packet specifications..." : undefined);
+  const openLegacyDocument = async () => {
+    // Open synchronously so popup blockers allow the tab, then populate it
+    // after the authenticated API client returns the immutable PDF.
+    const documentWindow = window.open("", "_blank");
+    if (!documentWindow) {
+      toast({ title: "Could not open PDF", description: "Allow pop-ups for this site, then try again.", variant: "destructive" });
+      return;
+    }
+    documentWindow.opener = null;
+    setIsOpeningLegacyDocument(true);
+    try {
+      const pdf = await getSignedSignoffDocument(quoteId, { responseType: "blob" });
+      const objectUrl = URL.createObjectURL(pdf);
+      documentWindow.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      documentWindow.close();
+      toast({
+        title: "Could not open legacy signed PDF",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsOpeningLegacyDocument(false);
+    }
+  };
 
   return (
-    <div className="min-h-[100dvh] bg-gray-100 text-black font-sans print:bg-white print:p-0">
-      <div className="max-w-4xl mx-auto p-4 sm:p-8 print:p-0">
-        
-        {/* Screen-only controls */}
-        <div className="print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-4 border-b-2 border-gray-300">
-          <Button asChild variant="ghost" className="text-gray-600 hover:text-black hover:bg-gray-200">
-            <Link href={`/quotes/${quote.id}`}>
-              <ArrowLeft className="w-4 h-4 mr-2" /> Back to Quote
-            </Link>
-          </Button>
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setShareOpen(true)}
-              className="border-gray-300 text-gray-700 hover:bg-gray-100"
-            >
-              <Share2 className="w-4 h-4 mr-2" /> Share
+    <div className="min-h-[100dvh] bg-muted">
+      <div className="mx-auto max-w-4xl p-4 sm:p-8">
+        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+          <div>
+            <Button asChild variant="ghost" className="mb-2 -ml-2 text-muted-foreground hover:text-foreground">
+              <Link href={`/quotes/${quoteId}`}>
+                <ArrowLeft className="w-4 h-4 mr-1.5" /> Back to Quote #{detail.quote.quoteNumber}
+              </Link>
             </Button>
-            <Button
-              onClick={() => window.print()}
-              disabled={!manifestState.isReady || !!manifestState.error}
-              title="Print this document, or choose Save as PDF in the print dialog."
-              className="bg-black text-white hover:bg-gray-800"
-            >
-              <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
-            </Button>
+            <h1 className="font-serif text-3xl font-extrabold text-foreground tracking-tight">Customer Approval Setup</h1>
+            <p className="text-sm text-muted-foreground font-medium mt-1">Configure which product types and revisions the customer will see.</p>
           </div>
+          {detail.legacyApproval?.documentAvailable ? (
+            <Button type="button" variant="outline" className="bg-card text-foreground" onClick={openLegacyDocument} disabled={isOpeningLegacyDocument}>
+              <Printer className="mr-2 h-4 w-4" /> {isOpeningLegacyDocument ? "Opening PDF…" : "Open legacy signed PDF"}
+            </Button>
+          ) : detail.legacyApproval ? (
+            <p className="text-right text-xs text-amber-700 max-w-xs font-medium">The legacy signature is recorded, but its original PDF is unavailable.</p>
+          ) : null}
         </div>
 
-        <SignoffDocument
-          quote={quote}
-          revisions={revisions}
-          signoff={signoff ?? null}
-          onSubmit={submitSignoff}
-          onToggleExclude={toggleExclude}
-          hasManifest={manifestState.hasManifest}
-          disabledReason={disabledReason}
-          packetSection={<InternalPacketViewer key={detail.documentVersion} quoteId={quoteId} documentVersion={detail.documentVersion} onStateChange={handleManifestStateChange} />}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
+          
+          <div className="space-y-6">
+            <Card className="border-border shadow-sm overflow-hidden">
+              <CardHeader className="bg-card border-b pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PenTool className="w-5 h-5 text-foreground" />
+                  Prepare customer approval link
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Select the product types the customer is being asked to approve. You can preview the document before sharing the link.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6 bg-muted/50 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-bold text-foreground text-sm">Product types to include</h2>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-8 text-muted-foreground" onClick={() => updateSelection(allSelected ? [] : [...categories])}>
+                    {allSelected ? "Clear all" : "Select all"}
+                  </Button>
+                </div>
+                
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {categories.map((type) => {
+                    const current = coverage.find((item) => item.productType === type);
+                    const isSelected = selected.includes(type);
+                    
+                    let statusLabel = "Open";
+                    let statusColor = "text-muted-foreground";
+                    if (current?.status === "needs_resigning") { statusLabel = "Needs re-signing"; statusColor = "text-amber-600 font-semibold"; }
+                    if (current?.status === "signed") { statusLabel = "Signed"; statusColor = "text-green-600 font-semibold"; }
+
+                    return (
+                      <label 
+                        key={type} 
+                        className={`flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3 transition-colors ${
+                          isSelected ? "border-primary bg-card shadow-sm" : "border-border bg-card/50 hover:bg-card"
+                        }`}
+                      >
+                        <Checkbox 
+                          checked={isSelected} 
+                          className={isSelected ? "border-primary data-[state=checked]:bg-primary" : ""}
+                          onCheckedChange={() => toggle(type)} 
+                        />
+                        <span className="flex-1">
+                          <span className={`block font-bold text-sm ${isSelected ? "text-foreground" : "text-foreground"}`}>
+                            {categoryLabel(type)}
+                          </span>
+                          <span className={`text-[11px] mt-0.5 block ${statusColor}`}>
+                            Status: {statusLabel}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {hasOverlappingOpenRequest && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-4 flex gap-3 items-start">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-900">
+                      <strong className="block mb-1">An approval link already exists for these products</strong>
+                      You can preview or share the existing link below. If you want to change which products are included, change your selection or cancel the old request first.
+                    </div>
+                  </div>
+                )}
+                <Button 
+                  className="w-full h-12 text-sm font-bold shadow-sm" 
+                  disabled={!selected.length || create.isPending || hasOverlappingOpenRequest} 
+                  onClick={() => create.mutate({ id: quoteId, data: { productTypes: [...selected] } })}
+                >
+                  {create.isPending ? "Preparing exact preview…" : `Prepare Preview for ${scopeLabel || "selected types"}`}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {prepared && (
+              <Card className="border-primary shadow-md ring-1 ring-ring/10">
+                <CardHeader className="bg-primary text-primary-foreground">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-muted-foreground/70" />
+                    Preview Ready
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6 bg-card">
+                  <div className="rounded-lg border border-border bg-muted p-4 text-sm space-y-3">
+                    <div className="flex gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                      <div>
+                        <strong className="text-foreground block mb-0.5">Included in this link:</strong>
+                        <span className="text-foreground font-medium">{prepared.productTypes.map(categoryLabel).join(", ")}</span>
+                      </div>
+                    </div>
+                    {prepared.notIncludedProductTypes.length > 0 && (
+                      <div className="flex gap-2 pt-3 border-t border-border">
+                        <span className="w-4 h-4 rounded-full border border-border bg-card mt-0.5 shrink-0"></span>
+                        <div>
+                          <strong className="text-muted-foreground block mb-0.5">Not included:</strong>
+                          <span className="text-muted-foreground">{prepared.notIncludedProductTypes.map(categoryLabel).join(", ")}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Button asChild className="flex-1 h-11 bg-card text-foreground border-border hover:bg-muted" variant="outline">
+                      <Link href={`/scoped-sign/${prepared.token}`}>
+                        <ExternalLink className="mr-2 h-4 w-4" /> Open exact preview
+                      </Link>
+                    </Button>
+                    <Button className="flex-1 h-11 bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => setShareOpen(true)}>
+                      <Share2 className="mr-2 h-4 w-4" /> Share customer link
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {openRequests.length > 0 && (
+              <Card className="border-amber-200 shadow-sm overflow-hidden">
+                <CardHeader className="bg-amber-50/50 border-b border-amber-100">
+                  <CardTitle className="text-amber-900 text-lg">Existing approval links</CardTitle>
+                  <CardDescription className="text-amber-800/70">
+                    These links have been prepared previously. You can reuse them to avoid replacing the customer's link.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4">
+                  {openRequests.map((approval) => (
+                    <div key={approval.id ?? approval.token} className="rounded-lg border border-amber-200 bg-card p-4 shadow-sm">
+                      <div className="mb-4">
+                        <h4 className="font-bold text-foreground text-sm mb-1">Included: {approval.productTypes.map(categoryLabel).join(", ")}</h4>
+                        <p className="text-xs font-medium text-muted-foreground">Not included: {approval.notIncludedProductTypes.length ? approval.notIncludedProductTypes.map(categoryLabel).join(", ") : "None"}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => reuseOpenRequest(approval)}>
+                          Reuse this exact request
+                        </Button>
+                        <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => { setPrepared(approval); setShareOpen(true); }}>
+                          <Share2 className="mr-2 h-3.5 w-3.5" /> Share link
+                        </Button>
+                        <Button asChild variant="outline" size="sm" className="bg-muted text-foreground col-span-2">
+                          <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> Open exact preview</Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="col-span-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={approval.id === undefined || cancel.isPending}
+                          onClick={() => {
+                            if (approval.id === undefined) return;
+                            cancel.mutate({ id: quoteId, requestId: approval.id });
+                          }}
+                        >
+                          Cancel request
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="revisions" className="border-none">
+                <AccordionTrigger className="hover:no-underline rounded-lg border border-border bg-card p-4 shadow-sm font-serif text-lg font-bold text-foreground">
+                  Review revisions
+                </AccordionTrigger>
+                <AccordionContent className="pt-4">
+                  <Card className="border-border shadow-sm bg-card overflow-hidden">
+                    <CardHeader className="bg-muted/50 border-b pb-4">
+                      <CardTitle className="text-base font-bold text-foreground">Revision inclusion</CardTitle>
+                      <CardDescription className="text-muted-foreground text-xs">
+                        Control which revisions appear in future customer documents. This never removes an entry from the internal revision log.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      {detail.revisions.length === 0 ? (
+                        <div className="p-6 text-center text-sm font-medium text-muted-foreground">
+                          No revisions have been recorded for this quote.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {detail.revisions.map((revision) => (
+                            <div key={revision.id} className="p-4 hover:bg-muted transition-colors">
+                              <div className="flex justify-between items-start gap-4 mb-2">
+                                <div className="min-w-0">
+                                  <span className="text-xs font-bold text-foreground block">{revision.authorName}</span>
+                                  <span className="text-[10px] uppercase font-bold text-muted-foreground block tracking-wider mt-0.5">
+                                    {revision.excludedFromSignoff ? "Excluded from customer documents" : "Included in customer documents"}
+                                  </span>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className={`h-7 px-2 text-xs font-bold ${revision.excludedFromSignoff ? "bg-card text-muted-foreground" : "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground border-primary"}`}
+                                  disabled={setRevisionExclusion.isPending}
+                                  onClick={() => setRevisionExclusion.mutate({
+                                    id: quoteId,
+                                    revisionId: revision.id,
+                                    data: { excludedFromSignoff: !revision.excludedFromSignoff },
+                                  })}
+                                >
+                                  {revision.excludedFromSignoff ? "Include" : "Exclude"}
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed bg-card border rounded p-2 shadow-sm">
+                                {revision.note}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+
+        </div>
+        <ScopedShareDialog approval={prepared} quoteNumber={detail.quote.quoteNumber} customerName={detail.quote.customerName} open={shareOpen} onOpenChange={setShareOpen} />
       </div>
-
-      <ShareDialog
-        open={shareOpen}
-        onOpenChange={setShareOpen}
-        quoteId={quote.id}
-        quoteNumber={quote.quoteNumber}
-        customerName={quote.customerName}
-      />
-
-      <Dialog open={!!pendingToggle} onOpenChange={(open) => !open && setPendingToggle(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-destructive">Warning: Signature Removal</DialogTitle>
-            <DialogDescription className="text-base text-foreground mt-4">
-              This quote is already signed. Changing which revisions appear on the signoff document will remove the customer's signature, and the quote will need to be signed off again.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-6">
-            <Button variant="outline" onClick={() => setPendingToggle(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => pendingToggle && executeToggle(pendingToggle)}
-              disabled={setExclusion.isPending}
-            >
-              {setExclusion.isPending ? "Saving..." : "Remove Signature & Continue"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

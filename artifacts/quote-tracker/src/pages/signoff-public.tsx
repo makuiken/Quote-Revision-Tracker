@@ -1,7 +1,8 @@
-import { Printer } from "lucide-react";
+import { Printer, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import React, { useState, useEffect } from "react";
-import { useParams } from "wouter";
+import { useParams, Link } from "wouter";
+import { useAuth } from "@clerk/react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetPublicSignoff,
@@ -10,6 +11,8 @@ import {
   useGetPublicManufacturerPacket,
   getGetPublicManufacturerPacketQueryKey,
   useGetPublicManufacturerPacketPage,
+  useGetCurrentUser,
+  getGetCurrentUserQueryKey,
 } from "@workspace/api-client-react";
 import { useToast } from "@/components/ui/toaster";
 import { SignoffDocument } from "@/components/signoff-document";
@@ -116,6 +119,15 @@ export default function PublicSignoffPage() {
   });
 
   const savePublicSignoff = useSavePublicSignoff();
+  const { isSignedIn } = useAuth();
+  const { data: dbUser } = useGetCurrentUser({
+    query: {
+      enabled: Boolean(isSignedIn),
+      retry: false,
+      queryKey: getGetCurrentUserQueryKey(),
+    },
+  });
+  const isEmployee = dbUser?.status === "approved";
 
   if (isLoading) {
     return (
@@ -139,7 +151,8 @@ export default function PublicSignoffPage() {
     );
   }
 
-  const { quote, revisions, signoff } = detail;
+  const { quote, revisions } = detail;
+  const legacyApproval = detail.legacyApproval ?? null;
 
   const submitSignoff = (
     signerName: string,
@@ -178,14 +191,33 @@ export default function PublicSignoffPage() {
     );
   };
 
-  const disabledReason = manifestState.error
-    ? manifestState.error
-    : (!manifestState.isReady ? "Loading manufacturer packet specifications..." : undefined);
+  const disabledReason = legacyApproval
+    ? "This current document is read-only because a historical legacy signature exists. It cannot replace that approval."
+    : manifestState.error
+      ? manifestState.error
+      : (!manifestState.isReady ? "Loading manufacturer packet specifications..." : undefined);
 
   return (
     <div className="min-h-[100dvh] bg-gray-100 text-black font-sans print:bg-white print:p-0">
       <div className="max-w-4xl mx-auto p-4 sm:p-8 print:p-0">
-        <div className="print:hidden flex justify-end mb-8 pb-4 border-b-2 border-gray-300">
+        <div className="print:hidden flex justify-between items-center mb-8 pb-4 border-b-2 border-gray-300">
+          <div>
+            {isEmployee ? (
+              <Button variant="ghost" asChild className="text-gray-600 hover:text-black -ml-4">
+                <Link href={`/quotes/${quote.id}/signoff`}>
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Back to Approval Setup
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="ghost" onClick={() => {
+                if (window.history.length > 1 && document.referrer) {
+                  window.history.back();
+                }
+              }} className={`text-gray-600 hover:text-black -ml-4 ${typeof window !== 'undefined' && window.history.length > 1 && document.referrer ? '' : 'hidden'}`}>
+                <ArrowLeft className="w-4 h-4 mr-2" /> Back
+              </Button>
+            )}
+          </div>
           <Button
             onClick={() => window.print()}
             disabled={!manifestState.isReady || !!manifestState.error}
@@ -195,10 +227,26 @@ export default function PublicSignoffPage() {
             <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
           </Button>
         </div>
+        <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 print:hidden">
+          <p><strong>{legacyApproval ? "Historical signature notice:" : "Current review document:"}</strong> this HTML page shows the current quote content and is not proof of an earlier signature. Only an immutable signed PDF is approval evidence.</p>
+          {legacyApproval?.documentAvailable ? (
+            <>
+              <p className="mt-2">This page is read-only and cannot replace the historical approval.</p>
+              <a className="mt-2 inline-block font-bold underline" href={`/api/public/signoff/${token}/document`} target="_blank" rel="noreferrer">
+                Open original signed PDF evidence
+              </a>
+            </>
+          ) : legacyApproval ? (
+            <p className="mt-2 text-xs">
+              This page is read-only and cannot replace the historical approval. The historical signature is {legacyApproval.validity === "needs_resigning" ? "no longer current and " : ""}recorded, but its immutable original PDF is unavailable. This metadata is not approval evidence for the current document.
+            </p>
+          ) : null}
+        </div>
         <SignoffDocument
           quote={quote}
           revisions={revisions}
-          signoff={signoff ?? null}
+          signoff={null}
+          isSigned={false}
           onSubmit={submitSignoff}
           hasManifest={manifestState.hasManifest}
           disabledReason={disabledReason}

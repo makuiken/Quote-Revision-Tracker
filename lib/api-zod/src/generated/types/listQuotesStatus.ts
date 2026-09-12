@@ -13,5 +13,7 @@ export const ListQuotesStatus = {
   active: 'active',
   awaiting: 'awaiting',
   signed: 'signed',
+  partial: 'partial',
+  needs_resigning: 'needs_resigning',
   archived: 'archived',
 } as const;

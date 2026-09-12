@@ -112,6 +112,268 @@ export const DeleteFieldOptionsResponse = zod.void()
 
 
 /**
+ * @summary List manufacturer redaction templates (admin only)
+ */
+
+export const listManufacturerRedactionTemplatesResponsePagesItemWidthExclusiveMin = 0;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemHeightExclusiveMin = 0;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemRectsItemXMin = 0;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemRectsItemYMin = 0;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemRectsItemWidthExclusiveMin = 0;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemRectsItemHeightExclusiveMin = 0;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemRectsItemReasonMax = 250;
+
+export const listManufacturerRedactionTemplatesResponsePagesItemRectsMax = 100;
+
+export const listManufacturerRedactionTemplatesResponsePagesMax = 500;
+
+
+
+export const ListManufacturerRedactionTemplatesResponseItem = zod.object({
+  "id": zod.int(),
+  "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
+  "manufacturerCanonical": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "pages": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(listManufacturerRedactionTemplatesResponsePagesItemWidthExclusiveMin),
+  "height": zod.number().gt(listManufacturerRedactionTemplatesResponsePagesItemHeightExclusiveMin),
+  "rects": zod.array(zod.object({
+  "x": zod.number().min(listManufacturerRedactionTemplatesResponsePagesItemRectsItemXMin),
+  "y": zod.number().min(listManufacturerRedactionTemplatesResponsePagesItemRectsItemYMin),
+  "width": zod.number().gt(listManufacturerRedactionTemplatesResponsePagesItemRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(listManufacturerRedactionTemplatesResponsePagesItemRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(listManufacturerRedactionTemplatesResponsePagesItemRectsItemReasonMax).optional()
+})).max(listManufacturerRedactionTemplatesResponsePagesItemRectsMax)
+})).min(1).max(listManufacturerRedactionTemplatesResponsePagesMax),
+  "createdById": zod.string(),
+  "createdByName": zod.string(),
+  "updatedById": zod.string(),
+  "updatedByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListManufacturerRedactionTemplatesResponse = zod.array(ListManufacturerRedactionTemplatesResponseItem)
+
+
+/**
+ * @summary Create a redaction template from an analyzed packet (admin only)
+ */
+
+
+export const createManufacturerRedactionTemplateBodyNameMax = 200;
+
+
+
+export const CreateManufacturerRedactionTemplateBody = zod.object({
+  "quoteId": zod.int().min(1),
+  "packetId": zod.int().min(1),
+  "name": zod.string().min(1).max(createManufacturerRedactionTemplateBodyNameMax),
+  "active": zod.boolean().optional()
+})
+
+
+export const createManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateResponsePagesItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateResponsePagesItemRectsItemXMin = 0;
+
+export const createManufacturerRedactionTemplateResponsePagesItemRectsItemYMin = 0;
+
+export const createManufacturerRedactionTemplateResponsePagesItemRectsItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateResponsePagesItemRectsItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax = 250;
+
+export const createManufacturerRedactionTemplateResponsePagesItemRectsMax = 100;
+
+export const createManufacturerRedactionTemplateResponsePagesMax = 500;
+
+
+
+export const CreateManufacturerRedactionTemplateResponse = zod.object({
+  "id": zod.int(),
+  "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
+  "manufacturerCanonical": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "pages": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemHeightExclusiveMin),
+  "rects": zod.array(zod.object({
+  "x": zod.number().min(createManufacturerRedactionTemplateResponsePagesItemRectsItemXMin),
+  "y": zod.number().min(createManufacturerRedactionTemplateResponsePagesItemRectsItemYMin),
+  "width": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(createManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax).optional()
+})).max(createManufacturerRedactionTemplateResponsePagesItemRectsMax)
+})).min(1).max(createManufacturerRedactionTemplateResponsePagesMax),
+  "createdById": zod.string(),
+  "createdByName": zod.string(),
+  "updatedById": zod.string(),
+  "updatedByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update template metadata or active state (admin only)
+ */
+export const UpdateManufacturerRedactionTemplateParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const updateManufacturerRedactionTemplateBodyNameMax = 200;
+
+
+
+export const UpdateManufacturerRedactionTemplateBody = zod.object({
+  "name": zod.string().min(1).max(updateManufacturerRedactionTemplateBodyNameMax).optional(),
+  "active": zod.boolean().optional()
+})
+
+
+export const updateManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin = 0;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemHeightExclusiveMin = 0;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemRectsItemXMin = 0;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemRectsItemYMin = 0;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemRectsItemWidthExclusiveMin = 0;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemRectsItemHeightExclusiveMin = 0;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax = 250;
+
+export const updateManufacturerRedactionTemplateResponsePagesItemRectsMax = 100;
+
+export const updateManufacturerRedactionTemplateResponsePagesMax = 500;
+
+
+
+export const UpdateManufacturerRedactionTemplateResponse = zod.object({
+  "id": zod.int(),
+  "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
+  "manufacturerCanonical": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "pages": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(updateManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin),
+  "height": zod.number().gt(updateManufacturerRedactionTemplateResponsePagesItemHeightExclusiveMin),
+  "rects": zod.array(zod.object({
+  "x": zod.number().min(updateManufacturerRedactionTemplateResponsePagesItemRectsItemXMin),
+  "y": zod.number().min(updateManufacturerRedactionTemplateResponsePagesItemRectsItemYMin),
+  "width": zod.number().gt(updateManufacturerRedactionTemplateResponsePagesItemRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(updateManufacturerRedactionTemplateResponsePagesItemRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(updateManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax).optional()
+})).max(updateManufacturerRedactionTemplateResponsePagesItemRectsMax)
+})).min(1).max(updateManufacturerRedactionTemplateResponsePagesMax),
+  "createdById": zod.string(),
+  "createdByName": zod.string(),
+  "updatedById": zod.string(),
+  "updatedByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a manufacturer redaction template (admin only)
+ */
+export const DeleteManufacturerRedactionTemplateParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const DeleteManufacturerRedactionTemplateResponse = zod.void()
+
+
+/**
+ * @summary Replace template geometry from an analyzed packet (admin only)
+ */
+export const ReplaceManufacturerRedactionTemplateFromPacketParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+export const replaceManufacturerRedactionTemplateFromPacketBodyNameMax = 200;
+
+
+
+export const ReplaceManufacturerRedactionTemplateFromPacketBody = zod.object({
+  "quoteId": zod.int().min(1),
+  "packetId": zod.int().min(1),
+  "name": zod.string().min(1).max(replaceManufacturerRedactionTemplateFromPacketBodyNameMax),
+  "active": zod.boolean().optional()
+})
+
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemWidthExclusiveMin = 0;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemHeightExclusiveMin = 0;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemXMin = 0;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemYMin = 0;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemWidthExclusiveMin = 0;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemHeightExclusiveMin = 0;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemReasonMax = 250;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsMax = 100;
+
+export const replaceManufacturerRedactionTemplateFromPacketResponsePagesMax = 500;
+
+
+
+export const ReplaceManufacturerRedactionTemplateFromPacketResponse = zod.object({
+  "id": zod.int(),
+  "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
+  "manufacturerCanonical": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "name": zod.string(),
+  "active": zod.boolean(),
+  "pages": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemWidthExclusiveMin),
+  "height": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemHeightExclusiveMin),
+  "rects": zod.array(zod.object({
+  "x": zod.number().min(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemXMin),
+  "y": zod.number().min(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemYMin),
+  "width": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemReasonMax).optional()
+})).max(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsMax)
+})).min(1).max(replaceManufacturerRedactionTemplateFromPacketResponsePagesMax),
+  "createdById": zod.string(),
+  "createdByName": zod.string(),
+  "updatedById": zod.string(),
+  "updatedByName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * Declares/extends a dependency: when the quote form's parent field equals parentValue (and, for two-level chains, the grand field equals grandValue), the dependent field suggests these values. Saving under a different dependency chain (parentField/grandField) is rejected with 409 unless replaceExisting is true, in which case lists scoped to the old chain are deleted.
  * @summary Create or replace the option list for a spec field scoped to a parent field value (admin only)
  */
@@ -212,7 +474,7 @@ export const listQuotesQueryLimitMax = 100;
 
 export const ListQuotesQueryParams = zod.object({
   "search": zod.coerce.string().optional().describe('Match against quote number or customer name'),
-  "status": zod.enum(['active', 'awaiting', 'signed', 'archived']).optional().describe('Filter by status. \"active\" = not archived; \"awaiting\" = active and not signed; \"signed\" = active and signed; \"archived\" = archived only. Omitted = all quotes including archived.\n'),
+  "status": zod.enum(['active', 'awaiting', 'signed', 'partial', 'needs_resigning', 'archived']).optional().describe('Filter by status. \"active\" = not archived; \"awaiting\" = active and not signed; \"signed\" = active and fully signed; \"partial\" = at least one but not every active type signed; \"needs_resigning\" = at least one type invalidated; \"archived\" = archived only. Omitted = all quotes including archived.\n'),
   "category": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']).optional().describe('Only quotes that include this category'),
   "createdById": zod.coerce.string().optional().describe('Only quotes created by this user ID'),
   "offset": zod.coerce.number().int().min(listQuotesQueryOffsetMin).default(listQuotesQueryOffsetDefault).describe('Number of quotes to skip (for pagination)'),
@@ -286,7 +548,14 @@ export const ListQuotesResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 })),
   "total": zod.int().describe('Total number of quotes matching the filters (ignoring pagination)')
 })
@@ -424,7 +693,14 @@ export const CreateQuoteResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 })
 
 
@@ -502,7 +778,14 @@ export const GetQuoteResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 }),
   "revisions": zod.array(zod.object({
   "id": zod.int(),
@@ -522,7 +805,20 @@ export const GetQuoteResponse = zod.object({
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
 }),zod.null()]).optional(),
-  "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing')
+  "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing'),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "legacyApproval": zod.union([zod.object({
+  "status": zod.enum(['legacy']),
+  "validity": zod.enum(['signed', 'needs_resigning']),
+  "signedAt": zod.coerce.date(),
+  "documentAvailable": zod.boolean(),
+  "invalidationReason": zod.string().nullish()
+}).describe('Legacy whole-quote evidence is never rendered against mutable HTML.'),zod.null()]).optional()
 })
 
 
@@ -662,7 +958,14 @@ export const UpdateQuoteResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 })
 
 
@@ -756,7 +1059,14 @@ export const ArchiveQuoteResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 })
 
 
@@ -833,7 +1143,14 @@ export const UnarchiveQuoteResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 })
 
 
@@ -1045,6 +1362,205 @@ export const ClearSignoffResponse = zod.void()
 
 
 /**
+ * @summary List immutable scoped approval requests and current per-type coverage
+ */
+export const ListScopedApprovalsParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ListScopedApprovalsResponse = zod.object({
+  "approvals": zod.array(zod.object({
+  "id": zod.int().optional(),
+  "approvalId": zod.int().nullish(),
+  "token": zod.string(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "preparedAt": zod.coerce.date().optional(),
+  "documentVersion": zod.string(),
+  "publicPath": zod.string().optional(),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "signedAt": zod.coerce.date().nullish()
+})),
+  "coverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Lock and issue a product-type-scoped customer approval link
+ */
+export const CreateScopedApprovalParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const CreateScopedApprovalBody = zod.object({
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1)
+})
+
+export const CreateScopedApprovalResponse = zod.object({
+  "id": zod.int().optional(),
+  "approvalId": zod.int().nullish(),
+  "token": zod.string(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "preparedAt": zod.coerce.date().optional(),
+  "documentVersion": zod.string(),
+  "publicPath": zod.string().optional(),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "signedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Cancel an open scoped approval request without deleting audit history
+ */
+export const CancelScopedApprovalParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "requestId": zod.coerce.number().int()
+})
+
+export const CancelScopedApprovalResponse = zod.void()
+
+
+/**
+ * @summary View an immutable product-type-scoped signoff request
+ */
+export const GetPublicScopedSignoffParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicScopedSignoffResponse = zod.object({
+  "quote": zod.object({
+  "id": zod.int(),
+  "quoteNumber": zod.string(),
+  "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "specs": zod.object({
+  "window": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "series": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorColor": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "dividedLites": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "screenColor": zod.string().nullish()
+}),zod.null()]).optional(),
+  "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
+}),zod.null()]).optional(),
+  "trimDescription": zod.string().nullish(),
+  "millworkDescription": zod.string().nullish()
+}),
+  "notes": zod.string().nullish()
+}).describe('Strict public projection for a locked scoped request.'),
+  "revisions": zod.array(zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "authorName": zod.string(),
+  "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
+  "excludedFromSignoff": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})),
+  "signoff": zod.union([zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "approval": zod.union([zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signedAt": zod.coerce.date()
+}),zod.null()]).optional(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "preparedAt": zod.coerce.date().describe('Locked preparation time of this scoped approval snapshot.'),
+  "documentVersion": zod.string(),
+  "status": zod.enum(['open', 'signed', 'needs_resigning'])
+})
+
+
+/**
+ * @summary Sign the locked scoped request; stale scopes are rejected
+ */
+export const SavePublicScopedSignoffParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+
+
+
+
+
+export const SavePublicScopedSignoffBody = zod.object({
+  "customerName": zod.string().min(1),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string().min(1),
+  "documentVersion": zod.string().min(1).describe('The documentVersion the signer loaded; signing is rejected if the document has changed since')
+})
+
+export const SavePublicScopedSignoffResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Create (or return the existing) public share token for a quote
  */
 export const CreateShareLinkParams = zod.object({
@@ -1130,7 +1646,14 @@ export const GetPublicSignoffResponse = zod.object({
   "archived": zod.boolean(),
   "archivedAt": zod.coerce.date().nullish(),
   "archiveReason": zod.string().nullish(),
-  "archivedByName": zod.string().nullish()
+  "archivedByName": zod.string().nullish(),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "approvalStatus": zod.enum(['open', 'signed', 'partial', 'needs_resigning']).optional()
 }),
   "revisions": zod.array(zod.object({
   "id": zod.int(),
@@ -1150,7 +1673,20 @@ export const GetPublicSignoffResponse = zod.object({
   "signatureData": zod.string(),
   "signedAt": zod.coerce.date()
 }),zod.null()]).optional(),
-  "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing')
+  "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing'),
+  "approvalCoverage": zod.array(zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "approvalId": zod.int().nullish(),
+  "invalidationReason": zod.string().nullish()
+})).optional(),
+  "legacyApproval": zod.union([zod.object({
+  "status": zod.enum(['legacy']),
+  "validity": zod.enum(['signed', 'needs_resigning']),
+  "signedAt": zod.coerce.date(),
+  "documentAvailable": zod.boolean(),
+  "invalidationReason": zod.string().nullish()
+}).describe('Legacy whole-quote evidence is never rendered against mutable HTML.'),zod.null()]).optional()
 })
 
 
@@ -1430,6 +1966,7 @@ export const ListManufacturerPacketsResponseItem = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -1454,6 +1991,12 @@ export const ListManufacturerPacketsResponseItem = zod.object({
   "height": zod.number().gt(listManufacturerPacketsResponseManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(listManufacturerPacketsResponseManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1481,7 +2024,8 @@ export const RequestManufacturerPacketUploadBody = zod.object({
   "name": zod.string().min(1).max(requestManufacturerPacketUploadBodyNameMax),
   "size": zod.int().min(1).max(requestManufacturerPacketUploadBodySizeMax),
   "contentType": zod.enum(['application/pdf']),
-  "manufacturer": zod.string().max(requestManufacturerPacketUploadBodyManufacturerMax).nullish()
+  "manufacturer": zod.string().min(1).max(requestManufacturerPacketUploadBodyManufacturerMax),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
 })
 
 
@@ -1518,6 +2062,7 @@ export const RequestManufacturerPacketUploadResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -1542,6 +2087,12 @@ export const RequestManufacturerPacketUploadResponse = zod.object({
   "height": zod.number().gt(requestManufacturerPacketUploadResponsePacketManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(requestManufacturerPacketUploadResponsePacketManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1663,6 +2214,7 @@ export const GetManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -1687,6 +2239,12 @@ export const GetManufacturerPacketResponse = zod.object({
   "height": zod.number().gt(getManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(getManufacturerPacketResponseManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1703,6 +2261,176 @@ export const DeleteManufacturerPacketParams = zod.object({
 })
 
 export const DeleteManufacturerPacketResponse = zod.void()
+
+
+/**
+ * @summary Explicitly assign a packet to an active quote product type
+ */
+export const SetManufacturerPacketProductTypeParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+export const SetManufacturerPacketProductTypeBody = zod.object({
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+})
+
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const setManufacturerPacketProductTypeResponseManualRedactionsItemXMin = 0;
+
+export const setManufacturerPacketProductTypeResponseManualRedactionsItemYMin = 0;
+
+export const setManufacturerPacketProductTypeResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketProductTypeResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketProductTypeResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const SetManufacturerPacketProductTypeResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(setManufacturerPacketProductTypeResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketProductTypeResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(setManufacturerPacketProductTypeResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketProductTypeResponseManualRedactionsItemXMin),
+  "y": zod.number().min(setManufacturerPacketProductTypeResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(setManufacturerPacketProductTypeResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketProductTypeResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketProductTypeResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Set the explicit manufacturer for a legacy or awaiting-upload packet
+ */
+export const SetManufacturerPacketManufacturerParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "packetId": zod.coerce.number().int()
+})
+
+export const setManufacturerPacketManufacturerBodyManufacturerMax = 120;
+
+
+
+export const SetManufacturerPacketManufacturerBody = zod.object({
+  "manufacturer": zod.string().min(1).max(setManufacturerPacketManufacturerBodyManufacturerMax)
+})
+
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsMax = 100;
+
+export const setManufacturerPacketManufacturerResponseManualRedactionsItemXMin = 0;
+
+export const setManufacturerPacketManufacturerResponseManualRedactionsItemYMin = 0;
+
+export const setManufacturerPacketManufacturerResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const setManufacturerPacketManufacturerResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const setManufacturerPacketManufacturerResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const SetManufacturerPacketManufacturerResponse = zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
+  "detectedManufacturer": zod.string().nullish(),
+  "originalName": zod.string(),
+  "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
+  "pageCount": zod.int().nullish(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(setManufacturerPacketManufacturerResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketManufacturerResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(setManufacturerPacketManufacturerResponseAnalysisItemSuggestedRectsMax)
+})).nullish(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(setManufacturerPacketManufacturerResponseManualRedactionsItemXMin),
+  "y": zod.number().min(setManufacturerPacketManufacturerResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(setManufacturerPacketManufacturerResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(setManufacturerPacketManufacturerResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(setManufacturerPacketManufacturerResponseManualRedactionsItemReasonMax).optional()
+}))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
+  "failureMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+})
 
 
 /**
@@ -1746,6 +2474,7 @@ export const CompleteManufacturerPacketUploadResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -1770,6 +2499,12 @@ export const CompleteManufacturerPacketUploadResponse = zod.object({
   "height": zod.number().gt(completeManufacturerPacketUploadResponseManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(completeManufacturerPacketUploadResponseManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1842,6 +2577,7 @@ export const SetManufacturerPacketRedactionsResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -1866,6 +2602,12 @@ export const SetManufacturerPacketRedactionsResponse = zod.object({
   "height": zod.number().gt(setManufacturerPacketRedactionsResponseManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(setManufacturerPacketRedactionsResponseManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1914,6 +2656,7 @@ export const ApproveManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -1938,6 +2681,12 @@ export const ApproveManufacturerPacketResponse = zod.object({
   "height": zod.number().gt(approveManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(approveManufacturerPacketResponseManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1986,6 +2735,7 @@ export const RetryManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "quoteId": zod.int(),
   "manufacturer": zod.string().nullish(),
+  "productType": zod.union([zod.literal('doors'),zod.literal('interiorDoors'),zod.literal('exteriorDoors'),zod.literal('windows'),zod.literal('trim'),zod.literal('millwork'),zod.literal(null)]).nullish(),
   "detectedManufacturer": zod.string().nullish(),
   "originalName": zod.string(),
   "status": zod.enum(['awaiting_upload', 'queued', 'processing', 'needs_review', 'ready_for_approval', 'approved', 'failed']),
@@ -2010,6 +2760,12 @@ export const RetryManufacturerPacketResponse = zod.object({
   "height": zod.number().gt(retryManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin),
   "reason": zod.string().max(retryManufacturerPacketResponseManualRedactionsItemReasonMax).optional()
 }))).nullish(),
+  "appliedTemplate": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string(),
+  "manufacturer": zod.string(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+}),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -2076,6 +2832,17 @@ export const GetSignedSignoffDocumentResponse = zod.unknown()
 
 
 /**
+ * @summary Download an immutable signed scoped approval PDF
+ */
+export const GetScopedApprovalDocumentParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "approvalId": zod.coerce.number().int()
+})
+
+export const GetScopedApprovalDocumentResponse = zod.unknown()
+
+
+/**
  * @summary Download the current unsigned combined PDF
  */
 export const GetUnsignedSignoffDocumentParams = zod.object({
@@ -2096,7 +2863,24 @@ export const GetPublicManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "manufacturer": zod.string().nullish(),
   "pageCount": zod.int(),
-  "approvedAt": zod.coerce.date()
+  "approvedAt": zod.coerce.date(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).optional()
+})
+
+
+/**
+ * @summary Get scoped sanitized packet metadata
+ */
+export const GetPublicScopedManufacturerPacketParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicScopedManufacturerPacketResponse = zod.object({
+  "id": zod.int(),
+  "manufacturer": zod.string().nullish(),
+  "pageCount": zod.int(),
+  "approvedAt": zod.coerce.date(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).optional()
 })
 
 
@@ -2122,6 +2906,27 @@ export const GetPublicManufacturerPacketPageResponse = zod.unknown()
 
 
 /**
+ * @summary Stream a page from the locked scoped packet only
+ */
+
+
+
+export const GetPublicScopedManufacturerPacketPageParams = zod.object({
+  "token": zod.coerce.string(),
+  "pageNumber": zod.coerce.number().int().min(1)
+})
+
+
+
+
+export const GetPublicScopedManufacturerPacketPageQueryParams = zod.object({
+  "documentVersion": zod.coerce.string().min(1)
+})
+
+export const GetPublicScopedManufacturerPacketPageResponse = zod.unknown()
+
+
+/**
  * @summary Download the current unsigned or immutable signed combined PDF
  */
 export const GetPublicSignoffDocumentParams = zod.object({
@@ -2129,5 +2934,15 @@ export const GetPublicSignoffDocumentParams = zod.object({
 })
 
 export const GetPublicSignoffDocumentResponse = zod.unknown()
+
+
+/**
+ * @summary Download the locked unsigned or immutable signed scoped PDF
+ */
+export const GetPublicScopedSignoffDocumentParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetPublicScopedSignoffDocumentResponse = zod.unknown()
 
 

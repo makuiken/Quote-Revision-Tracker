@@ -67,6 +67,12 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_packet_sha256 text`,
   `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_document_object_path text`,
   `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS signed_document_sha256 text`,
+  // Separate current-validity state from immutable legacy evidence. Existing
+  // rows begin as current whole-quote legacy approvals; mutations change only
+  // this state, never the signature/document fields.
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS legacy_status text NOT NULL DEFAULT 'signed'`,
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS legacy_invalidated_at timestamptz`,
+  `ALTER TABLE signoffs ADD COLUMN IF NOT EXISTS legacy_invalidation_reason text`,
 
   // Admin-managed dropdown option lists for product spec fields.
   `CREATE TABLE IF NOT EXISTS field_options (
@@ -134,6 +140,34 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS detected_manufacturer text`,
   `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS declared_size integer NOT NULL DEFAULT 0`,
   `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS processing_attempt_token text`,
+  // Product type is nullable only for explicitly legacy/unclassified packets.
+  // New API writes require it and scoped approval creation rejects unclassified
+  // pages rather than silently assigning a category.
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS product_type text`,
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS applied_redaction_template_id integer`,
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS applied_redaction_template_name text`,
+  // Administrator-managed snapshots of analyzed packet redactions.
+  `CREATE TABLE IF NOT EXISTS manufacturer_redaction_templates (
+    id serial PRIMARY KEY,
+    manufacturer text NOT NULL,
+    manufacturer_canonical text NOT NULL,
+    product_type text NOT NULL,
+    name text NOT NULL,
+    active boolean NOT NULL DEFAULT true,
+    pages jsonb NOT NULL,
+    created_by_id text NOT NULL,
+    created_by_name text NOT NULL,
+    updated_by_id text NOT NULL,
+    updated_by_name text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT manufacturer_redaction_templates_key_unique
+      UNIQUE (manufacturer_canonical, product_type)
+  )`,
+  `ALTER TABLE manufacturer_redaction_templates ADD COLUMN IF NOT EXISTS manufacturer text NOT NULL DEFAULT ''`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_redaction_templates_active_key_idx
+    ON manufacturer_redaction_templates (manufacturer_canonical, product_type)
+    WHERE active = true`,
   `CREATE TABLE IF NOT EXISTS manufacturer_packet_manifest (
     id serial PRIMARY KEY,
     quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -146,6 +180,52 @@ const RECONCILIATION_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS manufacturer_packet_manifest_quote_order_idx
     ON manufacturer_packet_manifest (quote_id, page_order)`,
+  // Scoped signoff links and immutable approval snapshots. Keep these additive:
+  // existing whole-quote signoffs/links stay valid legacy records.
+  `CREATE TABLE IF NOT EXISTS scoped_approval_requests (
+    id serial PRIMARY KEY,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    token text NOT NULL UNIQUE,
+    product_types text[] NOT NULL,
+    snapshot jsonb NOT NULL,
+    document_version text NOT NULL,
+    status text NOT NULL DEFAULT 'open',
+    created_by_id text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    signed_at timestamptz
+  )`,
+  `CREATE INDEX IF NOT EXISTS scoped_approval_requests_quote_created_idx
+    ON scoped_approval_requests (quote_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS scoped_approvals (
+    id serial PRIMARY KEY,
+    request_id integer NOT NULL UNIQUE REFERENCES scoped_approval_requests(id) ON DELETE RESTRICT,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    product_types text[] NOT NULL,
+    snapshot jsonb NOT NULL,
+    document_version text NOT NULL,
+    customer_name text NOT NULL,
+    stakeholder_role text NOT NULL,
+    signature_type text NOT NULL,
+    signature_data text NOT NULL,
+    signed_document_object_path text NOT NULL UNIQUE,
+    signed_document_sha256 text NOT NULL,
+    signed_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS scoped_approvals_quote_signed_idx
+    ON scoped_approvals (quote_id, signed_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS scoped_approval_coverage (
+    id serial PRIMARY KEY,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    product_type text NOT NULL,
+    approval_id integer REFERENCES scoped_approvals(id) ON DELETE SET NULL,
+    status text NOT NULL DEFAULT 'open',
+    invalidated_at timestamptz,
+    invalidation_reason text,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT scoped_approval_coverage_quote_type_unique UNIQUE (quote_id, product_type)
+  )`,
+  `CREATE INDEX IF NOT EXISTS scoped_approval_coverage_quote_status_idx
+    ON scoped_approval_coverage (quote_id, status)`,
 ];
 
 export async function ensureSchema(): Promise<void> {

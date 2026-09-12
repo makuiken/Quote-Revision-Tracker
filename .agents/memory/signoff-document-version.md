@@ -6,7 +6,31 @@ A customer signature must only ever cover content the signer actually reviewed.
 
 **Why:** Signoff documents are approval records; silently keeping (or accepting) a signature after the underlying content changes creates an invalid legal/business record.
 
-**How to apply:** Any new mutation that changes what appears on the signoff sheet must invalidate existing signatures, and signing must verify the signer's loaded version under the same lock discipline the existing sign routes use (see the version check in the sign routes for the pattern).
+**How to apply:** A mutation must invalidate current approval coverage only for affected product types, not delete signature evidence. Signing must verify the signer's loaded version under the same lock discipline as content mutations.
+
+Immutable evidence and current coverage are different concepts. A combined approval remains evidence for its original scope even when one covered type later needs re-signing; never narrow or relabel that original document.
+
+**Why:** The user requires unaffected product approvals to survive independent revisions without altering what the customer originally signed.
+
+**How to apply:** Keep original scope and signed bytes intact. Compare manufacturer page order within each type, rather than absolute positions in the whole quote, when deciding which coverage changed.
+
+Never reconstruct a legacy signed document from current mutable quote content.
+
+**Why:** Legacy records without a captured structured snapshot cannot prove that today's specifications match what the customer reviewed.
+
+**How to apply:** Show legacy evidence separately using an existing immutable PDF when available, explicitly report when it is unavailable, and request a new scoped approval rather than overwriting the original.
+
+Pin displayed preparation dates for the lifetime of a request, including sign-time recomputation.
+
+**Why:** Including a newly generated clock value in a content hash makes every valid submission stale; omitting a displayed date lets print content drift outside the reviewed fingerprint.
+
+**How to apply:** Capture once under the document lock and reuse for HTML, stored PDF, and validation.
+
+All approval and content transactions must acquire the quote lock before locking a request or updating request state.
+
+**Why:** A signer that locks a request first can deadlock with a mutation holding the quote lock while invalidating that same request.
+
+**How to apply:** Resolve a token without a lock only to identify its parent, lock that quote, then reload and validate the request under lock.
 
 The version hash and the document bytes must be derived from the same locked snapshot, including the ordered manufacturer-page selection. Never validate a version and then reload its page selection separately.
 

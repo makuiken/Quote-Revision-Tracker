@@ -5,6 +5,8 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ApprovalCoverage } from './approvalCoverage';
+import type { QuoteApprovalStatus } from './quoteApprovalStatus';
 import type { QuoteCategoriesItem } from './quoteCategoriesItem';
 import type { QuoteSpecs } from './quoteSpecs';
 
@@ -34,4 +36,6 @@ export interface Quote {
   archiveReason?: string | null;
   /** @nullable */
   archivedByName?: string | null;
+  approvalCoverage?: ApprovalCoverage[];
+  approvalStatus?: QuoteApprovalStatus;
 }

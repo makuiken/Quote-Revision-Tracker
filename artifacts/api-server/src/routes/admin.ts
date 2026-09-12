@@ -1,7 +1,14 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import { clerkClient } from "@clerk/express";
-import { db, usersTable, fieldOptionsTable } from "@workspace/db";
+import {
+  db,
+  usersTable,
+  fieldOptionsTable,
+  manufacturerPacketsTable,
+  manufacturerRedactionTemplatesTable,
+  type ManufacturerRedactionTemplatePage,
+} from "@workspace/db";
 import {
   ListUsersResponse,
   SetFieldOptionsParams,
@@ -20,17 +27,87 @@ import {
   SetUserRoleBody,
   SetUserRoleResponse,
   RemoveUserParams,
+  ListManufacturerRedactionTemplatesResponse,
+  CreateManufacturerRedactionTemplateBody,
+  CreateManufacturerRedactionTemplateResponse,
+  UpdateManufacturerRedactionTemplateParams,
+  UpdateManufacturerRedactionTemplateBody,
+  UpdateManufacturerRedactionTemplateResponse,
+  DeleteManufacturerRedactionTemplateParams,
+  ReplaceManufacturerRedactionTemplateFromPacketParams,
+  ReplaceManufacturerRedactionTemplateFromPacketBody,
+  ReplaceManufacturerRedactionTemplateFromPacketResponse,
 } from "@workspace/api-zod";
 import {
   requireAuth,
   requireApproved,
   requireAdmin,
+  getUserProfile,
   invalidateAppUserCache,
   OWNER_EMAIL,
   type AuthedRequest,
 } from "../middlewares/requireAuth";
+import { canonicalManufacturer } from "../lib/packets/templates";
 
 const router: IRouter = Router();
+
+function serializeRedactionTemplate(template: typeof manufacturerRedactionTemplatesTable.$inferSelect) {
+  return {
+    id: template.id,
+    manufacturer: template.manufacturer,
+    manufacturerCanonical: template.manufacturerCanonical,
+    productType: template.productType,
+    name: template.name,
+    active: template.active,
+    pages: template.pages,
+    createdById: template.createdById,
+    createdByName: template.createdByName,
+    updatedById: template.updatedById,
+    updatedByName: template.updatedByName,
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+  };
+}
+
+function templatePagesFromPacket(
+  packet: typeof manufacturerPacketsTable.$inferSelect,
+): ManufacturerRedactionTemplatePage[] | string {
+  if (!packet.manufacturer || !packet.productType || !packet.analysis || !packet.manualRedactions) {
+    return "The packet must have an explicit manufacturer, product type, analysis, and manual redactions.";
+  }
+  const pages: ManufacturerRedactionTemplatePage[] = [];
+  const analyzedPageNumbers = new Set(packet.analysis.map((page) => String(page.pageNumber)));
+  if (Object.keys(packet.manualRedactions).some((pageNumber) => !analyzedPageNumbers.has(pageNumber))) {
+    return "Manual redactions must refer only to analyzed packet pages.";
+  }
+  let boxCount = 0;
+  for (const analysisPage of packet.analysis) {
+    const rects = packet.manualRedactions[String(analysisPage.pageNumber)] ?? [];
+    boxCount += rects.length;
+    if (rects.some((rect) =>
+      !Number.isFinite(rect.x) ||
+      !Number.isFinite(rect.y) ||
+      !Number.isFinite(rect.width) ||
+      !Number.isFinite(rect.height) ||
+      rect.x < 0 ||
+      rect.y < 0 ||
+      rect.width <= 0 ||
+      rect.height <= 0 ||
+      rect.x + rect.width > analysisPage.width ||
+      rect.y + rect.height > analysisPage.height
+    )) {
+      return "Manual redactions must be finite and inside analyzed page bounds.";
+    }
+    pages.push({
+      pageNumber: analysisPage.pageNumber,
+      width: analysisPage.width,
+      height: analysisPage.height,
+      rects,
+    });
+  }
+  if (boxCount === 0) return "The packet must contain at least one manual redaction box.";
+  return pages;
+}
 
 // Scope the guards to /admin paths only — a bare router.use() would run them
 // for every API request passing through this router and block non-admins
@@ -165,6 +242,192 @@ router.delete("/admin/users/:id", async (req: AuthedRequest, res): Promise<void>
 
   await db.delete(usersTable).where(eq(usersTable.id, target.id));
   invalidateAppUserCache(target.clerkUserId);
+  res.sendStatus(204);
+});
+
+// ---------- Manufacturer redaction templates ----------
+
+router.get("/admin/manufacturer-redaction-templates", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select()
+    .from(manufacturerRedactionTemplatesTable)
+    .orderBy(desc(manufacturerRedactionTemplatesTable.updatedAt));
+  res.json(ListManufacturerRedactionTemplatesResponse.parse(rows.map(serializeRedactionTemplate)));
+});
+
+async function saveTemplateFromPacket(
+  req: AuthedRequest,
+  quoteId: number,
+  packetId: number,
+  name: string,
+  active: boolean | undefined,
+  existingId?: number,
+) {
+  const profile = await getUserProfile(req.userId!);
+  return db.transaction(async (tx) => {
+    const [packet] = await tx
+      .select()
+      .from(manufacturerPacketsTable)
+      .where(and(eq(manufacturerPacketsTable.id, packetId), eq(manufacturerPacketsTable.quoteId, quoteId)));
+    if (!packet) return { kind: "packetNotFound" as const };
+    const pages = templatePagesFromPacket(packet);
+    if (typeof pages === "string") return { kind: "invalidPacket" as const, error: pages };
+    const manufacturer = packet.manufacturer!.trim().replace(/\s+/g, " ");
+    const manufacturerCanonical = canonicalManufacturer(manufacturer);
+    const duplicate = await tx
+      .select()
+      .from(manufacturerRedactionTemplatesTable)
+      .where(
+        and(
+          eq(manufacturerRedactionTemplatesTable.manufacturerCanonical, manufacturerCanonical),
+          eq(manufacturerRedactionTemplatesTable.productType, packet.productType!),
+        ),
+      )
+      .limit(1);
+    if (existingId === undefined && duplicate.length > 0) {
+      return { kind: "duplicate" as const };
+    }
+    if (existingId !== undefined && (!duplicate[0] || duplicate[0].id !== existingId)) {
+      return { kind: "keyChanged" as const };
+    }
+    const values = {
+      manufacturer,
+      manufacturerCanonical,
+      productType: packet.productType!,
+      name: name.trim(),
+      pages,
+      ...(active === undefined ? {} : { active }),
+      updatedById: req.userId!,
+      updatedByName: profile.name,
+    };
+    const [saved] = existingId === undefined
+      ? await tx.insert(manufacturerRedactionTemplatesTable).values({
+          ...values,
+          active: active ?? true,
+          createdById: req.userId!,
+          createdByName: profile.name,
+        }).onConflictDoNothing({
+          target: [
+            manufacturerRedactionTemplatesTable.manufacturerCanonical,
+            manufacturerRedactionTemplatesTable.productType,
+          ],
+        }).returning()
+      : await tx.update(manufacturerRedactionTemplatesTable)
+          .set(values)
+          .where(eq(manufacturerRedactionTemplatesTable.id, existingId))
+          .returning();
+    return saved
+      ? { kind: "ok" as const, template: saved }
+      : existingId === undefined
+        ? { kind: "duplicate" as const }
+        : { kind: "notFound" as const };
+  });
+}
+
+router.post("/admin/manufacturer-redaction-templates", async (req: AuthedRequest, res): Promise<void> => {
+  const body = CreateManufacturerRedactionTemplateBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  if (!body.data.name.trim()) {
+    res.status(400).json({ error: "Template name must not be blank." });
+    return;
+  }
+  const result = await saveTemplateFromPacket(
+    req,
+    body.data.quoteId,
+    body.data.packetId,
+    body.data.name,
+    body.data.active,
+  );
+  if (result.kind === "packetNotFound") {
+    res.status(404).json({ error: "Analyzed packet not found." });
+    return;
+  }
+  if (result.kind === "invalidPacket" || result.kind === "duplicate") {
+    res.status(result.kind === "duplicate" ? 409 : 400).json({
+      error: result.kind === "duplicate"
+        ? "A template already exists for this manufacturer and product type."
+        : result.error,
+    });
+    return;
+  }
+  res.status(201).json(CreateManufacturerRedactionTemplateResponse.parse(serializeRedactionTemplate(result.template!)));
+});
+
+router.put("/admin/manufacturer-redaction-templates/:id/from-packet", async (req: AuthedRequest, res): Promise<void> => {
+  const params = ReplaceManufacturerRedactionTemplateFromPacketParams.safeParse(req.params);
+  const body = ReplaceManufacturerRedactionTemplateFromPacketBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Invalid request body." });
+    return;
+  }
+  if (!body.data.name.trim()) {
+    res.status(400).json({ error: "Template name must not be blank." });
+    return;
+  }
+  const result = await saveTemplateFromPacket(
+    req,
+    body.data.quoteId,
+    body.data.packetId,
+    body.data.name,
+    body.data.active,
+    params.data.id,
+  );
+  if (result.kind === "packetNotFound" || result.kind === "notFound") {
+    res.status(404).json({ error: "Template or analyzed packet not found." });
+    return;
+  }
+  if (result.kind === "keyChanged") {
+    res.status(400).json({ error: "The replacement packet must have the same manufacturer and product type." });
+    return;
+  }
+  if (result.kind === "invalidPacket") {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json(ReplaceManufacturerRedactionTemplateFromPacketResponse.parse(serializeRedactionTemplate(result.template!)));
+});
+
+router.patch("/admin/manufacturer-redaction-templates/:id", async (req: AuthedRequest, res): Promise<void> => {
+  const params = UpdateManufacturerRedactionTemplateParams.safeParse(req.params);
+  const body = UpdateManufacturerRedactionTemplateBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Invalid request body." });
+    return;
+  }
+  if (body.data.name !== undefined && !body.data.name.trim()) {
+    res.status(400).json({ error: "Template name must not be blank." });
+    return;
+  }
+  const profile = await getUserProfile(req.userId!);
+  const [updated] = await db.update(manufacturerRedactionTemplatesTable).set({
+    ...(body.data.name === undefined ? {} : { name: body.data.name.trim() }),
+    ...(body.data.active === undefined ? {} : { active: body.data.active }),
+    updatedById: req.userId!,
+    updatedByName: profile.name,
+  }).where(eq(manufacturerRedactionTemplatesTable.id, params.data.id)).returning();
+  if (!updated) {
+    res.status(404).json({ error: "Template not found." });
+    return;
+  }
+  res.json(UpdateManufacturerRedactionTemplateResponse.parse(serializeRedactionTemplate(updated)));
+});
+
+router.delete("/admin/manufacturer-redaction-templates/:id", async (req, res): Promise<void> => {
+  const params = DeleteManufacturerRedactionTemplateParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [deleted] = await db.delete(manufacturerRedactionTemplatesTable)
+    .where(eq(manufacturerRedactionTemplatesTable.id, params.data.id))
+    .returning({ id: manufacturerRedactionTemplatesTable.id });
+  if (!deleted) {
+    res.status(404).json({ error: "Template not found." });
+    return;
+  }
   res.sendStatus(204);
 });
 

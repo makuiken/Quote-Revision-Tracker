@@ -17,8 +17,13 @@ const projectName = `E2E Project ${runId}`;
 const jobAddress = "123 Test Lane, Fair Lawn, NJ";
 
 let quoteUrl: string;
+let scopedPreviewUrl: string;
 
 test.describe.serial("quote-to-signoff flow", () => {
+  // A rate-limited public signing retry may wait through the server's
+  // one-minute Retry-After window.
+  test.describe.configure({ timeout: 120_000 });
+
   test.beforeEach(async ({ page }) => {
     await setupClerkTestingToken({ page });
     await page.goto("/sign-in");
@@ -26,6 +31,27 @@ test.describe.serial("quote-to-signoff flow", () => {
     // Ticket-based sign-in (via a backend-created sign-in token) — bypasses
     // bot protection, which blocks password sign-ins in headless browsers.
     await clerk.signIn({ page, emailAddress: TEST_USER_EMAIL });
+  });
+
+  // This serial flow deliberately shares one quote across its tests, so it is
+  // removed only after the final scenario rather than in afterEach.
+  test.afterAll(async ({ browser }) => {
+    if (!quoteUrl) return;
+    const quoteId = Number(quoteUrl.split("/").pop());
+    if (!Number.isInteger(quoteId)) {
+      throw new Error(`Unable to clean up test-created quote URL: ${quoteUrl}`);
+    }
+    const page = await browser.newPage();
+    try {
+      await setupClerkTestingToken({ page });
+      await page.goto("/sign-in");
+      await clerk.loaded({ page });
+      await clerk.signIn({ page, emailAddress: TEST_USER_EMAIL });
+      const deleted = await page.context().request.delete(`/api/quotes/${quoteId}`);
+      expect(deleted.status()).toBe(204);
+    } finally {
+      await page.close();
+    }
   });
 
   test("create quote with category specs", async ({ page }) => {
@@ -47,72 +73,73 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     await expect(page.getByText(quoteNumber).first()).toBeVisible();
     await expect(page.getByText(customerName).first()).toBeVisible();
+    await expandProductSpecs(page);
     await expect(page.getByText("Andersen").first()).toBeVisible();
   });
 
   test("add revision entries", async ({ page }) => {
     await page.goto(quoteUrl);
-    await page.locator("#note").fill("Changed jamb depth per customer request");
+    await revisionComposer(page).fill("Changed jamb depth per customer request");
     await page.getByRole("button", { name: /publish update/i }).click();
     await expect(
       page.getByText("Changed jamb depth per customer request"),
     ).toBeVisible();
     // Wait for the composer to reset after publishing before typing again —
     // the post-publish state update would otherwise race with the next fill.
-    await expect(page.locator("#note")).toHaveValue("");
+    await expect(revisionComposer(page)).toHaveValue("");
 
-    await page.locator("#note").fill("Confirmed hardware finish with supplier");
+    await revisionComposer(page).fill("Confirmed hardware finish with supplier");
     await page.getByRole("button", { name: /publish update/i }).click();
     await expect(
       page.getByText("Confirmed hardware finish with supplier"),
     ).toBeVisible();
-    await expect(page.locator("#note")).toHaveValue("");
+    await expect(revisionComposer(page)).toHaveValue("");
   });
 
   test("draft revision notes persist, stay private, and publish", async ({ page }) => {
     const draftText = "Draft: waiting on trim pricing from supplier";
     await page.goto(quoteUrl);
-    await page.locator("#note").fill(draftText);
+    await revisionComposer(page).fill(draftText);
     await page.getByRole("button", { name: /save draft/i }).click();
-    await expect(page.getByText(/draft — not published/i)).toBeVisible();
+    await expect(draftSavedIndicator(page)).toBeVisible();
 
     // Draft survives a reload and is re-hydrated into the composer.
     await page.reload();
-    await expect(page.locator("#note")).toHaveValue(draftText);
-    await expect(page.getByText(/draft — not published/i)).toBeVisible();
+    await expect(revisionComposer(page)).toHaveValue(draftText);
+    await expect(draftSavedIndicator(page)).toBeVisible();
 
     // Draft is absent from the printed log.
     await page.goto(`${quoteUrl}/print-log`);
     await expect(page.getByText(draftText)).not.toBeVisible();
 
     // Draft is absent from the signoff document.
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
     await expect(page.getByText(draftText)).not.toBeVisible();
 
     // Publishing turns the draft into a normal revision entry.
     await page.goto(quoteUrl);
-    await expect(page.locator("#note")).toHaveValue(draftText);
+    await expect(revisionComposer(page)).toHaveValue(draftText);
     await page.getByRole("button", { name: /publish update/i }).click();
     await expect(
-      page.locator("#note"),
+      revisionComposer(page),
     ).toHaveValue("", { timeout: 15000 });
     await expect(page.getByText(draftText)).toBeVisible();
-    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+    await expect(draftSavedIndicator(page)).not.toBeVisible();
   });
 
   test("discarding a draft removes it without publishing", async ({ page }) => {
     const draftText = "Draft to discard — should never publish";
     await page.goto(quoteUrl);
-    await page.locator("#note").fill(draftText);
+    await revisionComposer(page).fill(draftText);
     await page.getByRole("button", { name: /save draft/i }).click();
-    await expect(page.getByText(/draft — not published/i)).toBeVisible();
+    await expect(draftSavedIndicator(page)).toBeVisible();
 
     await page.getByRole("button", { name: /discard draft/i }).click();
-    await expect(page.locator("#note")).toHaveValue("");
-    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+    await expect(revisionComposer(page)).toHaveValue("");
+    await expect(draftSavedIndicator(page)).not.toBeVisible();
 
     await page.reload();
-    await expect(page.locator("#note")).toHaveValue("");
+    await expect(revisionComposer(page)).toHaveValue("");
     await expect(page.getByText(draftText)).not.toBeVisible();
   });
 
@@ -157,23 +184,23 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     await page.goto(quoteUrl);
     // First auto-save (slow PUT #1)...
-    await page.locator("#note").fill("First auto-saved text");
+    await revisionComposer(page).fill("First auto-saved text");
     await page.waitForTimeout(2700);
     // ...second auto-save queues behind it (fast PUT #2)...
-    await page.locator("#note").fill("Second auto-saved text");
+    await revisionComposer(page).fill("Second auto-saved text");
     await page.waitForTimeout(2700);
     // ...then discard while writes are still settling.
     await expect(page.getByRole("button", { name: /discard draft/i })).toBeVisible({ timeout: 15000 });
     await page.getByRole("button", { name: /discard draft/i }).click();
-    await expect(page.locator("#note")).toHaveValue("", { timeout: 20000 });
+    await expect(revisionComposer(page)).toHaveValue("", { timeout: 20000 });
     expect(putCount).toBeGreaterThanOrEqual(2);
 
     // After everything settles, no draft exists on the server.
     await page.waitForTimeout(3500);
     await page.unroute("**/revision-draft");
     await page.reload();
-    await expect(page.locator("#note")).toHaveValue("");
-    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+    await expect(revisionComposer(page)).toHaveValue("");
+    await expect(draftSavedIndicator(page)).not.toBeVisible();
   });
 
   test("delayed out-of-order auto-saves cannot overtake publish with older text", async ({ page }) => {
@@ -188,15 +215,15 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     await page.goto(quoteUrl);
     // Two delayed auto-saves, the second still in flight at publish time...
-    await page.locator("#note").fill("Older auto-saved text");
+    await revisionComposer(page).fill("Older auto-saved text");
     await page.waitForTimeout(2700);
-    await page.locator("#note").fill("Newer auto-saved text");
+    await revisionComposer(page).fill("Newer auto-saved text");
     await page.waitForTimeout(2700);
     // ...then publish the latest text while writes are still settling.
-    await page.locator("#note").fill("Final published text");
+    await revisionComposer(page).fill("Final published text");
     await page.getByRole("button", { name: /publish update/i }).click();
     await expect(page.getByText("Final published text")).toBeVisible({ timeout: 25000 });
-    await expect(page.locator("#note")).toHaveValue("", { timeout: 15000 });
+    await expect(revisionComposer(page)).toHaveValue("", { timeout: 15000 });
     expect(putCount).toBeGreaterThanOrEqual(2);
 
     // The published entry has the latest text and no draft remains.
@@ -204,8 +231,8 @@ test.describe.serial("quote-to-signoff flow", () => {
     await page.unroute("**/revision-draft");
     await page.reload();
     await expect(page.getByText("Final published text")).toBeVisible();
-    await expect(page.locator("#note")).toHaveValue("");
-    await expect(page.getByText(/draft — not published/i)).not.toBeVisible();
+    await expect(revisionComposer(page)).toHaveValue("");
+    await expect(draftSavedIndicator(page)).not.toBeVisible();
     await expect(page.getByText("Older auto-saved text")).not.toBeVisible();
     await expect(page.getByText("Newer auto-saved text")).not.toBeVisible();
   });
@@ -217,7 +244,7 @@ test.describe.serial("quote-to-signoff flow", () => {
     await page.getByText(quoteNumber).first().click();
     await expect(page).toHaveURL(new RegExp(`${quoteUrl}$`));
 
-    await page.locator("#note").fill("History nav draft text");
+    await revisionComposer(page).fill("History nav draft text");
     const savedResponse = page.waitForResponse(
       (r) => r.url().includes("/revision-draft") && r.request().method() === "PUT" && r.ok(),
     );
@@ -227,34 +254,72 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     // The typed text survived as a draft; clean it up.
     await page.goto(quoteUrl);
-    await expect(page.locator("#note")).toHaveValue("History nav draft text");
+    await expect(revisionComposer(page)).toHaveValue("History nav draft text");
     await page.getByRole("button", { name: /discard draft/i }).click();
-    await expect(page.locator("#note")).toHaveValue("");
+    await expect(revisionComposer(page)).toHaveValue("");
   });
 
   test("in-app navigation with unsaved typing warns before leaving", async ({ page }) => {
     await page.goto(quoteUrl);
-    await page.locator("#note").fill("Guard test: unsaved typing");
+    await revisionComposer(page).fill("Guard test: unsaved typing");
     await page.getByRole("link", { name: /back to dashboard/i }).click();
 
     // Guard dialog appears; staying keeps the text and the page.
-    await expect(page.getByText(/unsaved changes/i).first()).toBeVisible();
-    await page.getByRole("button", { name: /^stay$/i }).click();
+    await expect(
+      page.getByRole("heading", { name: "Unsaved Draft", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Stay here", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${quoteUrl}$`));
-    await expect(page.locator("#note")).toHaveValue("Guard test: unsaved typing");
+    await expect(revisionComposer(page)).toHaveValue("Guard test: unsaved typing");
 
     // Make the composer dirty again, then save-and-leave.
-    await page.locator("#note").fill("Guard test: unsaved typing, extended");
+    await revisionComposer(page).fill("Guard test: unsaved typing, extended");
     await page.getByRole("link", { name: /back to dashboard/i }).click();
-    await expect(page.getByText(/unsaved changes/i).first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Unsaved Draft", exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: /save draft & leave/i }).click();
     await expect(page).toHaveURL(/\/quotes$/);
 
     // The draft survived the navigation; clean it up.
     await page.goto(quoteUrl);
-    await expect(page.locator("#note")).toHaveValue("Guard test: unsaved typing, extended");
+    await expect(revisionComposer(page)).toHaveValue("Guard test: unsaved typing, extended");
     await page.getByRole("button", { name: /discard draft/i }).click();
-    await expect(page.locator("#note")).toHaveValue("");
+    await expect(revisionComposer(page)).toHaveValue("");
+  });
+
+  test("revision history uses Older and Newer pages, then resets after publishing", async ({
+    page,
+  }) => {
+    const firstPagedRevision = "Pagination fixture: first paged revision";
+    const secondPagedRevision = "Pagination fixture: second paged revision";
+    const resetRevision = "Pagination fixture: publish resets the current page";
+
+    await page.goto(quoteUrl);
+    await publishRevision(page, firstPagedRevision);
+    await publishRevision(page, secondPagedRevision);
+
+    // Newest revisions appear first; older entries remain accessible.
+    await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
+    await expect(page.getByText(firstPagedRevision, { exact: true })).toBeVisible();
+    await expect(page.getByText(secondPagedRevision, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Newer", exact: true }),
+    ).toBeDisabled();
+    await page.getByRole("button", { name: "Older", exact: true }).click();
+    await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+    await expect(page.getByText(secondPagedRevision, { exact: true })).not.toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Older", exact: true }),
+    ).toBeDisabled();
+    await page.getByRole("button", { name: "Newer", exact: true }).click();
+    await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
+
+    // Publishing while viewing a later page returns the history to its newest
+    // page, so the employee immediately sees the updated activity.
+    await page.getByRole("button", { name: "Older", exact: true }).click();
+    await publishRevision(page, resetRevision);
+    await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
   });
 
   test("print log page renders the revision history", async ({ page }) => {
@@ -269,16 +334,14 @@ test.describe.serial("quote-to-signoff flow", () => {
   });
 
   test("signoff page renders the quote document", async ({ page }) => {
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
     await expect(page.getByText(quoteNumber).first()).toBeVisible();
     await expect(page.getByText("Andersen").first()).toBeVisible();
   });
 
   test("save a typed signature", async ({ page }) => {
-    await page.goto(`${quoteUrl}/signoff`);
-    await fillSignerIdentity(page, customerName, "Homeowner");
-    await page.getByRole("button", { name: /type signature/i }).click();
-    await page.getByRole("button", { name: /confirm signature/i }).click();
+    await prepareExactPreview(page);
+    await submitTypedSignature(page, customerName, "Homeowner");
     await expect(page.getByText(/electronically signed/i)).toBeVisible();
     await expect(page.getByText(customerName).first()).toBeVisible();
     await expect(page.getByText(/homeowner/i)).toBeVisible();
@@ -286,27 +349,14 @@ test.describe.serial("quote-to-signoff flow", () => {
 
   test("editing a signed quote clears the typed signoff", async ({ page }) => {
     await editQuoteNotes(page, "Edited after typed signature");
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
     await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
   });
 
   test("save a drawn signature", async ({ page }) => {
-    await page.goto(`${quoteUrl}/signoff`);
-    await fillSignerIdentity(page, customerName, "Contractor");
-    await page.getByRole("button", { name: /draw signature/i }).click();
-
-    const canvas = page.locator("canvas");
-    await expect(canvas).toBeVisible();
-    const box = await canvas.boundingBox();
-    if (!box) throw new Error("signature canvas has no bounding box");
-    await page.mouse.move(box.x + 30, box.y + 100);
-    await page.mouse.down();
-    await page.mouse.move(box.x + 120, box.y + 60, { steps: 10 });
-    await page.mouse.move(box.x + 220, box.y + 130, { steps: 10 });
-    await page.mouse.up();
-
-    await page.getByRole("button", { name: /confirm signature/i }).click();
+    await prepareExactPreview(page);
+    await submitDrawnSignature(page, customerName, "Contractor");
     await expect(page.getByText(/electronically signed/i)).toBeVisible();
     await expect(page.getByAltText("Customer Signature")).toBeVisible();
     await expect(page.getByText(/contractor/i)).toBeVisible();
@@ -314,7 +364,7 @@ test.describe.serial("quote-to-signoff flow", () => {
 
   test("editing a signed quote clears the drawn signoff", async ({ page }) => {
     await editQuoteNotes(page, "Edited after drawn signature");
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
     await expect(
       page.getByRole("button", { name: /draw signature/i }),
@@ -322,7 +372,7 @@ test.describe.serial("quote-to-signoff flow", () => {
   });
 
   test("signoff requires a name, role, and real signature", async ({ page }) => {
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
 
     // An untouched drawing canvas cannot be submitted.
     await page.getByRole("button", { name: /confirm signature/i }).click();
@@ -335,11 +385,11 @@ test.describe.serial("quote-to-signoff flow", () => {
     await expect(page.getByText(/please enter your full name/i)).toBeVisible();
     await expect(page.getByText(/please select your role/i)).toBeVisible();
 
-    const quoteId = quoteUrl.split("/").pop();
-    const detail = await page.evaluate(async (id) => {
-      const res = await fetch(`/api/quotes/${id}`);
+    const scopedToken = scopedPreviewUrl.split("/").pop();
+    const detail = await page.evaluate(async (token) => {
+      const res = await fetch(`/api/public/scoped-signoff/${token}`);
       return res.json();
-    }, quoteId);
+    }, scopedToken);
     const blankPng = await page.evaluate(() => {
       const canvas = document.createElement("canvas");
       canvas.width = 300;
@@ -347,9 +397,9 @@ test.describe.serial("quote-to-signoff flow", () => {
       return canvas.toDataURL("image/png");
     });
     const invalidDrawnStatuses = await page.evaluate(
-      async ({ id, version, blank }) => {
+      async ({ token, version, blank }) => {
         const submit = (signatureData: string) =>
-          fetch(`/api/quotes/${id}/signoff`, {
+          fetch(`/api/public/scoped-signoff/${token}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -362,13 +412,13 @@ test.describe.serial("quote-to-signoff flow", () => {
           }).then((res) => res.status);
         return [await submit("data:image/png;base64,not-a-png"), await submit(blank)];
       },
-      { id: quoteId, version: detail.documentVersion, blank: blankPng },
+      { token: scopedToken, version: detail.documentVersion, blank: blankPng },
     );
     expect(invalidDrawnStatuses).toEqual([400, 400]);
 
     const invalidRoleStatus = await page.evaluate(
-      async ({ id, version }) => {
-        const res = await fetch(`/api/quotes/${id}/signoff`, {
+      async ({ token, version }) => {
+        const res = await fetch(`/api/public/scoped-signoff/${token}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -381,106 +431,60 @@ test.describe.serial("quote-to-signoff flow", () => {
         });
         return res.status;
       },
-      { id: quoteId, version: detail.documentVersion },
+      { token: scopedToken, version: detail.documentVersion },
     );
     expect(invalidRoleStatus).toBe(400);
 
-    // The public token-gated route enforces and persists the same identity
-    // fields; clean up afterward so later serial tests remain unsigned.
-    const publicResult = await page.evaluate(async ({ id, blank }) => {
-      const linkRes = await fetch(`/api/quotes/${id}/share-link`, { method: "POST" });
-      const { token } = await linkRes.json();
-      const detailRes = await fetch(`/api/public/signoff/${token}`);
-      const publicDetail = await detailRes.json();
-      const blankRes = await fetch(`/api/public/signoff/${token}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: "Public Signer",
-          stakeholderRole: "Architect/Designer",
-          signatureType: "drawn",
-          signatureData: blank,
-          documentVersion: publicDetail.documentVersion,
-        }),
-      });
-      const saveRes = await fetch(`/api/public/signoff/${token}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: "Public Signer",
-          stakeholderRole: "Architect/Designer",
-          signatureType: "typed",
-          signatureData: "Public Signer",
-          documentVersion: publicDetail.documentVersion,
-        }),
-      });
-      return {
-        blankStatus: blankRes.status,
-        status: saveRes.status,
-        body: await saveRes.json(),
-      };
-    }, { id: quoteId, blank: blankPng });
-    expect(publicResult.blankStatus).toBe(400);
-    expect(publicResult.status).toBe(200);
-    expect(publicResult.body.customerName).toBe("Public Signer");
-    expect(publicResult.body.stakeholderRole).toBe("Architect/Designer");
-
-    const clearStatus = await page.evaluate(async (id) => {
-      const res = await fetch(`/api/quotes/${id}/signoff`, { method: "DELETE" });
-      return res.status;
-    }, quoteId);
-    expect(clearStatus).toBe(204);
   });
 
-  test("adding a revision to a signed quote warns and clears the signature", async ({ page }) => {
+  test("adding a revision to a signed quote requires a fresh scoped preview", async ({ page }) => {
     await signTyped(page);
 
     await page.goto(quoteUrl);
-    await page.locator("#note").fill("New revision after signing");
+    await revisionComposer(page).fill("New revision after signing");
     await page.getByRole("button", { name: /publish update/i }).click();
     // Warning dialog: confirm signature removal.
     await page
-      .getByRole("button", { name: /remove signature & publish update/i })
+      .getByRole("button", { name: /remove signature & publish/i })
       .click();
     await expect(page.getByText("New revision after signing")).toBeVisible();
 
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
+    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
   });
 
-  test("hiding a revision on a signed quote warns and clears the signature", async ({ page }) => {
+  test("excluding a revision is controlled from the scoped approval picker", async ({ page }) => {
     await signTyped(page);
 
     await page.goto(`${quoteUrl}/signoff`);
     await page
-      .getByRole("button", { name: /hide from signoff/i })
+      .getByRole("button", { name: "Review revisions", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Exclude", exact: true })
       .first()
       .click();
-    // Warning dialog: confirm signature removal.
-    await page
-      .getByRole("button", { name: /remove signature & continue/i })
-      .click();
     await expect(
-      page.getByRole("button", { name: /include on signoff/i }).first(),
+      page.getByRole("button", { name: "Include", exact: true }).first(),
     ).toBeVisible();
-    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
 
     // Re-include so the document returns to full content.
     await page
-      .getByRole("button", { name: /include on signoff/i })
+      .getByRole("button", { name: "Include", exact: true })
       .first()
       .click();
     await expect(
-      page.getByRole("button", { name: /include on signoff/i }),
+      page.getByRole("button", { name: "Include", exact: true }),
     ).not.toBeVisible();
   });
 
   test("signing with a stale document version is rejected", async ({ page }) => {
-    await page.goto(`${quoteUrl}/signoff`);
+    await prepareExactPreview(page);
     await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
-    const quoteId = quoteUrl.split("/").pop();
-    const status = await page.evaluate(async (id) => {
-      const res = await fetch(`/api/quotes/${id}/signoff`, {
+    const scopedToken = scopedPreviewUrl.split("/").pop();
+    const status = await page.evaluate(async (token) => {
+      const res = await fetch(`/api/public/scoped-signoff/${token}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -492,7 +496,7 @@ test.describe.serial("quote-to-signoff flow", () => {
         }),
       });
       return res.status;
-    }, quoteId);
+    }, scopedToken);
     expect(status).toBe(409);
     // No signature was stored.
     await page.reload();
@@ -565,18 +569,121 @@ test.describe.serial("quote-to-signoff flow", () => {
     expect(restore).toBe(200);
 
     await page.goto(`${quoteUrl}/signoff`);
-    await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Customer Approval Setup", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Status: Needs re-signing", { exact: true }),
+    ).toBeVisible();
   });
 });
 
+/**
+ * Product approval is prepared from the internal picker, then reviewed and
+ * signed only on its locked customer preview. Reusing an open request after a
+ * prior test or page refresh prevents a second overlapping request.
+ */
+async function prepareExactPreview(page: Page): Promise<void> {
+  await page.goto(`${quoteUrl}/signoff`);
+  await expect(
+    page.getByRole("heading", { name: "Customer Approval Setup", exact: true }),
+  ).toBeVisible();
+  const reuse = page.getByRole("button", {
+    name: "Reuse this exact request",
+    exact: true,
+  });
+  const preview = page.getByRole("button", {
+    name: "Prepare Preview for Windows",
+    exact: true,
+  });
+  const nextAction = await Promise.race([
+    reuse.waitFor({ state: "visible", timeout: 5_000 }).then(() => "reuse" as const),
+    expect(preview).toBeEnabled({ timeout: 5_000 }).then(() => "preview" as const),
+  ]).catch(() => null);
+  if (nextAction === "reuse") {
+    await reuse.click();
+  } else if (nextAction === "preview") {
+    await preview.click();
+  } else {
+    throw new Error("Approval picker did not expose an open request or enabled preview action");
+  }
+  await expect(
+    page.getByRole("heading", { name: "Preview Ready" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Open exact preview" }).last().click();
+  await expect(page).toHaveURL(/\/scoped-sign\/[^/]+$/);
+  scopedPreviewUrl = new URL(page.url()).pathname;
+}
+
 /** Sign the quote with a typed signature (from an unsigned state). */
 async function signTyped(page: Page): Promise<void> {
-  await page.goto(`${quoteUrl}/signoff`);
-  await fillSignerIdentity(page, customerName, "Homeowner");
-  await page.getByRole("button", { name: /type signature/i }).click();
-  await page.getByRole("button", { name: /confirm signature/i }).click();
+  await prepareExactPreview(page);
+  await submitTypedSignature(page, customerName, "Homeowner");
   await expect(page.getByText(/electronically signed/i)).toBeVisible();
+}
+
+/**
+ * The UI remains the signing surface. Only a server-advertised 429 earns one
+ * delayed repeat; validation and stale-document responses remain test failures.
+ */
+async function submitTypedSignature(
+  page: Page,
+  name: string,
+  role: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await fillSignerIdentity(page, name, role);
+    await page.getByRole("button", { name: /type signature/i }).click();
+    const response = page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === "PUT" &&
+        /\/api\/public\/scoped-signoff\/[^/]+$/.test(
+          new URL(candidate.url()).pathname,
+        ),
+    );
+    await page.getByRole("button", { name: /confirm signature/i }).click();
+    const result = await response;
+    if (result.status() !== 429 || attempt === 1) return;
+    const retryAfter = retryAfterMilliseconds(result);
+    if (retryAfter === null) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, retryAfter));
+    await page.reload();
+  }
+}
+
+async function submitDrawnSignature(
+  page: Page,
+  name: string,
+  role: "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await fillSignerIdentity(page, name, role);
+    await page.getByRole("button", { name: /draw signature/i }).click();
+    const canvas = page.locator("canvas");
+    await expect(canvas).toBeVisible();
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("signature canvas has no bounding box");
+    await page.mouse.move(box.x + 30, box.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 120, box.y + 60, { steps: 10 });
+    await page.mouse.move(box.x + 220, box.y + 130, { steps: 10 });
+    await page.mouse.up();
+
+    const response = page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === "PUT" &&
+        /\/api\/public\/scoped-signoff\/[^/]+$/.test(
+          new URL(candidate.url()).pathname,
+        ),
+    );
+    await page.getByRole("button", { name: /confirm signature/i }).click();
+    const result = await response;
+    if (result.status() !== 429 || attempt === 1) return;
+    const retryAfter = retryAfterMilliseconds(result);
+    if (retryAfter === null) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, retryAfter));
+    await page.reload();
+  }
 }
 
 async function fillSignerIdentity(
@@ -587,6 +694,18 @@ async function fillSignerIdentity(
   await page.locator("#signerName").fill(name);
   await page.getByTestId("stakeholder-role").click();
   await page.getByRole("option", { name: role, exact: true }).click();
+}
+
+function retryAfterMilliseconds(response: { headers(): Record<string, string> }): number | null {
+  const retryAfter = response.headers()["retry-after"];
+  if (!retryAfter) return null;
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.max(1_000, Math.ceil(seconds * 1_000));
+  }
+  const retryAt = Date.parse(retryAfter);
+  if (Number.isNaN(retryAt)) return null;
+  return Math.max(1_000, retryAt - Date.now());
 }
 
 /** Edit the quote via the detail page, accepting the signature-removal warning if shown. */
@@ -603,4 +722,44 @@ async function editQuoteNotes(page: Page, notes: string): Promise<void> {
     await removeAndSave.click();
   }
   await expect(page.getByRole("button", { name: /edit quote/i })).toBeVisible();
+}
+
+function revisionComposer(page: Page) {
+  return page.getByPlaceholder(
+    "Describe the update, log a call, or note a change...",
+    { exact: true },
+  );
+}
+
+async function publishRevision(page: Page, note: string): Promise<void> {
+  await revisionComposer(page).fill(note);
+  const published = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.status() === 201 &&
+      response.url().includes("/revision-draft/publish"),
+  );
+  await page.getByRole("button", { name: "Publish Update", exact: true }).click();
+  await published;
+  await expect(revisionComposer(page)).toHaveValue("", { timeout: 15_000 });
+  // Clearing the composer happens before the invalidated quote query has
+  // necessarily repainted the log. Wait for that refetch so the next publish
+  // cannot race a stale revision-history view.
+  await expect(page.getByText(note, { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
+function draftSavedIndicator(page: Page) {
+  return page.locator("main").getByText("Draft saved", { exact: true });
+}
+
+async function expandProductSpecs(page: Page): Promise<void> {
+  const trigger = page.getByRole("button", {
+    name: "Product Specs",
+    exact: true,
+  });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await trigger.click();
+  }
 }

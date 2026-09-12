@@ -17,9 +17,11 @@ import QuoteDetailPage from "@/pages/quote-detail";
 import PrintLogPage from "@/pages/print-log";
 import SignoffPage from "@/pages/signoff";
 import PublicSignoffPage from "@/pages/signoff-public";
+import ScopedPublicSignoffPage from "@/pages/scoped-signoff-public";
 import ManufacturerPacketsPage from "@/pages/manufacturer-packets";
 import TeamPage from "@/pages/team";
 import FieldOptionsPage from "@/pages/field-options";
+import AdminTemplatesPage from "@/pages/admin-templates";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -203,8 +205,10 @@ function ClerkProviderWithRoutes() {
               <Route path="/quotes/:id/packets" component={ManufacturerPacketsPage} />
               <Route path="/quotes/:id/signoff" component={SignoffPage} />
               <Route path="/sign/:token" component={PublicSignoffPage} />
+              <Route path="/scoped-sign/:token" component={ScopedPublicSignoffPage} />
               <Route path="/team" component={TeamPage} />
               <Route path="/field-options" component={FieldOptionsPage} />
+              <Route path="/admin/templates" component={AdminTemplatesPage} />
               <Route component={NotFound} />
             </Switch>
           </RoutedErrorBoundary>

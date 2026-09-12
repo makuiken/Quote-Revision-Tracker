@@ -32,6 +32,7 @@ type Packet = {
   id: number;
   quoteId: number;
   originalName: string;
+  productType: "windows" | null;
   status: PacketStatus;
   pageCount: number | null;
   analysis: Array<{
@@ -54,10 +55,18 @@ type Packet = {
 type QuoteDetail = {
   quote: { id: number };
   documentVersion: string;
-  signoff: unknown;
+  /** Legacy approval evidence is intentionally separate from mutable HTML. */
+  signoff: null;
+  legacyApproval: {
+    status: "legacy";
+    validity: "signed" | "needs_resigning";
+    documentAvailable: boolean;
+    invalidationReason?: string | null;
+  } | null;
 };
 
 const apiPath = (path: string): string => `/api${path}`;
+const createdQuoteIds = new Set<number>();
 
 function publicPacketPagePath(
   token: string,
@@ -74,6 +83,23 @@ function publicPacketPagePath(
 test.describe("manufacturer packet API contract", () => {
   test.beforeEach(async ({ page }) => {
     await authenticateApiContext(page);
+  });
+
+  test.afterEach(async ({ page }) => {
+    const quoteIds = [...createdQuoteIds];
+    createdQuoteIds.clear();
+    for (const quoteId of quoteIds) {
+      const remove = () => page.context().request.delete(apiPath(`/quotes/${quoteId}`));
+      let deleted = await remove();
+      if (deleted.status() === 429) {
+        const retryAfter = retryAfterMilliseconds(deleted);
+        if (retryAfter !== null) {
+          await new Promise<void>((resolve) => setTimeout(resolve, retryAfter));
+          deleted = await remove();
+        }
+      }
+      expect(deleted.status()).toBe(204);
+    }
   });
 
   test("uploads through the signed URL, queues review, and keeps unapproved bytes private", async ({
@@ -93,6 +119,7 @@ test.describe("manufacturer packet API contract", () => {
           name: "not-a-pdf.txt",
           size: 1,
           contentType: "text/plain",
+          productType: "windows",
         },
       },
     );
@@ -103,6 +130,7 @@ test.describe("manufacturer packet API contract", () => {
       name: "synthetic-pending.pdf",
       size: 128,
       manufacturer: "Andersen",
+      productType: "windows",
     });
     const prematureComplete = await api.post(
       apiPath(
@@ -120,6 +148,7 @@ test.describe("manufacturer packet API contract", () => {
       name: filename,
       size: sourceBytes.byteLength,
       manufacturer: "Andersen",
+      productType: "windows",
     });
     expect(upload.packet.status).toBe("awaiting_upload");
     expect(upload.packet.originalName).toBe(filename);
@@ -223,6 +252,7 @@ test.describe("manufacturer packet API contract", () => {
       name: firstFilename,
       bytes: firstBytes,
       manufacturer: "Andersen",
+      productType: "windows",
     });
     const firstAnalysis = first.needsReview.analysis;
     expect(firstAnalysis).toHaveLength(2);
@@ -273,8 +303,16 @@ test.describe("manufacturer packet API contract", () => {
     // session used for the API contract, including source preview and a
     // rectangle interaction before the API redaction assertion above.
     await page.goto(`/quotes/${quoteId}/packets`);
-    await page.getByRole("button", { name: `Open ${firstFilename}`, exact: true }).click();
-    await expect(page.getByText("Step 2: Review & Redact", { exact: true })).toBeVisible();
+    await packetListEntry(page, firstFilename).click();
+    await expect(
+      page.getByRole("heading", { name: firstFilename, exact: true }),
+    ).toBeVisible();
+    // This packet has already generated its clean preview through the API, so
+    // it opens in that preview by default. Switch deliberately to the source
+    // editor before exercising the redaction controls.
+    await page
+      .getByRole("button", { name: "Source Editor", exact: true })
+      .click();
     await expect(page.getByAltText("Original manufacturer page 1")).toBeVisible();
     await expect(page.getByAltText("Original manufacturer page 1")).toHaveJSProperty("complete", true);
     const editor = page.locator('[data-rect-index]').first();
@@ -299,24 +337,33 @@ test.describe("manufacturer packet API contract", () => {
     // page 2 even when its first/continuation label differs, without
     // duplicating the box on the page where it already exists.
     await editor.hover();
-    const applyToSimilar = page.getByTestId("button-redaction-apply-similar-0");
+    const applyToSimilar = page.getByRole("button", {
+      name: "Apply to Pages",
+      exact: true,
+    });
     await expect(applyToSimilar).toBeVisible();
     await applyToSimilar.click();
     const pageTwoTarget = page.getByRole("checkbox", { name: "Page 2", exact: true });
     await expect(pageTwoTarget).toBeVisible();
     await pageTwoTarget.check();
-    await page.getByTestId("button-confirm-apply-redaction").click();
+    await page.getByRole("button", {
+      name: "Apply to selected pages",
+      exact: true,
+    }).click();
     await expect(page.getByText("Redaction added to 1 selected page.", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /^Page 2/ }).click();
+    await page.getByRole("button", { name: "Pg 2", exact: true }).click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(1);
 
     // Delete the copied redaction through the visible, keyboard-accessible
     // action button and verify that the original page remains unchanged.
-    const removeRedaction = page.getByTestId("button-redaction-remove-0");
+    const removeRedaction = page.getByRole("button", {
+      name: "Remove redaction 1",
+      exact: true,
+    });
     await expect(removeRedaction).toBeVisible();
     await removeRedaction.click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(0);
-    await page.getByRole("button", { name: /^Page 1/ }).click();
+    await page.getByRole("button", { name: "Pg 1", exact: true }).click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(1);
 
     await page.screenshot({ path: `test-results/manufacturer-packet-source-${quoteId}.png`, fullPage: true });
@@ -377,7 +424,12 @@ test.describe("manufacturer packet API contract", () => {
     );
     expect(signature.status()).toBe(200);
     const signedDetail = await getPublicSignoff(api, token);
-    expect(signedDetail.signoff).not.toBeNull();
+    expect(signedDetail.signoff).toBeNull();
+    expect(signedDetail.legacyApproval).toMatchObject({
+      status: "legacy",
+      validity: "signed",
+      documentAvailable: true,
+    });
 
     const internalSigned = await api.get(
       apiPath(`/quotes/${quoteId}/signoff/document`),
@@ -405,41 +457,6 @@ test.describe("manufacturer packet API contract", () => {
       firstFilename,
     );
 
-    // Emulate a pre-feature signature lacking snapshot fields. Both download
-    // paths must backfill a SIGNED artifact without changing signer identity.
-    const legacyPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-    try {
-      for (const downloadPath of [
-        `/quotes/${quoteId}/signoff/document`,
-        `/public/signoff/${token}/document`,
-      ]) {
-        const beforeLegacy = await legacyPool.query(
-          "SELECT signed_at, customer_name, signature_data FROM signoffs WHERE quote_id = $1",
-          [quoteId],
-        );
-        await legacyPool.query(
-          "UPDATE signoffs SET signed_document_object_path = NULL, signed_document_sha256 = NULL WHERE quote_id = $1",
-          [quoteId],
-        );
-        const migratedDownload = await api.get(apiPath(downloadPath));
-        expect(migratedDownload.status()).toBe(200);
-        const afterLegacy = await legacyPool.query(
-          "SELECT signed_at, customer_name, signature_data, signed_document_object_path, signed_document_sha256, signed_packet_sha256 FROM signoffs WHERE quote_id = $1",
-          [quoteId],
-        );
-        expect(afterLegacy.rows[0].signed_at).toEqual(beforeLegacy.rows[0].signed_at);
-        expect(afterLegacy.rows[0].customer_name).toBe(beforeLegacy.rows[0].customer_name);
-        expect(afterLegacy.rows[0].signature_data).toBe(beforeLegacy.rows[0].signature_data);
-        expect(afterLegacy.rows[0].signed_document_object_path).toBeTruthy();
-        expect(afterLegacy.rows[0].signed_document_sha256).toMatch(/^[a-f0-9]{64}$/);
-        expect(afterLegacy.rows[0].signed_packet_sha256).toMatch(/^[a-f0-9]{64}$/);
-        const repeatedDownload = await api.get(apiPath(downloadPath));
-        expect(await repeatedDownload.body()).toEqual(await migratedDownload.body());
-      }
-    } finally {
-      await legacyPool.end();
-    }
-
     const secondFilename = "synthetic-second-manufacturer-packet.pdf";
     const secondBytes = await createSyntheticPdf([
       "SECOND PACKET ADMIN HEADER",
@@ -449,6 +466,7 @@ test.describe("manufacturer packet API contract", () => {
       name: secondFilename,
       bytes: secondBytes,
       manufacturer: "Marvin",
+      productType: "windows",
     });
     const secondReadyRequest = await api.patch(
       apiPath(
@@ -471,12 +489,43 @@ test.describe("manufacturer packet API contract", () => {
       2,
     );
 
+    // The primary cleaned-preview action should include every cleaned page for
+    // this packet while retaining the other packet's established sequence.
+    // This covers the common workflow without using the advanced builder.
+    const manifestLoaded = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        response.ok() &&
+        response.url().includes(
+          `/api/quotes/${quoteId}/manufacturer-packet-manifest`,
+        ),
+    );
+    await page.goto(`/quotes/${quoteId}/packets`);
+    await manifestLoaded;
+    await packetListEntry(page, secondFilename).click();
+    const addAllPages = page.getByRole("button", {
+      name: "Add All Pages to Package",
+      exact: true,
+    });
+    await expect(addAllPages).toBeVisible();
+    // This fixture already has a historical approval, so the normal customer
+    // package replacement confirmation must be accepted before publishing.
+    page.once("dialog", (dialog) => dialog.accept());
+    await addAllPages.click();
+    await expect.poll(async () => (await getManifest(api, quoteId)).entries).toEqual([
+      { packetId: first.packet.id, pageNumber: 1, pageOrder: 1 },
+      { packetId: first.packet.id, pageNumber: 2, pageOrder: 2 },
+      { packetId: second.packet.id, pageNumber: 1, pageOrder: 3 },
+      { packetId: second.packet.id, pageNumber: 2, pageOrder: 4 },
+    ]);
+
     // Two reviewable PDFs with identical dimensions must retain distinct boxes.
     const thirdFilename = "synthetic-review-state-isolation.pdf";
     const third = await uploadAndQueuePacket(api, quoteId, {
       name: thirdFilename,
       bytes: await createSyntheticPdf(["THIRD ADMIN FIELD"]),
       manufacturer: "Marvin",
+      productType: "windows",
     });
     const thirdCleanup = await api.patch(
       apiPath(`/quotes/${quoteId}/manufacturer-packets/${third.packet.id}/redactions`),
@@ -485,11 +534,20 @@ test.describe("manufacturer packet API contract", () => {
     expect(thirdCleanup.status()).toBe(202);
     await waitForPacket(api, quoteId, third.packet.id, "ready_for_approval");
     await page.goto(`/quotes/${quoteId}/packets`);
-    await page.getByRole("button", { name: `Open ${thirdFilename}`, exact: true }).click();
+    await packetListEntry(page, thirdFilename).click();
+    await page
+      .getByRole("button", { name: "Source Editor", exact: true })
+      .click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(1);
-    await page.getByRole("button", { name: `Open ${secondFilename}`, exact: true }).click();
+    await packetListEntry(page, secondFilename).click();
+    await page
+      .getByRole("button", { name: "Source Editor", exact: true })
+      .click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(0);
-    await page.getByRole("button", { name: `Open ${thirdFilename}`, exact: true }).click();
+    await packetListEntry(page, thirdFilename).click();
+    await page
+      .getByRole("button", { name: "Source Editor", exact: true })
+      .click();
     await expect(page.locator("[data-rect-index]")).toHaveCount(1);
 
     const publishedVersion = beforeSigning.documentVersion;
@@ -555,48 +613,51 @@ test.describe("manufacturer packet API contract", () => {
       `/quotes/${quoteId}/manufacturer-packets/${first.packet.id}/pages/1?documentVersion=${afterPublication.documentVersion}`,
     ))).status()).toBe(404);
 
-    // A refreshed internal quote version cannot sign while its manifest is delayed.
-    let releaseInternal!: () => void;
-    const internalHold = new Promise<void>((resolve) => { releaseInternal = resolve; });
-    const internalRoute = `**/api/quotes/${quoteId}/manufacturer-packet-manifest?documentVersion=*`;
-    await page.route(internalRoute, async (route) => {
-      await internalHold;
-      await route.continue();
-    });
+    // Internal signing now begins in the scope picker. The old whole-quote
+    // document form is intentionally absent after a historical legacy
+    // signature, so its former manifest-loading gate is no longer applicable.
     await page.goto(`/quotes/${quoteId}/signoff`);
-    await expect(page.getByText("Cannot sign: Loading manufacturer packet specifications...")).toBeVisible();
-    await expect(page.getByLabel("Your full legal name")).toHaveCount(0);
-    releaseInternal();
-    await expect(page.getByLabel("Your full legal name")).toBeVisible();
-    await page.unroute(internalRoute);
+    await expect(
+      page.getByRole("heading", { name: "Customer Approval Setup", exact: true }),
+    ).toBeVisible();
 
-    // Discovery itself must block signing, before the app knows a packet exists.
-    let releaseMetadata!: () => void;
-    const metadataHold = new Promise<void>((resolve) => { releaseMetadata = resolve; });
-    const metadataRoute = `**/api/public/signoff/${token}/packet`;
-    await page.route(metadataRoute, async (route) => {
-      await metadataHold;
-      await route.continue();
-    });
+    // A legacy public link is also read-only rather than a replacement signing
+    // surface. Its old packet-discovery loading gate therefore no longer
+    // controls whether the signature form appears.
     await page.goto(`/sign/${token}`);
-    await expect(page.getByText("Cannot sign: Loading manufacturer packet specifications...")).toBeVisible();
+    await expect(
+      page.getByText(
+        "Cannot sign: This current document is read-only because a historical legacy signature exists. It cannot replace that approval.",
+      ),
+    ).toBeVisible();
     await expect(page.getByLabel("Your full legal name")).toHaveCount(0);
-    releaseMetadata();
-    await expect(page.getByLabel("Your full legal name")).toBeVisible();
-    await page.unroute(metadataRoute);
 
-    const signedPublishedManifest = await signPublicDocument(
+    // A legacy whole-quote signature remains historical evidence after the
+    // manifest changes; the old public route may not overwrite it. A new
+    // scoped request is required for any replacement approval.
+    const replacementLegacySign = await signPublicDocument(
       api,
       token,
       afterPublication.documentVersion,
     );
-    expect(signedPublishedManifest.status()).toBe(200);
-    expect((await getPublicSignoff(api, token)).signoff).not.toBeNull();
+    expect(replacementLegacySign.status()).toBe(409);
+    const historicalLegacyDetail = await getPublicSignoff(api, token);
+    expect(historicalLegacyDetail.signoff).toBeNull();
+    expect(historicalLegacyDetail.legacyApproval).toMatchObject({
+      status: "legacy",
+      validity: "needs_resigning",
+      documentAvailable: true,
+    });
 
     await page.goto(`/sign/${token}`);
     await expect(page.getByText("Manufacturer Specifications")).toBeVisible();
     await expect(page.locator('img[alt^="Packet Page"]').first()).toBeVisible();
-    await expect(page.getByRole("link", { name: /download pdf/i })).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: "Open original signed PDF evidence",
+        exact: true,
+      }),
+    ).toBeVisible();
     await page.screenshot({ path: `test-results/public-manufacturer-packet-${quoteId}.png`, fullPage: true });
 
     const unpublished = await api.delete(
@@ -609,6 +670,11 @@ test.describe("manufacturer packet API contract", () => {
       afterPublication.documentVersion,
     );
     expect(afterUnpublication.signoff).toBeNull();
+    expect(afterUnpublication.legacyApproval).toMatchObject({
+      status: "legacy",
+      validity: "needs_resigning",
+      documentAvailable: true,
+    });
     expect(
       (await api.get(apiPath(`/public/signoff/${token}/packet`))).status(),
     ).toBe(404);
@@ -637,7 +703,12 @@ test.describe("manufacturer packet API contract", () => {
     // remains a usable unsigned signing form rather than a fatal 404 state.
     await page.goto(`/sign/${token}`);
     await expect(page.getByText("Signoff Document")).toBeVisible();
-    await expect(page.getByRole("link", { name: /download pdf/i })).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: "Open original signed PDF evidence",
+        exact: true,
+      }),
+    ).toBeVisible();
 
     const unsignedInternal = await api.get(
       apiPath(`/quotes/${quoteId}/signoff/document/unsigned`),
@@ -652,6 +723,40 @@ test.describe("manufacturer packet API contract", () => {
     expect(
       unsignedInternal.headers()["content-disposition"] ?? "",
     ).not.toContain(secondFilename);
+
+    // A pre-feature signature without its immutable artifact cannot be
+    // truthfully reconstructed from mutable quote content. Both download
+    // paths must report it as unavailable and leave the evidence untouched.
+    const legacyPool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      const beforeLegacy = await legacyPool.query(
+        "SELECT signed_at, customer_name, signature_data, signed_packet_sha256 FROM signoffs WHERE quote_id = $1",
+        [quoteId],
+      );
+      await legacyPool.query(
+        "UPDATE signoffs SET signed_document_object_path = NULL, signed_document_sha256 = NULL WHERE quote_id = $1",
+        [quoteId],
+      );
+      for (const downloadPath of [
+        `/quotes/${quoteId}/signoff/document`,
+        `/public/signoff/${token}/document`,
+      ]) {
+        const unavailableDownload = await api.get(apiPath(downloadPath));
+        expect(unavailableDownload.status()).toBe(409);
+      }
+      const afterLegacy = await legacyPool.query(
+        "SELECT signed_at, customer_name, signature_data, signed_document_object_path, signed_document_sha256, signed_packet_sha256 FROM signoffs WHERE quote_id = $1",
+        [quoteId],
+      );
+      expect(afterLegacy.rows[0].signed_at).toEqual(beforeLegacy.rows[0].signed_at);
+      expect(afterLegacy.rows[0].customer_name).toBe(beforeLegacy.rows[0].customer_name);
+      expect(afterLegacy.rows[0].signature_data).toBe(beforeLegacy.rows[0].signature_data);
+      expect(afterLegacy.rows[0].signed_document_object_path).toBeNull();
+      expect(afterLegacy.rows[0].signed_document_sha256).toBeNull();
+      expect(afterLegacy.rows[0].signed_packet_sha256).toBe(beforeLegacy.rows[0].signed_packet_sha256);
+    } finally {
+      await legacyPool.end();
+    }
   });
 
   test("blocks packet writes on archived quotes", async ({ page }) => {
@@ -670,6 +775,7 @@ test.describe("manufacturer packet API contract", () => {
           size: 64,
           contentType: "application/pdf",
           manufacturer: "Andersen",
+          productType: "windows",
         },
       },
     );
@@ -695,29 +801,43 @@ async function authenticateApiContext(page: Page): Promise<void> {
   await clerk.signIn({ page, emailAddress: TEST_USER_EMAIL });
 }
 
+function packetListEntry(page: Page, filename: string) {
+  return page.getByRole("button").filter({ hasText: filename });
+}
+
 
 async function createSyntheticQuote(api: APIRequestContext): Promise<number> {
   const unique = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const quoteNumber = String(1000000 + (Number(unique.slice(-7)) % 9000000));
-  const response = await api.post(apiPath("/quotes"), {
-    data: {
-      quoteNumber,
-      customerName: "Synthetic Packet Customer",
-      projectName: `Synthetic Packet Fixture ${unique.slice(-6)}`,
-      jobAddress: "1 Synthetic Test Way",
-      categories: ["windows"],
-      specs: {
-        window: {
-          brand: "Synthetic Brand",
-          series: "Synthetic Series",
-          exteriorColor: "Synthetic White",
+  const create = () =>
+    api.post(apiPath("/quotes"), {
+      data: {
+        quoteNumber,
+        customerName: "Synthetic Packet Customer",
+        projectName: `Synthetic Packet Fixture ${unique.slice(-6)}`,
+        jobAddress: "1 Synthetic Test Way",
+        categories: ["windows"],
+        specs: {
+          window: {
+            brand: "Synthetic Brand",
+            series: "Synthetic Series",
+            exteriorColor: "Synthetic White",
+          },
         },
       },
-    },
-  });
+    });
+  let response = await create();
+  if (response.status() === 429) {
+    const retryAfter = retryAfterMilliseconds(response);
+    if (retryAfter !== null) {
+      await new Promise<void>((resolve) => setTimeout(resolve, retryAfter));
+      response = await create();
+    }
+  }
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { id: number };
   expect(body.id).toEqual(expect.any(Number));
+  createdQuoteIds.add(body.id);
   return body.id;
 }
 
@@ -772,7 +892,12 @@ async function createSyntheticPdf(lines: readonly string[]): Promise<Buffer> {
 async function requestPacketUpload(
   api: APIRequestContext,
   quoteId: number,
-  input: { name: string; size: number; manufacturer: string },
+  input: {
+    name: string;
+    size: number;
+    manufacturer: string;
+    productType: "windows";
+  },
 ): Promise<{ packet: Packet; uploadURL: string }> {
   const response = await api.post(
     apiPath(`/quotes/${quoteId}/manufacturer-packets`),
@@ -782,24 +907,32 @@ async function requestPacketUpload(
         size: input.size,
         contentType: "application/pdf",
         manufacturer: input.manufacturer,
+        productType: input.productType,
       },
     },
   );
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { packet: Packet; uploadURL: string };
   expect(body.uploadURL).toMatch(/^https?:\/\//);
+  expect(body.packet.productType).toBe(input.productType);
   return body;
 }
 
 async function uploadAndQueuePacket(
   api: APIRequestContext,
   quoteId: number,
-  input: { name: string; bytes: Buffer; manufacturer: string },
+  input: {
+    name: string;
+    bytes: Buffer;
+    manufacturer: string;
+    productType: "windows";
+  },
 ): Promise<{ packet: Packet; bytes: Buffer; needsReview: Packet }> {
   const upload = await requestPacketUpload(api, quoteId, {
     name: input.name,
     size: input.bytes.byteLength,
     manufacturer: input.manufacturer,
+    productType: input.productType,
   });
   const directPut = await api.put(upload.uploadURL, {
     headers: { "Content-Type": "application/pdf" },
@@ -904,14 +1037,36 @@ async function signPublicDocument(
   token: string,
   documentVersion: string,
 ) {
-  return api.put(apiPath(`/public/signoff/${token}`), {
-    data: {
-      customerName: "Synthetic Signer",
-      stakeholderRole: "Homeowner",
-      signatureType: "typed",
-      signatureData: "Synthetic Signer",
-      documentVersion,
-    },
-    failOnStatusCode: false,
-  });
+  const submit = () =>
+    api.put(apiPath(`/public/signoff/${token}`), {
+      data: {
+        customerName: "Synthetic Signer",
+        stakeholderRole: "Homeowner",
+        signatureType: "typed",
+        signatureData: "Synthetic Signer",
+        documentVersion,
+      },
+      failOnStatusCode: false,
+    });
+  let response = await submit();
+  if (response.status() === 429) {
+    const retryAfter = retryAfterMilliseconds(response);
+    if (retryAfter !== null) {
+      await new Promise<void>((resolve) => setTimeout(resolve, retryAfter));
+      response = await submit();
+    }
+  }
+  return response;
+}
+
+function retryAfterMilliseconds(response: { headers(): Record<string, string> }): number | null {
+  const retryAfter = response.headers()["retry-after"];
+  if (!retryAfter) return null;
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.max(1_000, Math.ceil(seconds * 1_000));
+  }
+  const retryAt = Date.parse(retryAfter);
+  if (Number.isNaN(retryAt)) return null;
+  return Math.max(1_000, retryAt - Date.now());
 }

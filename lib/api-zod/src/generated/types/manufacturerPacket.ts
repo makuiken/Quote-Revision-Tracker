@@ -5,7 +5,9 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { AppliedManufacturerRedactionTemplate } from './appliedManufacturerRedactionTemplate';
 import type { ManufacturerPacketManualRedactions } from './manufacturerPacketManualRedactions';
+import type { ManufacturerPacketProductType } from './manufacturerPacketProductType';
 import type { PacketPageAnalysis } from './packetPageAnalysis';
 import type { PacketStatus } from './packetStatus';
 
@@ -14,6 +16,8 @@ export interface ManufacturerPacket {
   quoteId: number;
   /** @nullable */
   manufacturer?: string | null;
+  /** @nullable */
+  productType?: ManufacturerPacketProductType;
   /** @nullable */
   detectedManufacturer?: string | null;
   originalName: string;
@@ -24,6 +28,7 @@ export interface ManufacturerPacket {
   analysis?: PacketPageAnalysis[] | null;
   /** @nullable */
   manualRedactions?: ManufacturerPacketManualRedactions;
+  appliedTemplate?: AppliedManufacturerRedactionTemplate | null;
   /** @nullable */
   failureMessage?: string | null;
   createdAt: Date;

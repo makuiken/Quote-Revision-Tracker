@@ -14,6 +14,11 @@ import {
 } from "@/components/ui/select";
 import { categoryLabel } from "@/lib/revision-categories";
 
+type SignoffDocumentQuote = Pick<
+  Quote,
+  "quoteNumber" | "displayName" | "jobAddress" | "categories" | "specs"
+>;
+
 export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void, onClear: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -166,8 +171,12 @@ export function SignoffDocument({
   packetSection,
   hasManifest,
   disabledReason,
+  productTypes,
+  notIncludedProductTypes,
+  isSigned,
+  preparedAt,
 }: {
-  quote: Quote;
+  quote: SignoffDocumentQuote;
   revisions: Revision[];
   signoff: Signoff | null;
   onSubmit: (
@@ -181,6 +190,13 @@ export function SignoffDocument({
   hasManifest?: boolean;
   packetSection?: React.ReactNode;
   disabledReason?: string;
+  /** Omitted only for legacy whole-quote documents. Scoped data is server-filtered. */
+  productTypes?: string[];
+  notIncludedProductTypes?: string[];
+  /** Scoped approvals can be signed while the rest of a quote remains open. */
+  isSigned?: boolean;
+  /** Locked preparation time for a scoped approval preview and its print view. */
+  preparedAt?: string;
 }) {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
   const [signMethod, setSignMethod] = useState<"draw" | "type">("draw");
@@ -190,6 +206,13 @@ export function SignoffDocument({
   >("");
   const [nameError, setNameError] = useState(false);
   const [roleError, setRoleError] = useState(false);
+  const scopedTypes = productTypes?.length ? new Set(productTypes) : null;
+  const includedRevisions = revisions.filter((revision) =>
+    !revision.excludedFromSignoff &&
+    (!scopedTypes || !revision.categories?.length || revision.categories.some((type) => scopedTypes.has(type))),
+  );
+  const signed = isSigned ?? false;
+  const documentDate = preparedAt ? new Date(preparedAt) : new Date();
 
   const validateIdentity = () => {
     const validName = Boolean(signerName.trim());
@@ -229,7 +252,7 @@ export function SignoffDocument({
         <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-20" style={{ filter: 'grayscale(100%)' }} />
         <div className="text-right">
           <h1 className="text-2xl font-serif font-bold text-black uppercase tracking-widest">Signoff Document</h1>
-          <p className="text-sm font-bold text-gray-600 mt-1">Generated: {format(new Date(), "MMM d, yyyy")}</p>
+          <p className="text-sm font-bold text-gray-600 mt-1">{preparedAt ? "Prepared" : "Generated"}: {format(documentDate, "MMM d, yyyy")}</p>
         </div>
       </div>
 
@@ -248,27 +271,43 @@ export function SignoffDocument({
       <div className="space-y-6 mb-12">
         <h2 className="text-xl font-bold uppercase tracking-widest border-b-2 border-black pb-2">Final Specifications</h2>
         <p className="text-sm italic text-gray-600 mb-4">By signing this document, you are approving the specifications exactly as detailed below. Any subsequent changes will require a new signoff.</p>
+        {scopedTypes && (
+          <div className="border-2 border-black bg-gray-50 p-4 break-inside-avoid">
+            <h3 className="text-sm font-bold uppercase tracking-widest">Approval scope</h3>
+            <p className="mt-1 text-sm">
+              <strong>Included:</strong> {productTypes!.map(categoryLabel).join(", ")}
+            </p>
+            <p className="mt-1 text-sm text-gray-600">
+              <strong>Not included:</strong> {notIncludedProductTypes?.length
+                ? notIncludedProductTypes.map(categoryLabel).join(", ")
+                : "No other active product types."}
+            </p>
+            <p className="mt-2 text-xs text-gray-600">
+              Shared terms and shared revisions shown in this document apply only to the included scope; they do not approve a product type listed as not included.
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {quote.categories.includes("windows") && (
+          {(!scopedTypes || scopedTypes.has("windows")) && quote.categories.includes("windows") && (
             <SpecSection title="Windows" spec={quote.specs?.window} />
           )}
-          {quote.categories.includes("interiorDoors") && (
+          {(!scopedTypes || scopedTypes.has("interiorDoors")) && quote.categories.includes("interiorDoors") && (
             <SpecSection title="Interior Doors" spec={quote.specs?.interiorDoor} />
           )}
-          {quote.categories.includes("exteriorDoors") && (
+          {(!scopedTypes || scopedTypes.has("exteriorDoors")) && quote.categories.includes("exteriorDoors") && (
             <SpecSection title="Exterior Doors" spec={quote.specs?.exteriorDoor} />
           )}
-          {quote.categories.includes("doors") && (
+          {(!scopedTypes || scopedTypes.has("doors")) && quote.categories.includes("doors") && (
             <SpecSection title="Doors" spec={quote.specs?.door} />
           )}
-          {quote.categories.includes("trim") && (
+          {(!scopedTypes || scopedTypes.has("trim")) && quote.categories.includes("trim") && (
             <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
               <h3 className="font-bold uppercase mb-2">Moulding</h3>
               <p className="text-sm whitespace-pre-wrap">{capitalize(quote.specs?.trimDescription || "") || "No specific details."}</p>
             </div>
           )}
-          {quote.categories.includes("millwork") && (
+          {(!scopedTypes || scopedTypes.has("millwork")) && quote.categories.includes("millwork") && (
             <div className="border border-gray-300 p-4 rounded bg-gray-50/50">
               <h3 className="font-bold uppercase mb-2">Millwork</h3>
               <p className="text-sm whitespace-pre-wrap">{capitalize(quote.specs?.millworkDescription || "") || "No specific details."}</p>
@@ -277,11 +316,11 @@ export function SignoffDocument({
         </div>
 
         {revisions.length > 0 && (() => {
-          const included = revisions.filter(rev => !rev.excludedFromSignoff);
+          const included = includedRevisions;
           return (
             <div className="mt-8">
               <h3 className="font-bold uppercase mb-4 text-sm tracking-widest text-gray-500">
-                Complete Revision Log ({included.length} {included.length === 1 ? "update" : "updates"})
+                {scopedTypes ? "Relevant Revision Log" : "Complete Revision Log"} ({included.length} {included.length === 1 ? "update" : "updates"})
               </h3>
               {onToggleExclude && revisions.length !== included.length && (
                 <p className="print:hidden text-xs italic text-gray-500 mb-3">
@@ -291,7 +330,8 @@ export function SignoffDocument({
               <div className="space-y-4 text-sm text-gray-700">
                 {revisions.map(rev => {
                   const excluded = rev.excludedFromSignoff;
-                  if (excluded && !onToggleExclude) return null;
+                  const unrelated = scopedTypes && rev.categories?.length && !rev.categories.some((type) => scopedTypes.has(type));
+                  if (unrelated || (excluded && !onToggleExclude)) return null;
                   return (
                     <div
                       key={rev.id}
@@ -356,7 +396,7 @@ export function SignoffDocument({
           I have reviewed all quoted line-item in detail and agree that the product specifications, unit handing, divided lite patterns, and pricing are accurate, and I approve the project for order. I acknowledge that additional charges, tax or Terms and Conditions may apply.{hasManifest ? " The approved manufacturer packet pages attached to this document are included as part of this approval." : ""}
         </p>
 
-        {quote.signed && signoff ? (
+        {signed && signoff ? (
           <div className="bg-gray-50 border border-gray-200 p-6 rounded-lg text-center flex flex-col items-center">
             <CheckCircle className="w-16 h-16 text-green-700 mb-4" />
             <h3 className="text-2xl font-serif font-bold text-green-800 mb-2">Electronically Signed</h3>

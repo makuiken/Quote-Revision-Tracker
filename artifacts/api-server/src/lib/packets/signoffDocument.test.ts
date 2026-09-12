@@ -48,6 +48,28 @@ test("renders an unsigned document containing multiline terms", async () => {
   assert.ok(document.bytes.byteLength > 100);
 });
 
+test("scoped signed PDF keeps the locked prepared date separate from signing day", async () => {
+  const document = await createSignedPacketDocument({
+    quote,
+    revisions: [],
+    approvedPacketPages: [],
+    documentDate: new Date("2026-01-01T00:00:00.000Z"),
+    signoff: {
+      customerName: "Customer",
+      stakeholderRole: "Homeowner",
+      signatureType: "typed",
+      signatureData: "Customer",
+      signedAt: new Date("2026-02-02T00:00:00.000Z"),
+    },
+  });
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loaded = await pdfjs.getDocument({ data: document.bytes }).promise;
+  const content = await (await loaded.getPage(1)).getTextContent();
+  const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+  assert.match(text, /January 1, 2026/);
+  assert.match(text, /February 2, 2026/);
+});
+
 test("renders branded cards, categorized specifications, and complete revisions", async () => {
   const document = await createSignedPacketDocument({
     quote: {

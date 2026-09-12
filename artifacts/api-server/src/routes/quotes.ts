@@ -26,6 +26,10 @@ import {
   usersTable,
   fieldOptionsTable,
   manufacturerPacketsTable,
+  type Signoff,
+  scopedApprovalRequestsTable,
+  scopedApprovalsTable,
+  scopedApprovalCoverageTable,
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
@@ -95,6 +99,16 @@ import {
   manifestBudgetAllows,
   MAX_SIGNOFF_PACKET_SOURCE_BYTES,
 } from "../lib/packets/documentBudget";
+import {
+  approvalCoverage,
+  buildScopedSnapshot,
+  invalidateApprovalCoverage,
+  invalidateLegacyApproval,
+  normalizedScope,
+  scopedDocumentVersion,
+} from "../lib/scopedApprovals";
+import { quoteApprovalImpact } from "../lib/quoteApprovalImpact";
+import { legacyApprovalMetadata } from "../lib/legacyApproval";
 
 const router: IRouter = Router();
 const packetStorage = new ObjectStorageService();
@@ -166,7 +180,18 @@ export async function quoteStats(quoteIds: number[]) {
   if (quoteIds.length === 0)
     return new Map<
       number,
-      { revisionCount: number; lastActivityAt: Date | null; signed: boolean }
+      {
+        revisionCount: number;
+        lastActivityAt: Date | null;
+        signed: boolean;
+        legacyStatus: "signed" | "needs_resigning" | null;
+        approvalCoverage: Array<{
+          productType: string;
+          status: "open" | "signed" | "needs_resigning";
+          approvalId: number | null;
+          invalidationReason: string | null;
+        }>;
+      }
     >();
 
   const revStats = await db
@@ -179,17 +204,32 @@ export async function quoteStats(quoteIds: number[]) {
     .where(inArray(revisionsTable.quoteId, quoteIds))
     .groupBy(revisionsTable.quoteId);
 
-  const signed = await db
-    .select({ quoteId: signoffsTable.quoteId })
+  const legacySignoffs = await db
+    .select({ quoteId: signoffsTable.quoteId, legacyStatus: signoffsTable.legacyStatus })
     .from(signoffsTable)
     .where(inArray(signoffsTable.quoteId, quoteIds));
+  const coverageRows = await db
+    .select()
+    .from(scopedApprovalCoverageTable)
+    .where(inArray(scopedApprovalCoverageTable.quoteId, quoteIds));
 
   const map = new Map<
     number,
-    { revisionCount: number; lastActivityAt: Date | null; signed: boolean }
+    {
+      revisionCount: number;
+      lastActivityAt: Date | null;
+      signed: boolean;
+      legacyStatus: "signed" | "needs_resigning" | null;
+      approvalCoverage: Array<{
+        productType: string;
+        status: "open" | "signed" | "needs_resigning";
+        approvalId: number | null;
+        invalidationReason: string | null;
+      }>;
+    }
   >();
   for (const id of quoteIds)
-    map.set(id, { revisionCount: 0, lastActivityAt: null, signed: false });
+    map.set(id, { revisionCount: 0, lastActivityAt: null, signed: false, legacyStatus: null, approvalCoverage: [] });
   for (const r of revStats) {
     const entry = map.get(r.quoteId);
     if (entry) {
@@ -197,9 +237,21 @@ export async function quoteStats(quoteIds: number[]) {
       entry.lastActivityAt = r.last ? new Date(r.last) : null;
     }
   }
-  for (const s of signed) {
+  for (const s of legacySignoffs) {
     const entry = map.get(s.quoteId);
-    if (entry) entry.signed = true;
+    if (entry) {
+      entry.signed = s.legacyStatus === "signed";
+      entry.legacyStatus = s.legacyStatus;
+    }
+  }
+  for (const row of coverageRows) {
+    const entry = map.get(row.quoteId);
+    if (entry) entry.approvalCoverage.push({
+      productType: row.productType,
+      status: row.status,
+      approvalId: row.approvalId,
+      invalidationReason: row.invalidationReason,
+    });
   }
   return map;
 }
@@ -210,8 +262,43 @@ export function serializeQuote(
     revisionCount: number;
     lastActivityAt: Date | null;
     signed: boolean;
+    legacyStatus?: "signed" | "needs_resigning" | null;
+    approvalCoverage?: Array<{
+      productType: string;
+      status: "open" | "signed" | "needs_resigning";
+      approvalId: number | null;
+      invalidationReason: string | null;
+    }>;
   },
 ) {
+  const approvalCoverage = quote.categories.map((productType) => {
+    const row = stats?.approvalCoverage?.find((entry) => entry.productType === productType);
+    return {
+      productType,
+      status: row?.status ?? "open",
+      approvalId: row?.approvalId ?? null,
+      invalidationReason: row?.invalidationReason ?? null,
+    };
+  });
+  const fullyScopedSigned =
+    approvalCoverage.length > 0 &&
+    approvalCoverage.every((entry) => entry.status === "signed");
+  const scopedNeedsResigning = approvalCoverage.some((entry) => entry.status === "needs_resigning");
+  const hasPartialScopedCoverage = approvalCoverage.some((entry) => entry.status === "signed");
+  // `signed` and `approvalStatus` share this single current-coverage
+  // predicate. Legacy whole-quote validity is explicit; it is never expanded
+  // into per-product-type rows. A full current scoped set supersedes an old
+  // legacy needs-resigning state.
+  const approvalStatus =
+    fullyScopedSigned
+      ? "signed"
+      : scopedNeedsResigning || stats?.legacyStatus === "needs_resigning"
+        ? "needs_resigning"
+        : stats?.legacyStatus === "signed" || stats?.signed
+          ? "signed"
+          : hasPartialScopedCoverage
+            ? "partial"
+            : "open";
   return {
     id: quote.id,
     quoteNumber: quote.quoteNumber,
@@ -230,7 +317,9 @@ export function serializeQuote(
     updatedAt: quote.updatedAt,
     revisionCount: stats?.revisionCount ?? 0,
     lastActivityAt: stats?.lastActivityAt ?? null,
-    signed: stats?.signed ?? false,
+    signed: approvalStatus === "signed",
+    approvalCoverage,
+    approvalStatus,
     archived: quote.archivedAt !== null,
     archivedAt: quote.archivedAt,
     archiveReason: quote.archiveReason,
@@ -253,7 +342,7 @@ export const SIGNOFF_CONTENT_VERSION = 3;
  */
 export const SIGNOFF_DOCUMENT_FORMAT_VERSION = 2;
 
-type SignoffSubmission = {
+export type SignoffSubmission = {
   customerName: string;
   stakeholderRole: "Homeowner" | "Contractor" | "Architect/Designer" | "Other";
   signatureType: "typed" | "drawn";
@@ -496,71 +585,14 @@ export async function ensureUnsignedDocumentCached(
 export async function ensureLegacySignedDocumentSnapshot(
   quoteId: number,
   expected?: { id: number; signedAt: Date },
-) {
-  return db.transaction(async (tx) => {
-    const quote = await lockQuoteRow(tx, quoteId);
-    if (!quote) return null;
-    const [signoff] = await tx
-      .select()
-      .from(signoffsTable)
-      .where(eq(signoffsTable.quoteId, quoteId))
-      .for("update");
-    if (!signoff) return null;
-    if (
-      expected &&
-      (signoff.id !== expected.id ||
-        signoff.signedAt.getTime() !== expected.signedAt.getTime())
-    ) {
-      return null;
-    }
-    if (signoff.signedDocumentObjectPath) return signoff;
-    const revisions = await tx
-      .select()
-      .from(revisionsTable)
-      .where(
-        and(
-          eq(revisionsTable.quoteId, quoteId),
-          eq(revisionsTable.excludedFromSignoff, false),
-        ),
-      )
-      .orderBy(revisionsTable.createdAt);
-    const manifest = await loadApprovedManifest(tx, quoteId);
-    const document = await createSignedPacketDocument({
-      quote,
-      revisions,
-      signoff: {
-        customerName: signoff.customerName,
-        stakeholderRole: signoff.stakeholderRole,
-        signatureType: signoff.signatureType,
-        signatureData: signoff.signatureData,
-        signedAt: signoff.signedAt,
-      },
-      approvedPacketPages: await loadManifestPdfPages(manifest),
-    });
-    const path = `/objects/signoff-documents/${quoteId}/legacy-${randomUUID()}.pdf`;
-    await packetStorage.saveObjectEntityImmutable(
-      path,
-      document.bytes,
-      "application/pdf",
-    );
-    const [updated] = await tx
-      .update(signoffsTable)
-      .set({
-        signedDocumentObjectPath: path,
-        signedDocumentSha256: document.sha256,
-        signedPacketId: manifest[0]?.packetId ?? signoff.signedPacketId,
-        signedPacketSha256: hashApprovedManifest(manifest),
-      })
-      .where(
-        and(
-          eq(signoffsTable.id, signoff.id),
-          eq(signoffsTable.signedAt, signoff.signedAt),
-          isNull(signoffsTable.signedDocumentObjectPath),
-        ),
-      )
-      .returning();
-    return updated ?? null;
-  });
+): Promise<Signoff | null> {
+  // A pre-snapshot signature has no immutable proof of the quote/revisions it
+  // reviewed. Rendering today's mutable quote and storing it as yesterday's
+  // signed document would fabricate evidence, so legacy rows remain readable
+  // but are never backfilled from current content.
+  void quoteId;
+  void expected;
+  return null;
 }
 
 router.get("/share-info", async (_req, res): Promise<void> => {
@@ -605,15 +637,59 @@ router.get("/quotes", async (req, res): Promise<void> => {
   } else if (status) {
     conditions.push(isNull(quotesTable.archivedAt));
   }
-  // "signed" means a signoff record exists for the quote.
+  // A legacy whole-quote record counts as signed only while its separately
+  // tracked validity is current; scoped rows must cover every active type.
   const signedExists = exists(
     db
       .select({ one: sql`1` })
       .from(signoffsTable)
-      .where(eq(signoffsTable.quoteId, quotesTable.id)),
+    .where(and(eq(signoffsTable.quoteId, quotesTable.id), eq(signoffsTable.legacyStatus, "signed"))),
   );
-  if (status === "signed") conditions.push(signedExists);
-  if (status === "awaiting") conditions.push(not(signedExists));
+  const scopedSignedExists = exists(
+    db.select({ one: sql`1` }).from(scopedApprovalCoverageTable).where(
+      and(
+        eq(scopedApprovalCoverageTable.quoteId, quotesTable.id),
+        eq(scopedApprovalCoverageTable.status, "signed"),
+      ),
+    ),
+  );
+  const needsResigningExists = exists(
+    db.select({ one: sql`1` }).from(scopedApprovalCoverageTable).where(
+      and(
+        eq(scopedApprovalCoverageTable.quoteId, quotesTable.id),
+        eq(scopedApprovalCoverageTable.status, "needs_resigning"),
+      ),
+    ),
+  );
+  const legacyNeedsResigningExists = exists(
+    db.select({ one: sql`1` }).from(signoffsTable).where(
+      and(eq(signoffsTable.quoteId, quotesTable.id), eq(signoffsTable.legacyStatus, "needs_resigning")),
+    ),
+  );
+  // Every active category needs a current coverage row. Legacy whole-quote
+  // records remain readable but are not silently reclassified as scoped
+  // coverage.
+  const fullyScopedSigned = sql`NOT EXISTS (
+    SELECT 1 FROM unnest(${quotesTable.categories}) AS required_type
+    LEFT JOIN scoped_approval_coverage coverage
+      ON coverage.quote_id = ${quotesTable.id}
+      AND coverage.product_type = required_type
+      AND coverage.status = 'signed'
+    WHERE coverage.id IS NULL
+  )`;
+  // Keep filtering aligned with serializeQuote's precedence: a valid legacy
+  // whole-quote approval or complete current scoped coverage is signed;
+  // otherwise stale coverage wins over partial coverage.
+  const currentlySigned = or(signedExists, fullyScopedSigned)!;
+  const hasNeedsResigning = or(needsResigningExists, legacyNeedsResigningExists)!;
+  if (status === "signed") conditions.push(currentlySigned);
+  if (status === "partial") {
+    conditions.push(and(not(currentlySigned), not(hasNeedsResigning), scopedSignedExists)!);
+  }
+  if (status === "needs_resigning") conditions.push(and(not(currentlySigned), hasNeedsResigning)!);
+  if (status === "awaiting") conditions.push(
+    and(not(currentlySigned), not(hasNeedsResigning), not(scopedSignedExists))!,
+  );
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -729,16 +805,22 @@ router.get("/quotes/:id", async (req, res): Promise<void> => {
 
   const stats = await quoteStats([quote.id]);
   const approvedPacket = await loadApprovedManifest(db, quote.id);
+  const coverage = await approvalCoverage(db, quote);
   res.json(
     GetQuoteResponse.parse({
       quote: serializeQuote(quote, stats.get(quote.id)),
       revisions,
-      signoff: signoff ?? null,
+      // Whole-quote records predate structured immutable content snapshots.
+      // Never put their signature into today's mutable quote/revision HTML.
+      // The stored immutable PDF remains downloadable as legacy evidence.
+      signoff: null,
+      legacyApproval: legacyApprovalMetadata(signoff ?? null),
       documentVersion: computeDocumentVersion(
         quote,
         revisions.filter((r) => !r.excludedFromSignoff),
         approvedPacket,
       ),
+      approvalCoverage: coverage,
     }),
   );
 });
@@ -755,12 +837,12 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
     return;
   }
 
-  const before = await loadQuote(params.data.id, res);
-  if (!before) return;
-  if (!guardNotArchived(before, res)) return;
-
   const updates: Partial<QuoteRow> = {};
   const changed: string[] = [];
+  // This is assigned only after SELECT ... FOR UPDATE. Never compute the
+  // change register from a pre-transaction row: a concurrent save otherwise
+  // could escape invalidation or receive an incorrect automatic revision.
+  let diffBase: QuoteRow | null = null;
   // Category tags derived from which spec sections changed, used to
   // auto-tag the generated revision entry.
   const changedSpecCategories = new Set<string>();
@@ -783,8 +865,8 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
   const track = (label: string, key: keyof QuoteRow, value: unknown) => {
     if (value === undefined) return;
     (updates as Record<string, unknown>)[key] = value;
-    if (JSON.stringify(value) !== JSON.stringify(before[key] ?? null))
-      changed.push(`${label}: ${fmtValue(before[key])} → ${fmtValue(value)}`);
+    if (JSON.stringify(value) !== JSON.stringify(diffBase?.[key] ?? null))
+      changed.push(`${label}: ${fmtValue(diffBase?.[key])} → ${fmtValue(value)}`);
   };
 
   // Specs are nested (category → fields), so diff them field by field for a
@@ -792,7 +874,7 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
   const trackSpecs = (value: unknown) => {
     if (value === undefined) return;
     (updates as Record<string, unknown>).specs = value;
-    const prev = (before.specs ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
+    const prev = (diffBase?.specs ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
     const next = (value ?? {}) as Record<string, Record<string, unknown> | null | undefined>;
     for (const category of new Set([...Object.keys(prev), ...Object.keys(next)])) {
       const prevValue = prev[category];
@@ -823,14 +905,6 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
     }
   };
 
-  track("quote number", "quoteNumber", parsed.data.quoteNumber);
-  track("customer name", "customerName", parsed.data.customerName);
-  track("project name", "projectName", parsed.data.projectName);
-  track("job address", "jobAddress", parsed.data.jobAddress);
-  track("categories", "categories", parsed.data.categories);
-  trackSpecs(parsed.data.specs);
-  track("notes", "notes", parsed.data.notes);
-
   const profile = await getUserProfile(req.userId!);
 
   // Update, signoff invalidation, and the auto revision entry are atomic so
@@ -841,6 +915,20 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
     // pre-transaction read.
     const current = await lockQuoteRow(tx, params.data.id);
     if (!current || current.archivedAt) return null;
+    diffBase = current;
+    // Rebuild both the mutation and auto-revision content from the locked
+    // row. This also makes a true no-op leave updatedAt/documentVersion alone.
+    for (const key of Object.keys(updates)) delete (updates as Record<string, unknown>)[key];
+    changed.length = 0;
+    changedSpecCategories.clear();
+    track("quote number", "quoteNumber", parsed.data.quoteNumber);
+    track("customer name", "customerName", parsed.data.customerName);
+    track("project name", "projectName", parsed.data.projectName);
+    track("job address", "jobAddress", parsed.data.jobAddress);
+    track("categories", "categories", parsed.data.categories);
+    trackSpecs(parsed.data.specs);
+    track("notes", "notes", parsed.data.notes);
+    if (!changed.length) return current;
     const [updated] = await tx
       .update(quotesTable)
       .set(updates)
@@ -848,9 +936,51 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
       .returning();
     if (!updated) return null;
 
-    // Any edit to the quote invalidates a previously captured customer
-    // signoff: the signed document no longer reflects the current specs.
-    await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, updated.id));
+    // Immutable legacy signoffs and scoped approval evidence are never
+    // deleted. Only the changed product types lose current coverage. Shared
+    // quote fields/category topology affect every active type.
+    const categoryTopologyChanged =
+      parsed.data.categories !== undefined &&
+      JSON.stringify(current.categories) !== JSON.stringify(updated.categories);
+    // Removed types remain as invalidated coverage rows instead of silently
+    // disappearing with their approval; newly added types are open until
+    // signed. A category topology change is shared approval content.
+    const sharedQuoteChanged =
+      current.quoteNumber !== updated.quoteNumber ||
+      current.customerName !== updated.customerName ||
+      current.projectName !== updated.projectName ||
+      current.jobAddress !== updated.jobAddress ||
+      current.notes !== updated.notes;
+    // Compute this once from the locked current row and reuse it below. An
+    // edit to a schema-valid but inactive spec section has no active type tag,
+    // so its auto revision is general and must invalidate every active scope.
+    const effectiveAutoRevisionCategories =
+      sharedQuoteChanged || categoryTopologyChanged
+        ? null
+        : sanitizeRevisionCategories([...changedSpecCategories], updated);
+    const invalidatedSpecCategories =
+      changedSpecCategories.size > 0 && !effectiveAutoRevisionCategories
+        ? [...new Set([...current.categories, ...updated.categories])]
+        : effectiveAutoRevisionCategories ?? [];
+    if (changed.length) {
+      const affected = quoteApprovalImpact({
+        beforeCategories: current.categories,
+        afterCategories: updated.categories,
+        changedSpecTypes: invalidatedSpecCategories,
+        sharedChanged: sharedQuoteChanged,
+        hasChanges: changed.length > 0,
+      });
+      await invalidateApprovalCoverage(
+        tx,
+        updated.id,
+        affected,
+        categoryTopologyChanged
+          ? "Quote product types changed."
+          : sharedQuoteChanged
+            ? "Shared quote details changed."
+            : "Approved specifications changed.",
+      );
+    }
 
     // Log the edit in the revision register automatically.
     if (changed.length > 0) {
@@ -859,12 +989,9 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
         authorId: req.userId!,
         authorName: profile.name,
         note: `Edited quote details:\n${changed.join("\n")}`,
-        // Auto-tag with the categories whose specs changed (limited to the
-        // quote's categories after the edit; empty means "general").
-        categories: sanitizeRevisionCategories(
-          [...changedSpecCategories],
-          updated,
-        ),
+        // A combined note containing shared/header/category changes applies
+        // to every scope, even when it also describes type-specific specs.
+        categories: effectiveAutoRevisionCategories,
       });
     }
     return updated;
@@ -924,7 +1051,7 @@ router.post(
 
       // The archive entry appears in the revision log, so any existing
       // signature no longer covers what the signer reviewed — invalidate it.
-      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, updated.id));
+      await invalidateApprovalCoverage(tx, updated.id, updated.categories, "Quote archived.");
       await tx.insert(revisionsTable).values({
         quoteId: updated.id,
         authorId: req.userId!,
@@ -985,7 +1112,7 @@ router.post(
 
       // The restore entry appears in the revision log, so any existing
       // signature no longer covers what the signer reviewed — invalidate it.
-      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, updated.id));
+      await invalidateApprovalCoverage(tx, updated.id, updated.categories, "Quote restored.");
       await tx.insert(revisionsTable).values({
         quoteId: updated.id,
         authorId: req.userId!,
@@ -1201,7 +1328,14 @@ router.post(
           .delete(revisionDraftsTable)
           .where(eq(revisionDraftsTable.id, draft.id));
       }
-      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, quote.id));
+      // A tagged revision only invalidates matching coverage. General/empty
+      // tags are explicitly shared and invalidate every type.
+      await invalidateApprovalCoverage(
+        tx,
+        quote.id,
+        categories ?? current.categories,
+        "A revision included in this approval changed.",
+      );
       const [rev] = await tx
         .insert(revisionsTable)
         .values({
@@ -1273,7 +1407,12 @@ router.post(
       // committed between the pre-transaction check and lock acquisition.
       const current = await lockQuoteRow(tx, quote.id);
       if (!current || current.archivedAt) return null;
-      await tx.delete(signoffsTable).where(eq(signoffsTable.quoteId, quote.id));
+      await invalidateApprovalCoverage(
+        tx,
+        quote.id,
+        sanitizeRevisionCategories(parsed.data.categories, current) ?? current.categories,
+        "A revision included in this approval changed.",
+      );
       const [rev] = await tx
         .insert(revisionsTable)
         .values({
@@ -1335,9 +1474,12 @@ router.patch(
         )
         .returning();
       if (!rev) return { kind: "notFound" as const };
-      await tx
-        .delete(signoffsTable)
-        .where(eq(signoffsTable.quoteId, params.data.id));
+      await invalidateApprovalCoverage(
+        tx,
+        params.data.id,
+        rev.categories?.length ? rev.categories : current.categories,
+        "Revision signoff inclusion changed.",
+      );
       return { kind: "ok" as const, rev };
     });
 
@@ -1503,6 +1645,112 @@ router.get("/quotes/:id/signoff", async (req, res): Promise<void> => {
   res.json(signoff ?? null);
 });
 
+// ---------- Scoped product-type approvals ----------
+// These endpoints are intentionally hand-validated during the additive
+// transition. Their OpenAPI contract is the source for generated client types;
+// legacy whole-quote signoff endpoints above remain unchanged.
+router.get("/quotes/:id/scoped-approvals", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    res.status(400).json({ error: "Invalid quote id." });
+    return;
+  }
+  const quote = await loadQuote(id, res);
+  if (!quote) return;
+  const [requests, approvals, coverage] = await Promise.all([
+    db.select().from(scopedApprovalRequestsTable).where(eq(scopedApprovalRequestsTable.quoteId, id)).orderBy(desc(scopedApprovalRequestsTable.createdAt)),
+    db.select().from(scopedApprovalsTable).where(eq(scopedApprovalsTable.quoteId, id)).orderBy(desc(scopedApprovalsTable.signedAt)),
+    approvalCoverage(db, quote),
+  ]);
+  const approvalByRequest = new Map(approvals.map((approval) => [approval.requestId, approval]));
+  res.json({
+    approvals: requests.map((request) => {
+      const approval = approvalByRequest.get(request.id);
+      const snapshot = request.snapshot as { notIncludedProductTypes?: string[] };
+      return {
+        id: request.id,
+        approvalId: approval?.id ?? null,
+        token: request.token,
+        productTypes: request.productTypes,
+        notIncludedProductTypes: snapshot.notIncludedProductTypes ?? [],
+        documentVersion: request.documentVersion,
+        publicPath: `/public/scoped-signoff/${request.token}`,
+        status: approval ? "signed" : request.status === "open" ? "open" : "needs_resigning",
+        signedAt: approval?.signedAt ?? null,
+      };
+    }),
+    coverage,
+  });
+});
+
+router.delete("/quotes/:id/scoped-approvals/:requestId", async (req: AuthedRequest, res): Promise<void> => {
+  const quoteId = Number(req.params.id);
+  const requestId = Number(req.params.requestId);
+  if (!Number.isInteger(quoteId) || quoteId < 1 || !Number.isInteger(requestId) || requestId < 1) {
+    res.status(400).json({ error: "Invalid quote or scoped approval request id." });
+    return;
+  }
+  const outcome = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, quoteId);
+    if (!quote) return "notFound" as const;
+    const [request] = await tx
+      .select({ id: scopedApprovalRequestsTable.id, status: scopedApprovalRequestsTable.status })
+      .from(scopedApprovalRequestsTable)
+      .where(and(eq(scopedApprovalRequestsTable.id, requestId), eq(scopedApprovalRequestsTable.quoteId, quoteId)))
+      .for("update");
+    if (!request) return "notFound" as const;
+    // A signed request has immutable evidence and is never revoked/deleted.
+    if (request.status !== "open") return "notOpen" as const;
+    await tx.update(scopedApprovalRequestsTable).set({ status: "revoked" })
+      .where(eq(scopedApprovalRequestsTable.id, request.id));
+    return "ok" as const;
+  });
+  if (outcome === "notFound") { res.status(404).json({ error: "Scoped approval request not found." }); return; }
+  if (outcome === "notOpen") { res.status(409).json({ error: "Only an open scoped approval request can be cancelled." }); return; }
+  res.sendStatus(204);
+});
+
+router.post("/quotes/:id/scoped-approvals", async (req: AuthedRequest, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const rawScope = (req.body as { productTypes?: unknown } | undefined)?.productTypes;
+  if (!Number.isInteger(id) || id < 1 || !Array.isArray(rawScope)) {
+    res.status(400).json({ error: "A non-empty productTypes array is required." });
+    return;
+  }
+  const outcome = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, id);
+    if (!quote) return { kind: "notFound" as const };
+    if (quote.archivedAt) return { kind: "archived" as const };
+    const productTypes = normalizedScope(rawScope, quote);
+    if (!productTypes) return { kind: "invalid" as const };
+    const open = await tx.select({ productTypes: scopedApprovalRequestsTable.productTypes })
+      .from(scopedApprovalRequestsTable)
+      .where(and(eq(scopedApprovalRequestsTable.quoteId, id), eq(scopedApprovalRequestsTable.status, "open")));
+    if (open.some((request) => request.productTypes.some((type) => productTypes.includes(type)))) {
+      return { kind: "overlap" as const };
+    }
+    const built = await buildScopedSnapshot(tx, quote, productTypes);
+    if (built.unclassifiedPacket) return { kind: "unclassified" as const };
+    const documentVersion = scopedDocumentVersion(built.snapshot);
+    const token = randomBytes(24).toString("base64url");
+    const [request] = await tx.insert(scopedApprovalRequestsTable).values({
+      quoteId: id, token, productTypes, snapshot: built.snapshot, documentVersion,
+      createdById: req.userId!,
+    }).returning();
+    return { kind: "ok" as const, request: request!, snapshot: built.snapshot };
+  });
+  if (outcome.kind === "notFound") { res.status(404).json({ error: "Quote not found" }); return; }
+  if (outcome.kind === "archived") { res.status(400).json({ error: "This quote is archived. Restore it to request approval." }); return; }
+  if (outcome.kind === "invalid") { res.status(400).json({ error: "productTypes must be a unique non-empty subset of this quote's product types." }); return; }
+  if (outcome.kind === "unclassified") { res.status(400).json({ error: "Assign a product type to every approved manufacturer packet before creating a scoped approval." }); return; }
+  if (outcome.kind === "overlap") { res.status(409).json({ error: "An open scoped approval already overlaps one or more selected product types." }); return; }
+  res.status(201).json({
+    id: outcome.request.id, token: outcome.request.token, productTypes: outcome.request.productTypes,
+    notIncludedProductTypes: outcome.snapshot.notIncludedProductTypes,
+    documentVersion: outcome.request.documentVersion, publicPath: `/public/scoped-signoff/${outcome.request.token}`, status: "open",
+  });
+});
+
 router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
   const params = SaveSignoffParams.safeParse(req.params);
   if (!params.success) {
@@ -1531,6 +1779,12 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
   const signoff = await db.transaction(async (tx) => {
     const current = await lockQuoteRow(tx, quote.id);
     if (!current || current.archivedAt) return null;
+    const [existing] = await tx
+      .select({ id: signoffsTable.id })
+      .from(signoffsTable)
+      .where(eq(signoffsTable.quoteId, quote.id))
+      .for("update");
+    if (existing) return "alreadySigned" as const;
     const included = await loadIncludedRevisions(tx, quote.id);
     const approvedPacket = await loadApprovedManifest(tx, quote.id);
     if (
@@ -1583,24 +1837,16 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
         signedDocumentSha256: signedDocument.sha256,
         signedAt,
       })
-      .onConflictDoUpdate({
-        target: signoffsTable.quoteId,
-        set: {
-          customerName: validated.customerName,
-          stakeholderRole: parsed.data.stakeholderRole,
-          signatureType: parsed.data.signatureType,
-          signatureData: validated.signatureData,
-          signedAt,
-          signedPacketId: approvedPacket[0]?.packetId ?? null,
-          signedPacketSha256: approvedManifestHash,
-          signedDocumentObjectPath,
-          signedDocumentSha256: signedDocument.sha256,
-        },
-      })
       .returning();
     return row;
   });
 
+  if (signoff === "alreadySigned") {
+    res.status(409).json({
+      error: "This legacy signoff is immutable. Create a new scoped approval for a replacement signature.",
+    });
+    return;
+  }
   if (!signoff) {
     res.status(409).json({
       error:
@@ -1619,9 +1865,11 @@ router.delete("/quotes/:id/signoff", async (req, res): Promise<void> => {
     return;
   }
 
-  await db
-    .delete(signoffsTable)
-    .where(eq(signoffsTable.quoteId, params.data.id));
+  await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, params.data.id);
+    if (!quote) return;
+    await invalidateLegacyApproval(tx, quote.id, "Legacy approval was withdrawn; original evidence is retained.");
+  });
 
   res.sendStatus(204);
 });
@@ -1633,9 +1881,32 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
   const [revisionCount] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(revisionsTable);
+  // A current scoped approval is complete only when every active quote type
+  // has signed coverage. Keep historical whole-quote signoffs in this summary
+  // as explicit legacy coverage; do not require or infer per-type rows for
+  // them. This is deliberately a quote count, not an approval-row count, so a
+  // combined approval (or replacement approval) cannot inflate the dashboard.
   const [signedCount] = await db
     .select({ count: sql<number>`count(*)::int` })
-    .from(signoffsTable);
+    .from(quotesTable)
+    .where(
+      or(
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(signoffsTable)
+            .where(and(eq(signoffsTable.quoteId, quotesTable.id), eq(signoffsTable.legacyStatus, "signed"))),
+        ),
+        sql`NOT EXISTS (
+          SELECT 1 FROM unnest(${quotesTable.categories}) AS required_type
+          LEFT JOIN scoped_approval_coverage coverage
+            ON coverage.quote_id = ${quotesTable.id}
+            AND coverage.product_type = required_type
+            AND coverage.status = 'signed'
+          WHERE coverage.id IS NULL
+        )`,
+      )!,
+    );
 
   const totalQuotes = quoteCount?.count ?? 0;
   const signedQuotes = signedCount?.count ?? 0;

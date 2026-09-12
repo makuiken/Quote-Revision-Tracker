@@ -4,6 +4,7 @@ import {
   db,
   manufacturerPacketManifestTable,
   manufacturerPacketsTable,
+  manufacturerRedactionTemplatesTable,
   quotesTable,
   type ManufacturerPacket,
 } from "@workspace/db";
@@ -15,6 +16,7 @@ import {
   recoveryAction,
 } from "./recovery";
 import type { PacketPageAnalysis, RedactionRect } from "./types";
+import { canonicalManufacturer, matchingTemplateRedactions } from "./templates";
 
 const storage = new ObjectStorageService();
 const MAX_PROCESSING_ATTEMPTS = 3;
@@ -31,12 +33,21 @@ export function serializePacket(packet: ManufacturerPacket) {
     id: packet.id,
     quoteId: packet.quoteId,
     manufacturer: packet.manufacturer,
+    productType: packet.productType,
     detectedManufacturer: packet.detectedManufacturer,
     originalName: packet.originalName,
     status: packet.status,
     pageCount: packet.pageCount,
     analysis: packet.analysis,
     manualRedactions: packet.manualRedactions,
+    appliedTemplate: packet.appliedRedactionTemplateId
+      ? {
+          id: packet.appliedRedactionTemplateId,
+          name: packet.appliedRedactionTemplateName ?? "",
+          manufacturer: packet.manufacturer!,
+          productType: packet.productType!,
+        }
+      : null,
     failureMessage: packet.failureMessage,
     createdAt: packet.createdAt,
     updatedAt: packet.updatedAt,
@@ -135,6 +146,47 @@ function validAnalysis(pages: PacketPageAnalysis[]): boolean {
   );
 }
 
+type ProcessingPacketUpdate = Partial<typeof manufacturerPacketsTable.$inferInsert>;
+
+/**
+ * All processing metadata writes use the same quote-first lock discipline as
+ * packet mutations. This prevents a product-type/manifest mutation from
+ * racing a worker completion.
+ */
+async function updateProcessingPacket(
+  quoteId: number,
+  packetId: number,
+  attemptToken: string,
+  values: ProcessingPacketUpdate,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [quote] = await tx
+      .select({ archivedAt: quotesTable.archivedAt })
+      .from(quotesTable)
+      .where(eq(quotesTable.id, quoteId))
+      .for("update");
+    if (!quote || quote.archivedAt) return false;
+    const [packet] = await tx
+      .select({ id: manufacturerPacketsTable.id })
+      .from(manufacturerPacketsTable)
+      .where(
+        and(
+          eq(manufacturerPacketsTable.id, packetId),
+          eq(manufacturerPacketsTable.quoteId, quoteId),
+          eq(manufacturerPacketsTable.status, "processing"),
+          eq(manufacturerPacketsTable.processingAttemptToken, attemptToken),
+        ),
+      )
+      .for("update");
+    if (!packet) return false;
+    await tx
+      .update(manufacturerPacketsTable)
+      .set(values)
+      .where(eq(manufacturerPacketsTable.id, packetId));
+    return true;
+  });
+}
+
 /**
  * Claim then process one durable job. Calling this without awaiting is safe:
  * the DB transition to processing is persisted first and retry can recover an
@@ -142,18 +194,31 @@ function validAnalysis(pages: PacketPageAnalysis[]): boolean {
  */
 export async function processPacket(packetId: number): Promise<void> {
   const claimed = await db.transaction(async (tx) => {
-    const [packet] = await tx
-      .select()
+    // The identity read is deliberately non-locking: it only discovers the
+    // parent key. Actual row locks are always acquired quote first, packet
+    // second throughout the packet lifecycle.
+    const [identity] = await tx
+      .select({ quoteId: manufacturerPacketsTable.quoteId })
       .from(manufacturerPacketsTable)
-      .where(eq(manufacturerPacketsTable.id, packetId))
-      .for("update");
-    if (!packet || packet.status !== "queued") return null;
+      .where(eq(manufacturerPacketsTable.id, packetId));
+    if (!identity) return null;
     const [quote] = await tx
       .select({ archivedAt: quotesTable.archivedAt })
       .from(quotesTable)
-      .where(eq(quotesTable.id, packet.quoteId))
+      .where(eq(quotesTable.id, identity.quoteId))
       .for("update");
     if (!quote || quote.archivedAt) return null;
+    const [packet] = await tx
+      .select()
+      .from(manufacturerPacketsTable)
+      .where(
+        and(
+          eq(manufacturerPacketsTable.id, packetId),
+          eq(manufacturerPacketsTable.quoteId, identity.quoteId),
+        ),
+      )
+      .for("update");
+    if (!packet || packet.status !== "queued") return null;
     if (packet.attemptCount >= MAX_PROCESSING_ATTEMPTS) {
       await tx
         .update(manufacturerPacketsTable)
@@ -203,35 +268,51 @@ export async function processPacket(packetId: number): Promise<void> {
       throw new Error("PDF analysis returned invalid or unsupported page geometry.");
     }
 
-    // A null value means the reviewer has not explicitly accepted/changed the
-    // suggestions. Never sanitize or publish based on automatic suggestions.
+    // Null means the reviewer has not explicitly accepted/changed the
+    // suggestions. An empty object is a valid explicit review with no
+    // redactions. A template can prefill review, but never sanitize or publish.
     // packetEngine's compatibility interface is intersected with its legacy
     // type in the currently published declaration; the worker adapter returns
     // this profile alongside pages at runtime.
     const detectedProfile = (
       analysis as typeof analysis & { profile: string }
     ).profile;
-    if (claimed.manualRedactions === null) {
-      await db
-        .update(manufacturerPacketsTable)
-        .set({
-          status: "needs_review",
-          analysis: analysis.pages,
-          detectedManufacturer:
-            detectedProfile === "unknown" ? null : detectedProfile,
-          pageCount: analysis.pages.length,
-          processingStartedAt: null,
-        })
-        .where(
-          and(
-            eq(manufacturerPacketsTable.id, claimed.id),
-            eq(manufacturerPacketsTable.status, "processing"),
-            eq(
-              manufacturerPacketsTable.processingAttemptToken,
-              attemptToken,
-            ),
-          ),
-        );
+    const hasManualReview = claimed.manualRedactions !== null;
+    if (!hasManualReview) {
+      const [template] = claimed.manufacturer && claimed.productType
+        ? await db
+            .select()
+            .from(manufacturerRedactionTemplatesTable)
+            .where(
+              and(
+                eq(
+                  manufacturerRedactionTemplatesTable.manufacturerCanonical,
+                  canonicalManufacturer(claimed.manufacturer),
+                ),
+                eq(manufacturerRedactionTemplatesTable.productType, claimed.productType),
+                eq(manufacturerRedactionTemplatesTable.active, true),
+              ),
+            )
+            .limit(1)
+        : [];
+      const manualFromTemplate = template
+        ? matchingTemplateRedactions(analysis.pages, template.pages)
+        : null;
+      await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
+        status: "needs_review",
+        analysis: analysis.pages,
+        manualRedactions: manualFromTemplate
+          ? manualFromTemplate
+          : claimed.manualRedactions,
+        appliedRedactionTemplateId:
+          manualFromTemplate ? template!.id : null,
+        appliedRedactionTemplateName:
+          manualFromTemplate ? template!.name : null,
+        detectedManufacturer:
+          detectedProfile === "unknown" ? null : detectedProfile,
+        pageCount: analysis.pages.length,
+        processingStartedAt: null,
+      });
       return;
     }
 
@@ -267,47 +348,23 @@ export async function processPacket(packetId: number): Promise<void> {
       ),
     );
     const hash = createHash("sha256").update(sanitized.pdfBytes).digest("hex");
-    await db
-      .update(manufacturerPacketsTable)
-      .set({
-        status: "ready_for_approval",
-        analysis: analysis.pages,
-          detectedManufacturer:
-            detectedProfile === "unknown" ? null : detectedProfile,
-        pageCount: sanitized.pages.length,
-        sanitizedPdfObjectPath: pdfPath,
-        sanitizedPdfSha256: hash,
-        sanitizedPageObjectPaths: pagePaths,
-        processingStartedAt: null,
-      })
-      .where(
-        and(
-          eq(manufacturerPacketsTable.id, claimed.id),
-          eq(manufacturerPacketsTable.status, "processing"),
-            eq(
-              manufacturerPacketsTable.processingAttemptToken,
-              attemptToken,
-            ),
-        ),
-      );
+    await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
+      status: "ready_for_approval",
+      analysis: analysis.pages,
+      detectedManufacturer:
+        detectedProfile === "unknown" ? null : detectedProfile,
+      pageCount: sanitized.pages.length,
+      sanitizedPdfObjectPath: pdfPath,
+      sanitizedPdfSha256: hash,
+      sanitizedPageObjectPaths: pagePaths,
+      processingStartedAt: null,
+    });
   } catch (error) {
-    await db
-      .update(manufacturerPacketsTable)
-      .set({
-        status: "failed",
-        processingStartedAt: null,
-        failureMessage: cleanError(error),
-      })
-      .where(
-        and(
-          eq(manufacturerPacketsTable.id, claimed.id),
-          eq(manufacturerPacketsTable.status, "processing"),
-          eq(
-            manufacturerPacketsTable.processingAttemptToken,
-            attemptToken,
-          ),
-        ),
-      );
+    await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
+      status: "failed",
+      processingStartedAt: null,
+      failureMessage: cleanError(error),
+    });
   }
 }
 
@@ -346,18 +403,28 @@ export async function recoverPacketJobs(now = Date.now()): Promise<void> {
     .limit(RECOVERY_BATCH_SIZE);
   for (const candidate of candidates) {
     const outcome = await db.transaction(async (tx) => {
-      const [packet] = await tx
-        .select()
+      const [identity] = await tx
+        .select({ quoteId: manufacturerPacketsTable.quoteId })
         .from(manufacturerPacketsTable)
-        .where(eq(manufacturerPacketsTable.id, candidate.id))
-        .for("update");
-      if (!packet) return null;
+        .where(eq(manufacturerPacketsTable.id, candidate.id));
+      if (!identity) return null;
       const [quote] = await tx
         .select({ archivedAt: quotesTable.archivedAt })
         .from(quotesTable)
-        .where(eq(quotesTable.id, packet.quoteId))
+        .where(eq(quotesTable.id, identity.quoteId))
         .for("update");
       if (!quote || quote.archivedAt) return null;
+      const [packet] = await tx
+        .select()
+        .from(manufacturerPacketsTable)
+        .where(
+          and(
+            eq(manufacturerPacketsTable.id, candidate.id),
+            eq(manufacturerPacketsTable.quoteId, identity.quoteId),
+          ),
+        )
+        .for("update");
+      if (!packet) return null;
       const action = recoveryAction(
         packet,
         false,

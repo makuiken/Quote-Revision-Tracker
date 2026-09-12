@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ManufacturerPacketUploadInputContentType } from './manufacturerPacketUploadInputContentType';
+import type { ManufacturerPacketUploadInputProductType } from './manufacturerPacketUploadInputProductType';
 
 export interface ManufacturerPacketUploadInput {
   /**
@@ -20,8 +21,9 @@ export interface ManufacturerPacketUploadInput {
   size: number;
   contentType: ManufacturerPacketUploadInputContentType;
   /**
+     * @minLength 1
      * @maxLength 120
-     * @nullable
      */
-  manufacturer?: string | null;
+  manufacturer: string;
+  productType: ManufacturerPacketUploadInputProductType;
 }

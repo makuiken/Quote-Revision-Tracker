@@ -163,6 +163,117 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /admin/manufacturer-redaction-templates:
+    get:
+      operationId: listManufacturerRedactionTemplates
+      tags: [admin]
+      summary: List manufacturer redaction templates (admin only)
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
+    post:
+      operationId: createManufacturerRedactionTemplate
+      tags: [admin]
+      summary: Create a redaction template from an analyzed packet (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplateFromPacketInput" }
+      responses:
+        "201":
+          description: Created template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
+        "400":
+          description: Packet is not analyzed or has no manual redaction boxes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: A template already exists for this manufacturer and product type
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/manufacturer-redaction-templates/{id}:
+    patch:
+      operationId: updateManufacturerRedactionTemplate
+      tags: [admin]
+      summary: Update template metadata or active state (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplateUpdateInput" }
+      responses:
+        "200":
+          description: Updated template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteManufacturerRedactionTemplate
+      tags: [admin]
+      summary: Delete a manufacturer redaction template (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Deleted }
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/manufacturer-redaction-templates/{id}/from-packet:
+    put:
+      operationId: replaceManufacturerRedactionTemplateFromPacket
+      tags: [admin]
+      summary: Replace template geometry from an analyzed packet (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplateFromPacketInput" }
+      responses:
+        "200":
+          description: Updated template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
+        "400":
+          description: Packet is not analyzed or has no manual redaction boxes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Template or packet not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /admin/field-options/{category}/{field}/dependent:
     put:
       operationId: setDependentFieldOptions
@@ -301,10 +412,12 @@ paths:
           required: false
           schema:
             type: string
-            enum: [active, awaiting, signed, archived]
+            enum: [active, awaiting, signed, partial, needs_resigning, archived]
           description: >
             Filter by status. "active" = not archived; "awaiting" = active and
-            not signed; "signed" = active and signed; "archived" = archived
+            not signed; "signed" = active and fully signed; "partial" = at
+            least one but not every active type signed; "needs_resigning" =
+            at least one type invalidated; "archived" = archived
             only. Omitted = all quotes including archived.
         - name: category
           in: query
@@ -771,6 +884,105 @@ paths:
       responses:
         "204":
           description: Cleared
+  /quotes/{id}/scoped-approvals:
+    get:
+      operationId: listScopedApprovals
+      tags: [signoff]
+      summary: List immutable scoped approval requests and current per-type coverage
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "200":
+          description: Scoped approval history and coverage
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopedApprovalsResponse" }
+    post:
+      operationId: createScopedApproval
+      tags: [signoff]
+      summary: Lock and issue a product-type-scoped customer approval link
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopedApprovalInput" }
+      responses:
+        "201":
+          description: Scoped approval request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopedApproval" }
+        "400":
+          description: Invalid scope or an unclassified manufacturer packet requires assignment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: An open request overlaps the selected scope
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /quotes/{id}/scoped-approvals/{requestId}:
+    delete:
+      operationId: cancelScopedApproval
+      tags: [signoff]
+      summary: Cancel an open scoped approval request without deleting audit history
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Open request revoked
+        "404":
+          description: Quote or request not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Request is already signed, stale, or revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /public/scoped-signoff/{token}:
+    get:
+      operationId: getPublicScopedSignoff
+      tags: [signoff]
+      summary: View an immutable product-type-scoped signoff request
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Scoped signoff content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopedSignoffDetail" }
+    put:
+      operationId: savePublicScopedSignoff
+      tags: [signoff]
+      summary: Sign the locked scoped request; stale scopes are rejected
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignoffInput" }
+      responses:
+        "200":
+          description: Immutable scoped approval evidence
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Signoff" }
+        "409":
+          description: The locked scoped content is stale or was already signed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /quotes/{id}/share-link:
     post:
       operationId: createShareLink
@@ -1262,6 +1474,44 @@ paths:
         - $ref: "#/components/parameters/PacketId"
       responses:
         "204": { description: Deleted }
+  /quotes/{id}/manufacturer-packets/{packetId}/product-type:
+    patch:
+      operationId: setManufacturerPacketProductType
+      tags: [manufacturer-packets]
+      summary: Explicitly assign a packet to an active quote product type
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PacketProductTypeInput" }
+      responses:
+        "200":
+          description: Updated packet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
+  /quotes/{id}/manufacturer-packets/{packetId}/manufacturer:
+    patch:
+      operationId: setManufacturerPacketManufacturer
+      tags: [manufacturer-packets]
+      summary: Set the explicit manufacturer for a legacy or awaiting-upload packet
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PacketManufacturerInput" }
+      responses:
+        "200":
+          description: Updated packet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerPacket" }
   /quotes/{id}/manufacturer-packets/{packetId}/complete-upload:
     post:
       operationId: completeManufacturerPacketUpload
@@ -1390,6 +1640,23 @@ paths:
           content:
             application/pdf:
               schema: { type: string, format: binary }
+  /quotes/{id}/scoped-approvals/{approvalId}/document:
+    get:
+      operationId: getScopedApprovalDocument
+      tags: [signoff]
+      summary: Download an immutable signed scoped approval PDF
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Immutable scoped approval PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
   /quotes/{id}/signoff/document/unsigned:
     get:
       operationId: getUnsignedSignoffDocument
@@ -1416,6 +1683,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PublicManufacturerPacket" }
+  /public/scoped-signoff/{token}/packet:
+    get:
+      operationId: getPublicScopedManufacturerPacket
+      tags: [manufacturer-packets]
+      summary: Get scoped sanitized packet metadata
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Scoped packet metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicManufacturerPacket" }
   /public/signoff/{token}/packet/pages/{pageNumber}:
     get:
       operationId: getPublicManufacturerPacketPage
@@ -1435,6 +1715,24 @@ paths:
           content:
             image/png:
               schema: { type: string, format: binary }
+  /public/scoped-signoff/{token}/packet/pages/{pageNumber}:
+    get:
+      operationId: getPublicScopedManufacturerPacketPage
+      tags: [manufacturer-packets]
+      summary: Stream a page from the locked scoped packet only
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+        - $ref: "#/components/parameters/PacketPageNumber"
+        - name: documentVersion
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Approved scoped sanitized PNG page
+          content:
+            image/png:
+              schema: { type: string, format: binary }
   /public/signoff/{token}/document:
     get:
       operationId: getPublicSignoffDocument
@@ -1445,6 +1743,19 @@ paths:
       responses:
         "200":
           description: Combined signoff PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+  /public/scoped-signoff/{token}/document:
+    get:
+      operationId: getPublicScopedSignoffDocument
+      tags: [signoff]
+      summary: Download the locked unsigned or immutable signed scoped PDF
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Scoped signoff PDF
           content:
             application/pdf:
               schema: { type: string, format: binary }
@@ -1501,6 +1812,9 @@ components:
         id: { type: integer }
         quoteId: { type: integer }
         manufacturer: { type: ["string", "null"] }
+        productType:
+          type: ["string", "null"]
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork, null]
         detectedManufacturer: { type: ["string", "null"] }
         originalName: { type: string }
         status: { $ref: "#/components/schemas/PacketStatus" }
@@ -1513,11 +1827,75 @@ components:
           additionalProperties:
             type: array
             items: { $ref: "#/components/schemas/PacketRect" }
+        appliedTemplate:
+          oneOf:
+            - $ref: "#/components/schemas/AppliedManufacturerRedactionTemplate"
+            - type: "null"
         failureMessage: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         approvedAt: { type: ["string", "null"], format: date-time }
       required: [id, quoteId, originalName, status, createdAt, updatedAt]
+    AppliedManufacturerRedactionTemplate:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        manufacturer: { type: string }
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+      required: [id, name, manufacturer, productType]
+    ManufacturerRedactionTemplatePage:
+      type: object
+      properties:
+        pageNumber: { type: integer, minimum: 1 }
+        width: { type: number, exclusiveMinimum: 0 }
+        height: { type: number, exclusiveMinimum: 0 }
+        rects:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/PacketRect" }
+      required: [pageNumber, width, height, rects]
+    ManufacturerRedactionTemplate:
+      type: object
+      properties:
+        id: { type: integer }
+        manufacturer:
+          type: string
+          description: Display manufacturer value; matching is canonical and case-insensitive.
+        manufacturerCanonical: { type: string }
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+        name: { type: string }
+        active: { type: boolean }
+        pages:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: "#/components/schemas/ManufacturerRedactionTemplatePage" }
+        createdById: { type: string }
+        createdByName: { type: string }
+        updatedById: { type: string }
+        updatedByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, manufacturer, manufacturerCanonical, productType, name, active, pages, createdById, createdByName, updatedById, updatedByName, createdAt, updatedAt]
+    ManufacturerRedactionTemplateFromPacketInput:
+      type: object
+      properties:
+        quoteId: { type: integer, minimum: 1 }
+        packetId: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        active: { type: boolean }
+      required: [quoteId, packetId, name]
+    ManufacturerRedactionTemplateUpdateInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        active: { type: boolean }
+      minProperties: 1
     PublicManufacturerPacket:
       type: object
       properties:
@@ -1525,6 +1903,11 @@ components:
         manufacturer: { type: ["string", "null"] }
         pageCount: { type: integer }
         approvedAt: { type: string, format: date-time }
+        productTypes:
+          type: array
+          items:
+            type: string
+            enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
       required: [id, pageCount, approvedAt]
     ManufacturerPacketUploadInput:
       type: object
@@ -1532,8 +1915,23 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         size: { type: integer, minimum: 1, maximum: 41943040 }
         contentType: { type: string, enum: [application/pdf] }
-        manufacturer: { type: ["string", "null"], maxLength: 120 }
-      required: [name, size, contentType]
+        manufacturer: { type: string, minLength: 1, maxLength: 120 }
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+      required: [name, size, contentType, manufacturer, productType]
+    PacketManufacturerInput:
+      type: object
+      properties:
+        manufacturer: { type: string, minLength: 1, maxLength: 120 }
+      required: [manufacturer]
+    PacketProductTypeInput:
+      type: object
+      properties:
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+      required: [productType]
     ManufacturerPacketUpload:
       type: object
       properties:
@@ -1821,6 +2219,12 @@ components:
         archivedAt: { type: ["string", "null"], format: date-time }
         archiveReason: { type: ["string", "null"] }
         archivedByName: { type: ["string", "null"] }
+        approvalCoverage:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalCoverage" }
+        approvalStatus:
+          type: string
+          enum: [open, signed, partial, needs_resigning]
       required:
         - id
         - quoteNumber
@@ -1853,6 +2257,11 @@ components:
         documentVersion:
           type: string
           description: Opaque version of the signoff document content; must be echoed back when signing
+        approvalCoverage:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalCoverage" }
+        legacyApproval:
+          anyOf: [{ $ref: "#/components/schemas/LegacyApproval" }, { type: "null" }]
       required: [quote, revisions, documentVersion]
     ArchiveQuoteInput:
       type: object
@@ -1974,6 +2383,16 @@ components:
         signatureData: { type: string }
         signedAt: { type: string, format: date-time }
       required: [id, quoteId, customerName, stakeholderRole, signatureType, signatureData, signedAt]
+    LegacyApproval:
+      description: Legacy whole-quote evidence is never rendered against mutable HTML.
+      type: object
+      properties:
+        status: { type: string, enum: [legacy] }
+        validity: { type: string, enum: [signed, needs_resigning] }
+        signedAt: { type: string, format: date-time }
+        documentAvailable: { type: boolean }
+        invalidationReason: { type: ["string", "null"] }
+      required: [status, validity, signedAt, documentAvailable]
     SignoffInput:
       type: object
       properties:
@@ -1990,6 +2409,97 @@ components:
           minLength: 1
           description: The documentVersion the signer loaded; signing is rejected if the document has changed since
       required: [customerName, stakeholderRole, signatureType, signatureData, documentVersion]
+    ApprovalCoverage:
+      type: object
+      properties:
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+        status:
+          type: string
+          enum: [open, signed, needs_resigning]
+        approvalId: { type: ["integer", "null"] }
+        invalidationReason: { type: ["string", "null"] }
+      required: [productType, status]
+    ScopedApprovalInput:
+      type: object
+      properties:
+        productTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+      required: [productTypes]
+    ScopedApproval:
+      type: object
+      properties:
+        id: { type: integer }
+        approvalId: { type: ["integer", "null"] }
+        token: { type: string }
+        productTypes:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        notIncludedProductTypes:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        preparedAt: { type: string, format: date-time }
+        documentVersion: { type: string }
+        publicPath: { type: string }
+        status: { type: string, enum: [open, signed, needs_resigning] }
+        signedAt: { type: ["string", "null"], format: date-time }
+      required: [token, productTypes, notIncludedProductTypes, documentVersion, status]
+    ScopedApprovalsResponse:
+      type: object
+      properties:
+        approvals:
+          type: array
+          items: { $ref: "#/components/schemas/ScopedApproval" }
+        coverage:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalCoverage" }
+      required: [approvals, coverage]
+    ScopedSignoffDetail:
+      type: object
+      properties:
+        quote: { $ref: "#/components/schemas/ScopedPublicQuote" }
+        revisions:
+          type: array
+          items: { $ref: "#/components/schemas/Revision" }
+        signoff:
+          anyOf: [{ $ref: "#/components/schemas/Signoff" }, { type: "null" }]
+        approval:
+          anyOf: [{ $ref: "#/components/schemas/Signoff" }, { type: "null" }]
+        productTypes:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        notIncludedProductTypes:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        preparedAt:
+          type: string
+          format: date-time
+          description: Locked preparation time of this scoped approval snapshot.
+        documentVersion: { type: string }
+        status: { type: string, enum: [open, signed, needs_resigning] }
+      required: [quote, revisions, productTypes, notIncludedProductTypes, preparedAt, documentVersion, status]
+    ScopedPublicQuote:
+      description: Strict public projection for a locked scoped request.
+      type: object
+      properties:
+        id: { type: integer }
+        quoteNumber: { type: string }
+        customerName: { type: string }
+        projectName: { type: string }
+        jobAddress: { type: string }
+        displayName: { type: string }
+        categories:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        specs: { $ref: "#/components/schemas/QuoteSpecs" }
+        notes: { type: [string, "null"] }
+      required: [id, quoteNumber, customerName, projectName, jobAddress, displayName, categories, specs]
     DashboardSummary:
       type: object
       properties:

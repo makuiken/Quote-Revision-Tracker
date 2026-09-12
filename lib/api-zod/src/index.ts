@@ -11,3 +11,4 @@ export { GetPublicManufacturerPacketPageParams } from "./generated/api";
 export { GetPublicManufacturerPacketPageQueryParams } from "./generated/api";
 export { GetManufacturerPacketManifestParams } from "./generated/api";
 export { GetManufacturerPacketPageParams } from "./generated/api";
+export { GetPublicScopedManufacturerPacketPageParams } from "./generated/api";

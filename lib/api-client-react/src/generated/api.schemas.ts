@@ -46,13 +46,49 @@ export interface PacketPageAnalysis {
 /**
  * @nullable
  */
+export type ManufacturerPacketProductType = typeof ManufacturerPacketProductType[keyof typeof ManufacturerPacketProductType] | null;
+
+
+export const ManufacturerPacketProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+/**
+ * @nullable
+ */
 export type ManufacturerPacketManualRedactions = {[key: string]: PacketRect[]} | null;
+
+export type AppliedManufacturerRedactionTemplateProductType = typeof AppliedManufacturerRedactionTemplateProductType[keyof typeof AppliedManufacturerRedactionTemplateProductType];
+
+
+export const AppliedManufacturerRedactionTemplateProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export interface AppliedManufacturerRedactionTemplate {
+  id: number;
+  name: string;
+  manufacturer: string;
+  productType: AppliedManufacturerRedactionTemplateProductType;
+}
 
 export interface ManufacturerPacket {
   id: number;
   quoteId: number;
   /** @nullable */
   manufacturer?: string | null;
+  /** @nullable */
+  productType?: ManufacturerPacketProductType;
   /** @nullable */
   detectedManufacturer?: string | null;
   originalName: string;
@@ -63,6 +99,7 @@ export interface ManufacturerPacket {
   analysis?: PacketPageAnalysis[] | null;
   /** @nullable */
   manualRedactions?: ManufacturerPacketManualRedactions;
+  appliedTemplate?: AppliedManufacturerRedactionTemplate | null;
   /** @nullable */
   failureMessage?: string | null;
   createdAt: string;
@@ -71,12 +108,91 @@ export interface ManufacturerPacket {
   approvedAt?: string | null;
 }
 
+export interface ManufacturerRedactionTemplatePage {
+  /** @minimum 1 */
+  pageNumber: number;
+  /** @exclusiveMinimum 0 */
+  width: number;
+  /** @exclusiveMinimum 0 */
+  height: number;
+  /** @maxItems 100 */
+  rects: PacketRect[];
+}
+
+export type ManufacturerRedactionTemplateProductType = typeof ManufacturerRedactionTemplateProductType[keyof typeof ManufacturerRedactionTemplateProductType];
+
+
+export const ManufacturerRedactionTemplateProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export interface ManufacturerRedactionTemplate {
+  id: number;
+  /** Display manufacturer value; matching is canonical and case-insensitive. */
+  manufacturer: string;
+  manufacturerCanonical: string;
+  productType: ManufacturerRedactionTemplateProductType;
+  name: string;
+  active: boolean;
+  /**
+     * @minItems 1
+     * @maxItems 500
+     */
+  pages: ManufacturerRedactionTemplatePage[];
+  createdById: string;
+  createdByName: string;
+  updatedById: string;
+  updatedByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ManufacturerRedactionTemplateFromPacketInput {
+  /** @minimum 1 */
+  quoteId: number;
+  /** @minimum 1 */
+  packetId: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  active?: boolean;
+}
+
+export interface ManufacturerRedactionTemplateUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name?: string;
+  active?: boolean;
+}
+
+export type PublicManufacturerPacketProductTypesItem = typeof PublicManufacturerPacketProductTypesItem[keyof typeof PublicManufacturerPacketProductTypesItem];
+
+
+export const PublicManufacturerPacketProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
 export interface PublicManufacturerPacket {
   id: number;
   /** @nullable */
   manufacturer?: string | null;
   pageCount: number;
   approvedAt: string;
+  productTypes?: PublicManufacturerPacketProductTypesItem[];
 }
 
 export type ManufacturerPacketUploadInputContentType = typeof ManufacturerPacketUploadInputContentType[keyof typeof ManufacturerPacketUploadInputContentType];
@@ -84,6 +200,18 @@ export type ManufacturerPacketUploadInputContentType = typeof ManufacturerPacket
 
 export const ManufacturerPacketUploadInputContentType = {
   'application/pdf': 'application/pdf',
+} as const;
+
+export type ManufacturerPacketUploadInputProductType = typeof ManufacturerPacketUploadInputProductType[keyof typeof ManufacturerPacketUploadInputProductType];
+
+
+export const ManufacturerPacketUploadInputProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
 } as const;
 
 export interface ManufacturerPacketUploadInput {
@@ -99,10 +227,35 @@ export interface ManufacturerPacketUploadInput {
   size: number;
   contentType: ManufacturerPacketUploadInputContentType;
   /**
+     * @minLength 1
      * @maxLength 120
-     * @nullable
      */
-  manufacturer?: string | null;
+  manufacturer: string;
+  productType: ManufacturerPacketUploadInputProductType;
+}
+
+export interface PacketManufacturerInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  manufacturer: string;
+}
+
+export type PacketProductTypeInputProductType = typeof PacketProductTypeInputProductType[keyof typeof PacketProductTypeInputProductType];
+
+
+export const PacketProductTypeInputProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export interface PacketProductTypeInput {
+  productType: PacketProductTypeInputProductType;
 }
 
 export interface ManufacturerPacketUpload {
@@ -385,6 +538,46 @@ export const QuoteCategoriesItem = {
   millwork: 'millwork',
 } as const;
 
+export type ApprovalCoverageProductType = typeof ApprovalCoverageProductType[keyof typeof ApprovalCoverageProductType];
+
+
+export const ApprovalCoverageProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ApprovalCoverageStatus = typeof ApprovalCoverageStatus[keyof typeof ApprovalCoverageStatus];
+
+
+export const ApprovalCoverageStatus = {
+  open: 'open',
+  signed: 'signed',
+  needs_resigning: 'needs_resigning',
+} as const;
+
+export interface ApprovalCoverage {
+  productType: ApprovalCoverageProductType;
+  status: ApprovalCoverageStatus;
+  /** @nullable */
+  approvalId?: number | null;
+  /** @nullable */
+  invalidationReason?: string | null;
+}
+
+export type QuoteApprovalStatus = typeof QuoteApprovalStatus[keyof typeof QuoteApprovalStatus];
+
+
+export const QuoteApprovalStatus = {
+  open: 'open',
+  signed: 'signed',
+  partial: 'partial',
+  needs_resigning: 'needs_resigning',
+} as const;
+
 export interface Quote {
   id: number;
   quoteNumber: string;
@@ -411,6 +604,8 @@ export interface Quote {
   archiveReason?: string | null;
   /** @nullable */
   archivedByName?: string | null;
+  approvalCoverage?: ApprovalCoverage[];
+  approvalStatus?: QuoteApprovalStatus;
 }
 
 export interface QuoteList {
@@ -475,12 +670,41 @@ export interface Signoff {
   signedAt: string;
 }
 
+export type LegacyApprovalStatus = typeof LegacyApprovalStatus[keyof typeof LegacyApprovalStatus];
+
+
+export const LegacyApprovalStatus = {
+  legacy: 'legacy',
+} as const;
+
+export type LegacyApprovalValidity = typeof LegacyApprovalValidity[keyof typeof LegacyApprovalValidity];
+
+
+export const LegacyApprovalValidity = {
+  signed: 'signed',
+  needs_resigning: 'needs_resigning',
+} as const;
+
+/**
+ * Legacy whole-quote evidence is never rendered against mutable HTML.
+ */
+export interface LegacyApproval {
+  status: LegacyApprovalStatus;
+  validity: LegacyApprovalValidity;
+  signedAt: string;
+  documentAvailable: boolean;
+  /** @nullable */
+  invalidationReason?: string | null;
+}
+
 export interface QuoteDetail {
   quote: Quote;
   revisions: Revision[];
   signoff?: Signoff | null;
   /** Opaque version of the signoff document content; must be echoed back when signing */
   documentVersion: string;
+  approvalCoverage?: ApprovalCoverage[];
+  legacyApproval?: LegacyApproval | null;
 }
 
 export interface ArchiveQuoteInput {
@@ -615,6 +839,150 @@ export interface SignoffInput {
   documentVersion: string;
 }
 
+export type ScopedApprovalInputProductTypesItem = typeof ScopedApprovalInputProductTypesItem[keyof typeof ScopedApprovalInputProductTypesItem];
+
+
+export const ScopedApprovalInputProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export interface ScopedApprovalInput {
+  /** @minItems 1 */
+  productTypes: ScopedApprovalInputProductTypesItem[];
+}
+
+export type ScopedApprovalProductTypesItem = typeof ScopedApprovalProductTypesItem[keyof typeof ScopedApprovalProductTypesItem];
+
+
+export const ScopedApprovalProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ScopedApprovalNotIncludedProductTypesItem = typeof ScopedApprovalNotIncludedProductTypesItem[keyof typeof ScopedApprovalNotIncludedProductTypesItem];
+
+
+export const ScopedApprovalNotIncludedProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ScopedApprovalStatus = typeof ScopedApprovalStatus[keyof typeof ScopedApprovalStatus];
+
+
+export const ScopedApprovalStatus = {
+  open: 'open',
+  signed: 'signed',
+  needs_resigning: 'needs_resigning',
+} as const;
+
+export interface ScopedApproval {
+  id?: number;
+  /** @nullable */
+  approvalId?: number | null;
+  token: string;
+  productTypes: ScopedApprovalProductTypesItem[];
+  notIncludedProductTypes: ScopedApprovalNotIncludedProductTypesItem[];
+  preparedAt?: string;
+  documentVersion: string;
+  publicPath?: string;
+  status: ScopedApprovalStatus;
+  /** @nullable */
+  signedAt?: string | null;
+}
+
+export interface ScopedApprovalsResponse {
+  approvals: ScopedApproval[];
+  coverage: ApprovalCoverage[];
+}
+
+export type ScopedSignoffDetailProductTypesItem = typeof ScopedSignoffDetailProductTypesItem[keyof typeof ScopedSignoffDetailProductTypesItem];
+
+
+export const ScopedSignoffDetailProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ScopedSignoffDetailNotIncludedProductTypesItem = typeof ScopedSignoffDetailNotIncludedProductTypesItem[keyof typeof ScopedSignoffDetailNotIncludedProductTypesItem];
+
+
+export const ScopedSignoffDetailNotIncludedProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ScopedSignoffDetailStatus = typeof ScopedSignoffDetailStatus[keyof typeof ScopedSignoffDetailStatus];
+
+
+export const ScopedSignoffDetailStatus = {
+  open: 'open',
+  signed: 'signed',
+  needs_resigning: 'needs_resigning',
+} as const;
+
+export type ScopedPublicQuoteCategoriesItem = typeof ScopedPublicQuoteCategoriesItem[keyof typeof ScopedPublicQuoteCategoriesItem];
+
+
+export const ScopedPublicQuoteCategoriesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+/**
+ * Strict public projection for a locked scoped request.
+ */
+export interface ScopedPublicQuote {
+  id: number;
+  quoteNumber: string;
+  customerName: string;
+  projectName: string;
+  jobAddress: string;
+  displayName: string;
+  categories: ScopedPublicQuoteCategoriesItem[];
+  specs: QuoteSpecs;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface ScopedSignoffDetail {
+  quote: ScopedPublicQuote;
+  revisions: Revision[];
+  signoff?: Signoff | null;
+  approval?: Signoff | null;
+  productTypes: ScopedSignoffDetailProductTypesItem[];
+  notIncludedProductTypes: ScopedSignoffDetailNotIncludedProductTypesItem[];
+  /** Locked preparation time of this scoped approval snapshot. */
+  preparedAt: string;
+  documentVersion: string;
+  status: ScopedSignoffDetailStatus;
+}
+
 export interface DashboardSummary {
   totalQuotes: number;
   totalRevisions: number;
@@ -647,7 +1015,7 @@ export type ListQuotesParams = {
  */
 search?: string;
 /**
- * Filter by status. "active" = not archived; "awaiting" = active and not signed; "signed" = active and signed; "archived" = archived only. Omitted = all quotes including archived.
+ * Filter by status. "active" = not archived; "awaiting" = active and not signed; "signed" = active and fully signed; "partial" = at least one but not every active type signed; "needs_resigning" = at least one type invalidated; "archived" = archived only. Omitted = all quotes including archived.
  */
 status?: ListQuotesStatus;
 /**
@@ -678,6 +1046,8 @@ export const ListQuotesStatus = {
   active: 'active',
   awaiting: 'awaiting',
   signed: 'signed',
+  partial: 'partial',
+  needs_resigning: 'needs_resigning',
   archived: 'archived',
 } as const;
 
@@ -720,6 +1090,13 @@ documentVersion?: string;
 export type GetPublicManufacturerPacketPageParams = {
 /**
  * Version loaded with the public signoff document; stale versions cannot fetch newer pages.
+ * @minLength 1
+ */
+documentVersion: string;
+};
+
+export type GetPublicScopedManufacturerPacketPageParams = {
+/**
  * @minLength 1
  */
 documentVersion: string;

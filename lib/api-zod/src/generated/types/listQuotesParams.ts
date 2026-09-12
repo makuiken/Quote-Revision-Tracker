@@ -14,7 +14,7 @@ export type ListQuotesParams = {
  */
 search?: string;
 /**
- * Filter by status. "active" = not archived; "awaiting" = active and not signed; "signed" = active and signed; "archived" = archived only. Omitted = all quotes including archived.
+ * Filter by status. "active" = not archived; "awaiting" = active and not signed; "signed" = active and fully signed; "partial" = at least one but not every active type signed; "needs_resigning" = at least one type invalidated; "archived" = archived only. Omitted = all quotes including archived.
  */
 status?: ListQuotesStatus;
 /**
