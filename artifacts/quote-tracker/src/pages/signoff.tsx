@@ -366,8 +366,8 @@ export default function SignoffPage() {
             {prepared && (
               <Card className="border-primary shadow-md ring-1 ring-ring/10">
                 <CardHeader className="bg-primary text-primary-foreground">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5 text-muted-foreground/70" />
+                  <CardTitle className="text-lg flex items-center gap-2 text-white">
+                    <CheckCircle className="w-5 h-5 text-white/80" />
                     Preview Ready
                   </CardTitle>
                 </CardHeader>
