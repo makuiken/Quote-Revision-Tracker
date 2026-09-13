@@ -5,9 +5,9 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
-import type { ManufacturerRedactionTemplateOptionProductType } from './manufacturerRedactionTemplateOptionProductType';
+import type { QuoteProductType } from './quoteProductType';
 
 export interface ManufacturerRedactionTemplateOption {
   manufacturer: string;
-  productType: ManufacturerRedactionTemplateOptionProductType;
+  productType: QuoteProductType;
 }

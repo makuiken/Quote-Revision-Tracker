@@ -124,6 +124,8 @@ export const ListManufacturerRedactionTemplateOptionsResponse = zod.array(ListMa
 /**
  * @summary List manufacturer redaction templates (admin only)
  */
+export const listManufacturerRedactionTemplatesResponseEligibleProductTypesMax = 32;
+
 
 export const listManufacturerRedactionTemplatesResponsePagesItemWidthExclusiveMin = 0;
 
@@ -150,6 +152,7 @@ export const ListManufacturerRedactionTemplatesResponseItem = zod.object({
   "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
   "manufacturerCanonical": zod.string(),
   "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(listManufacturerRedactionTemplatesResponseEligibleProductTypesMax),
   "name": zod.string(),
   "active": zod.boolean(),
   "pages": zod.array(zod.object({
@@ -164,6 +167,14 @@ export const ListManufacturerRedactionTemplatesResponseItem = zod.object({
   "reason": zod.string().max(listManufacturerRedactionTemplatesResponsePagesItemRectsItemReasonMax).optional()
 })).max(listManufacturerRedactionTemplatesResponsePagesItemRectsMax)
 })).min(1).max(listManufacturerRedactionTemplatesResponsePagesMax),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "sourceAvailable": zod.boolean(),
   "createdById": zod.string(),
   "createdByName": zod.string(),
   "updatedById": zod.string(),
@@ -175,68 +186,10 @@ export const ListManufacturerRedactionTemplatesResponse = zod.array(ListManufact
 
 
 /**
- * @summary Create a redaction template from an analyzed packet (admin only)
+ * @deprecated
+ * @summary Retired packet-based template creation endpoint
  */
-
-
-export const createManufacturerRedactionTemplateBodyNameMax = 200;
-
-
-
-export const CreateManufacturerRedactionTemplateBody = zod.object({
-  "quoteId": zod.int().min(1),
-  "packetId": zod.int().min(1),
-  "name": zod.string().min(1).max(createManufacturerRedactionTemplateBodyNameMax),
-  "active": zod.boolean().optional()
-})
-
-
-export const createManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin = 0;
-
-export const createManufacturerRedactionTemplateResponsePagesItemHeightExclusiveMin = 0;
-
-export const createManufacturerRedactionTemplateResponsePagesItemRectsItemXMin = 0;
-
-export const createManufacturerRedactionTemplateResponsePagesItemRectsItemYMin = 0;
-
-export const createManufacturerRedactionTemplateResponsePagesItemRectsItemWidthExclusiveMin = 0;
-
-export const createManufacturerRedactionTemplateResponsePagesItemRectsItemHeightExclusiveMin = 0;
-
-export const createManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax = 250;
-
-export const createManufacturerRedactionTemplateResponsePagesItemRectsMax = 100;
-
-export const createManufacturerRedactionTemplateResponsePagesMax = 500;
-
-
-
-export const CreateManufacturerRedactionTemplateResponse = zod.object({
-  "id": zod.int(),
-  "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
-  "manufacturerCanonical": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
-  "name": zod.string(),
-  "active": zod.boolean(),
-  "pages": zod.array(zod.object({
-  "pageNumber": zod.int().min(1),
-  "width": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin),
-  "height": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemHeightExclusiveMin),
-  "rects": zod.array(zod.object({
-  "x": zod.number().min(createManufacturerRedactionTemplateResponsePagesItemRectsItemXMin),
-  "y": zod.number().min(createManufacturerRedactionTemplateResponsePagesItemRectsItemYMin),
-  "width": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemRectsItemWidthExclusiveMin),
-  "height": zod.number().gt(createManufacturerRedactionTemplateResponsePagesItemRectsItemHeightExclusiveMin),
-  "reason": zod.string().max(createManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax).optional()
-})).max(createManufacturerRedactionTemplateResponsePagesItemRectsMax)
-})).min(1).max(createManufacturerRedactionTemplateResponsePagesMax),
-  "createdById": zod.string(),
-  "createdByName": zod.string(),
-  "updatedById": zod.string(),
-  "updatedByName": zod.string(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
-})
+export const CreateManufacturerRedactionTemplateResponse = zod.void()
 
 
 /**
@@ -254,6 +207,8 @@ export const UpdateManufacturerRedactionTemplateBody = zod.object({
   "name": zod.string().min(1).max(updateManufacturerRedactionTemplateBodyNameMax).optional(),
   "active": zod.boolean().optional()
 })
+
+export const updateManufacturerRedactionTemplateResponseEligibleProductTypesMax = 32;
 
 
 export const updateManufacturerRedactionTemplateResponsePagesItemWidthExclusiveMin = 0;
@@ -281,6 +236,7 @@ export const UpdateManufacturerRedactionTemplateResponse = zod.object({
   "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
   "manufacturerCanonical": zod.string(),
   "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(updateManufacturerRedactionTemplateResponseEligibleProductTypesMax),
   "name": zod.string(),
   "active": zod.boolean(),
   "pages": zod.array(zod.object({
@@ -295,6 +251,14 @@ export const UpdateManufacturerRedactionTemplateResponse = zod.object({
   "reason": zod.string().max(updateManufacturerRedactionTemplateResponsePagesItemRectsItemReasonMax).optional()
 })).max(updateManufacturerRedactionTemplateResponsePagesItemRectsMax)
 })).min(1).max(updateManufacturerRedactionTemplateResponsePagesMax),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "sourceAvailable": zod.boolean(),
   "createdById": zod.string(),
   "createdByName": zod.string(),
   "updatedById": zod.string(),
@@ -315,65 +279,757 @@ export const DeleteManufacturerRedactionTemplateResponse = zod.void()
 
 
 /**
- * @summary Replace template geometry from an analyzed packet (admin only)
+ * @deprecated
+ * @summary Retired packet-based template replacement endpoint
  */
 export const ReplaceManufacturerRedactionTemplateFromPacketParams = zod.object({
   "id": zod.coerce.number().int()
 })
 
+export const ReplaceManufacturerRedactionTemplateFromPacketResponse = zod.void()
 
 
-export const replaceManufacturerRedactionTemplateFromPacketBodyNameMax = 200;
+/**
+ * @summary Create a standalone template draft and request a private sample upload URL
+ */
+export const requestTemplateDraftUploadUrlBodyNameMax = 255;
+
+export const requestTemplateDraftUploadUrlBodySizeMax = 41943040;
+
+export const requestTemplateDraftUploadUrlBodyManufacturerMax = 200;
+
+export const requestTemplateDraftUploadUrlBodyEligibleProductTypesMax = 32;
 
 
 
-export const ReplaceManufacturerRedactionTemplateFromPacketBody = zod.object({
-  "quoteId": zod.int().min(1),
-  "packetId": zod.int().min(1),
-  "name": zod.string().min(1).max(replaceManufacturerRedactionTemplateFromPacketBodyNameMax),
-  "active": zod.boolean().optional()
+export const RequestTemplateDraftUploadUrlBody = zod.object({
+  "name": zod.string().min(1).max(requestTemplateDraftUploadUrlBodyNameMax),
+  "size": zod.int().min(1).max(requestTemplateDraftUploadUrlBodySizeMax),
+  "contentType": zod.enum(['application/pdf']),
+  "manufacturer": zod.string().min(1).max(requestTemplateDraftUploadUrlBodyManufacturerMax).optional(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']).optional(),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(requestTemplateDraftUploadUrlBodyEligibleProductTypesMax).optional()
+})
+
+export const requestTemplateDraftUploadUrlResponseDraftEligibleProductTypesMax = 32;
+
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemWidthExclusiveMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemHeightExclusiveMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsMax = 32;
+
+export const requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemXMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemYMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemWidthExclusiveMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemHeightExclusiveMin = 0;
+
+export const requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemReasonMax = 250;
+
+
+
+export const RequestTemplateDraftUploadUrlResponse = zod.object({
+  "draft": zod.object({
+  "id": zod.int(),
+  "templateId": zod.int().nullable(),
+  "status": zod.enum(['awaiting_upload', 'analyzing', 'ready', 'saving', 'failed', 'cancelled']),
+  "originalName": zod.string().nullable(),
+  "declaredSize": zod.int().nullable(),
+  "sourceAvailable": zod.boolean(),
+  "baseTemplateUpdatedAt": zod.coerce.date().nullable(),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "manufacturer": zod.string().nullable(),
+  "manufacturerCanonical": zod.string().nullable(),
+  "productType": zod.union([zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),zod.null()]),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).max(requestTemplateDraftUploadUrlResponseDraftEligibleProductTypesMax),
+  "name": zod.string().nullable(),
+  "active": zod.boolean(),
+  "revision": zod.int(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(requestTemplateDraftUploadUrlResponseDraftAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(requestTemplateDraftUploadUrlResponseDraftAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(requestTemplateDraftUploadUrlResponseDraftAnalysisItemSuggestedRectsMax)
+})).nullable(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemXMin),
+  "y": zod.number().min(requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemYMin),
+  "width": zod.number().gt(requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(requestTemplateDraftUploadUrlResponseDraftManualRedactionsItemReasonMax).optional()
+}))).nullable(),
+  "warnings": zod.array(zod.string()),
+  "failureMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "uploadURL": zod.url(),
+  "objectPath": zod.string(),
+  "uploadExpiresAt": zod.coerce.date()
 })
 
 
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemWidthExclusiveMin = 0;
+/**
+ * @summary Open an edit draft, optionally requesting an explicit sample replacement
+ */
+export const CreateManufacturerRedactionTemplateDraftParams = zod.object({
+  "id": zod.coerce.number().int()
+})
 
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemHeightExclusiveMin = 0;
+export const createManufacturerRedactionTemplateDraftBodyNameMax = 255;
 
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemXMin = 0;
+export const createManufacturerRedactionTemplateDraftBodySizeMax = 41943040;
 
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemYMin = 0;
+export const createManufacturerRedactionTemplateDraftBodyManufacturerMax = 200;
 
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemWidthExclusiveMin = 0;
-
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemHeightExclusiveMin = 0;
-
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemReasonMax = 250;
-
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsMax = 100;
-
-export const replaceManufacturerRedactionTemplateFromPacketResponsePagesMax = 500;
+export const createManufacturerRedactionTemplateDraftBodyEligibleProductTypesMax = 32;
 
 
 
-export const ReplaceManufacturerRedactionTemplateFromPacketResponse = zod.object({
+export const CreateManufacturerRedactionTemplateDraftBody = zod.object({
+  "replaceSample": zod.boolean().optional(),
+  "name": zod.string().min(1).max(createManufacturerRedactionTemplateDraftBodyNameMax).optional(),
+  "size": zod.int().min(1).max(createManufacturerRedactionTemplateDraftBodySizeMax).optional(),
+  "contentType": zod.enum(['application/pdf']).optional(),
+  "manufacturer": zod.string().min(1).max(createManufacturerRedactionTemplateDraftBodyManufacturerMax).optional(),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']).optional(),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(createManufacturerRedactionTemplateDraftBodyEligibleProductTypesMax).optional()
+})
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftEligibleProductTypesMax = 32;
+
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsMax = 32;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemXMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemYMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemReasonMax = 250;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoEligibleProductTypesMax = 32;
+
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsMax = 32;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemXMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemYMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemWidthExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemHeightExclusiveMin = 0;
+
+export const createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemReasonMax = 250;
+
+
+
+export const CreateManufacturerRedactionTemplateDraftResponse = zod.union([zod.object({
+  "draft": zod.object({
+  "id": zod.int(),
+  "templateId": zod.int().nullable(),
+  "status": zod.enum(['awaiting_upload', 'analyzing', 'ready', 'saving', 'failed', 'cancelled']),
+  "originalName": zod.string().nullable(),
+  "declaredSize": zod.int().nullable(),
+  "sourceAvailable": zod.boolean(),
+  "baseTemplateUpdatedAt": zod.coerce.date().nullable(),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "manufacturer": zod.string().nullable(),
+  "manufacturerCanonical": zod.string().nullable(),
+  "productType": zod.union([zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),zod.null()]),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).max(createManufacturerRedactionTemplateDraftResponseOneDraftEligibleProductTypesMax),
+  "name": zod.string().nullable(),
+  "active": zod.boolean(),
+  "revision": zod.int(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(createManufacturerRedactionTemplateDraftResponseOneDraftAnalysisItemSuggestedRectsMax)
+})).nullable(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemXMin),
+  "y": zod.number().min(createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemYMin),
+  "width": zod.number().gt(createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(createManufacturerRedactionTemplateDraftResponseOneDraftManualRedactionsItemReasonMax).optional()
+}))).nullable(),
+  "warnings": zod.array(zod.string()),
+  "failureMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "uploadURL": zod.url(),
+  "objectPath": zod.string(),
+  "uploadExpiresAt": zod.coerce.date()
+}),zod.object({
+  "id": zod.int(),
+  "templateId": zod.int().nullable(),
+  "status": zod.enum(['awaiting_upload', 'analyzing', 'ready', 'saving', 'failed', 'cancelled']),
+  "originalName": zod.string().nullable(),
+  "declaredSize": zod.int().nullable(),
+  "sourceAvailable": zod.boolean(),
+  "baseTemplateUpdatedAt": zod.coerce.date().nullable(),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "manufacturer": zod.string().nullable(),
+  "manufacturerCanonical": zod.string().nullable(),
+  "productType": zod.union([zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),zod.null()]),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).max(createManufacturerRedactionTemplateDraftResponseTwoEligibleProductTypesMax),
+  "name": zod.string().nullable(),
+  "active": zod.boolean(),
+  "revision": zod.int(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(createManufacturerRedactionTemplateDraftResponseTwoAnalysisItemSuggestedRectsMax)
+})).nullable(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemXMin),
+  "y": zod.number().min(createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemYMin),
+  "width": zod.number().gt(createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(createManufacturerRedactionTemplateDraftResponseTwoManualRedactionsItemReasonMax).optional()
+}))).nullable(),
+  "warnings": zod.array(zod.string()),
+  "failureMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})])
+
+
+/**
+ * @summary Get a standalone template draft
+ */
+export const GetTemplateDraftParams = zod.object({
+  "draftId": zod.coerce.number().int()
+})
+
+export const getTemplateDraftResponseEligibleProductTypesMax = 32;
+
+
+export const getTemplateDraftResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const getTemplateDraftResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const getTemplateDraftResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const getTemplateDraftResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const getTemplateDraftResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const getTemplateDraftResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const getTemplateDraftResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const getTemplateDraftResponseAnalysisItemSuggestedRectsMax = 32;
+
+export const getTemplateDraftResponseManualRedactionsItemXMin = 0;
+
+export const getTemplateDraftResponseManualRedactionsItemYMin = 0;
+
+export const getTemplateDraftResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const getTemplateDraftResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const getTemplateDraftResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const GetTemplateDraftResponse = zod.object({
+  "id": zod.int(),
+  "templateId": zod.int().nullable(),
+  "status": zod.enum(['awaiting_upload', 'analyzing', 'ready', 'saving', 'failed', 'cancelled']),
+  "originalName": zod.string().nullable(),
+  "declaredSize": zod.int().nullable(),
+  "sourceAvailable": zod.boolean(),
+  "baseTemplateUpdatedAt": zod.coerce.date().nullable(),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "manufacturer": zod.string().nullable(),
+  "manufacturerCanonical": zod.string().nullable(),
+  "productType": zod.union([zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),zod.null()]),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).max(getTemplateDraftResponseEligibleProductTypesMax),
+  "name": zod.string().nullable(),
+  "active": zod.boolean(),
+  "revision": zod.int(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(getTemplateDraftResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(getTemplateDraftResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(getTemplateDraftResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(getTemplateDraftResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(getTemplateDraftResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(getTemplateDraftResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(getTemplateDraftResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(getTemplateDraftResponseAnalysisItemSuggestedRectsMax)
+})).nullable(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(getTemplateDraftResponseManualRedactionsItemXMin),
+  "y": zod.number().min(getTemplateDraftResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(getTemplateDraftResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(getTemplateDraftResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(getTemplateDraftResponseManualRedactionsItemReasonMax).optional()
+}))).nullable(),
+  "warnings": zod.array(zod.string()),
+  "failureMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Cancel a template draft without changing a saved template
+ */
+export const CancelTemplateDraftParams = zod.object({
+  "draftId": zod.coerce.number().int()
+})
+
+export const CancelTemplateDraftResponse = zod.void()
+
+
+/**
+ * @summary Analyze an uploaded private template sample with bounded processing
+ */
+export const AnalyzeTemplateDraftParams = zod.object({
+  "draftId": zod.coerce.number().int()
+})
+
+export const analyzeTemplateDraftBodyManufacturerMax = 200;
+
+
+
+export const AnalyzeTemplateDraftBody = zod.object({
+  "manufacturer": zod.string().max(analyzeTemplateDraftBodyManufacturerMax).optional()
+})
+
+export const analyzeTemplateDraftResponseEligibleProductTypesMax = 32;
+
+
+export const analyzeTemplateDraftResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const analyzeTemplateDraftResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const analyzeTemplateDraftResponseAnalysisItemSuggestedRectsMax = 32;
+
+export const analyzeTemplateDraftResponseManualRedactionsItemXMin = 0;
+
+export const analyzeTemplateDraftResponseManualRedactionsItemYMin = 0;
+
+export const analyzeTemplateDraftResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const analyzeTemplateDraftResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const analyzeTemplateDraftResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const AnalyzeTemplateDraftResponse = zod.object({
+  "id": zod.int(),
+  "templateId": zod.int().nullable(),
+  "status": zod.enum(['awaiting_upload', 'analyzing', 'ready', 'saving', 'failed', 'cancelled']),
+  "originalName": zod.string().nullable(),
+  "declaredSize": zod.int().nullable(),
+  "sourceAvailable": zod.boolean(),
+  "baseTemplateUpdatedAt": zod.coerce.date().nullable(),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "manufacturer": zod.string().nullable(),
+  "manufacturerCanonical": zod.string().nullable(),
+  "productType": zod.union([zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),zod.null()]),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).max(analyzeTemplateDraftResponseEligibleProductTypesMax),
+  "name": zod.string().nullable(),
+  "active": zod.boolean(),
+  "revision": zod.int(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(analyzeTemplateDraftResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(analyzeTemplateDraftResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(analyzeTemplateDraftResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(analyzeTemplateDraftResponseAnalysisItemSuggestedRectsMax)
+})).nullable(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(analyzeTemplateDraftResponseManualRedactionsItemXMin),
+  "y": zod.number().min(analyzeTemplateDraftResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(analyzeTemplateDraftResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(analyzeTemplateDraftResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(analyzeTemplateDraftResponseManualRedactionsItemReasonMax).optional()
+}))).nullable(),
+  "warnings": zod.array(zod.string()),
+  "failureMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Save explicit redaction geometry on a template draft
+ */
+export const UpdateTemplateDraftRedactionsParams = zod.object({
+  "draftId": zod.coerce.number().int()
+})
+
+export const updateTemplateDraftRedactionsBodyManualRedactionsItemXMin = 0;
+
+export const updateTemplateDraftRedactionsBodyManualRedactionsItemYMin = 0;
+
+export const updateTemplateDraftRedactionsBodyManualRedactionsItemWidthExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsBodyManualRedactionsItemHeightExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsBodyManualRedactionsItemReasonMax = 250;
+
+export const updateTemplateDraftRedactionsBodyManualRedactionsMaxOne = 32;
+
+
+
+export const UpdateTemplateDraftRedactionsBody = zod.object({
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(updateTemplateDraftRedactionsBodyManualRedactionsItemXMin),
+  "y": zod.number().min(updateTemplateDraftRedactionsBodyManualRedactionsItemYMin),
+  "width": zod.number().gt(updateTemplateDraftRedactionsBodyManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(updateTemplateDraftRedactionsBodyManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(updateTemplateDraftRedactionsBodyManualRedactionsItemReasonMax).optional()
+})).max(updateTemplateDraftRedactionsBodyManualRedactionsMaxOne))
+})
+
+export const updateTemplateDraftRedactionsResponseEligibleProductTypesMax = 32;
+
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemWidthExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemHeightExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemXMin = 0;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemYMin = 0;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemReasonMax = 250;
+
+export const updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsMax = 32;
+
+export const updateTemplateDraftRedactionsResponseManualRedactionsItemXMin = 0;
+
+export const updateTemplateDraftRedactionsResponseManualRedactionsItemYMin = 0;
+
+export const updateTemplateDraftRedactionsResponseManualRedactionsItemWidthExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsResponseManualRedactionsItemHeightExclusiveMin = 0;
+
+export const updateTemplateDraftRedactionsResponseManualRedactionsItemReasonMax = 250;
+
+
+
+export const UpdateTemplateDraftRedactionsResponse = zod.object({
+  "id": zod.int(),
+  "templateId": zod.int().nullable(),
+  "status": zod.enum(['awaiting_upload', 'analyzing', 'ready', 'saving', 'failed', 'cancelled']),
+  "originalName": zod.string().nullable(),
+  "declaredSize": zod.int().nullable(),
+  "sourceAvailable": zod.boolean(),
+  "baseTemplateUpdatedAt": zod.coerce.date().nullable(),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "manufacturer": zod.string().nullable(),
+  "manufacturerCanonical": zod.string().nullable(),
+  "productType": zod.union([zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),zod.null()]),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).max(updateTemplateDraftRedactionsResponseEligibleProductTypesMax),
+  "name": zod.string().nullable(),
+  "active": zod.boolean(),
+  "revision": zod.int(),
+  "analysis": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "width": zod.number().gt(updateTemplateDraftRedactionsResponseAnalysisItemWidthExclusiveMin),
+  "height": zod.number().gt(updateTemplateDraftRedactionsResponseAnalysisItemHeightExclusiveMin),
+  "pageType": zod.string(),
+  "suggestedRects": zod.array(zod.object({
+  "x": zod.number().min(updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemXMin),
+  "y": zod.number().min(updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemYMin),
+  "width": zod.number().gt(updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsItemReasonMax).optional()
+})).max(updateTemplateDraftRedactionsResponseAnalysisItemSuggestedRectsMax)
+})).nullable(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(updateTemplateDraftRedactionsResponseManualRedactionsItemXMin),
+  "y": zod.number().min(updateTemplateDraftRedactionsResponseManualRedactionsItemYMin),
+  "width": zod.number().gt(updateTemplateDraftRedactionsResponseManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(updateTemplateDraftRedactionsResponseManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(updateTemplateDraftRedactionsResponseManualRedactionsItemReasonMax).optional()
+}))).nullable(),
+  "warnings": zod.array(zod.string()),
+  "failureMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Render one private original source page for an administrator
+ */
+export const GetTemplateDraftSourcePageParams = zod.object({
+  "draftId": zod.coerce.number().int(),
+  "pageNumber": zod.coerce.number().int()
+})
+
+export const GetTemplateDraftSourcePageResponse = zod.unknown()
+
+
+/**
+ * @summary Render a cleaned page preview without saving a template
+ */
+export const PreviewTemplateDraftParams = zod.object({
+  "draftId": zod.coerce.number().int()
+})
+
+
+export const previewTemplateDraftBodyManualRedactionsItemXMin = 0;
+
+export const previewTemplateDraftBodyManualRedactionsItemYMin = 0;
+
+export const previewTemplateDraftBodyManualRedactionsItemWidthExclusiveMin = 0;
+
+export const previewTemplateDraftBodyManualRedactionsItemHeightExclusiveMin = 0;
+
+export const previewTemplateDraftBodyManualRedactionsItemReasonMax = 250;
+
+export const previewTemplateDraftBodyManualRedactionsMaxOne = 32;
+
+
+
+export const PreviewTemplateDraftBody = zod.object({
+  "pageNumber": zod.int().min(1),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(previewTemplateDraftBodyManualRedactionsItemXMin),
+  "y": zod.number().min(previewTemplateDraftBodyManualRedactionsItemYMin),
+  "width": zod.number().gt(previewTemplateDraftBodyManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(previewTemplateDraftBodyManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(previewTemplateDraftBodyManualRedactionsItemReasonMax).optional()
+})).max(previewTemplateDraftBodyManualRedactionsMaxOne)).optional()
+})
+
+export const PreviewTemplateDraftResponse = zod.unknown()
+
+
+/**
+ * @summary Atomically create or update a manufacturer template from a ready draft
+ */
+export const SaveTemplateDraftParams = zod.object({
+  "draftId": zod.coerce.number().int()
+})
+
+export const saveTemplateDraftBodyNameMax = 200;
+
+export const saveTemplateDraftBodyManufacturerMax = 200;
+
+export const saveTemplateDraftBodyEligibleProductTypesMax = 32;
+
+export const saveTemplateDraftBodyExpectedDraftRevisionMin = 0;
+
+export const saveTemplateDraftBodyManualRedactionsItemXMin = 0;
+
+export const saveTemplateDraftBodyManualRedactionsItemYMin = 0;
+
+export const saveTemplateDraftBodyManualRedactionsItemWidthExclusiveMin = 0;
+
+export const saveTemplateDraftBodyManualRedactionsItemHeightExclusiveMin = 0;
+
+export const saveTemplateDraftBodyManualRedactionsItemReasonMax = 250;
+
+export const saveTemplateDraftBodyManualRedactionsMaxOne = 32;
+
+
+
+export const SaveTemplateDraftBody = zod.object({
+  "name": zod.string().min(1).max(saveTemplateDraftBodyNameMax),
+  "manufacturer": zod.string().min(1).max(saveTemplateDraftBodyManufacturerMax),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(saveTemplateDraftBodyEligibleProductTypesMax),
+  "active": zod.boolean(),
+  "expectedTemplateUpdatedAt": zod.coerce.date().optional(),
+  "expectedDraftRevision": zod.int().min(saveTemplateDraftBodyExpectedDraftRevisionMin).optional(),
+  "manualRedactions": zod.record(zod.string(), zod.array(zod.object({
+  "x": zod.number().min(saveTemplateDraftBodyManualRedactionsItemXMin),
+  "y": zod.number().min(saveTemplateDraftBodyManualRedactionsItemYMin),
+  "width": zod.number().gt(saveTemplateDraftBodyManualRedactionsItemWidthExclusiveMin),
+  "height": zod.number().gt(saveTemplateDraftBodyManualRedactionsItemHeightExclusiveMin),
+  "reason": zod.string().max(saveTemplateDraftBodyManualRedactionsItemReasonMax).optional()
+})).max(saveTemplateDraftBodyManualRedactionsMaxOne)).optional()
+})
+
+export const saveTemplateDraftResponseEligibleProductTypesMax = 32;
+
+
+export const saveTemplateDraftResponsePagesItemWidthExclusiveMin = 0;
+
+export const saveTemplateDraftResponsePagesItemHeightExclusiveMin = 0;
+
+export const saveTemplateDraftResponsePagesItemRectsItemXMin = 0;
+
+export const saveTemplateDraftResponsePagesItemRectsItemYMin = 0;
+
+export const saveTemplateDraftResponsePagesItemRectsItemWidthExclusiveMin = 0;
+
+export const saveTemplateDraftResponsePagesItemRectsItemHeightExclusiveMin = 0;
+
+export const saveTemplateDraftResponsePagesItemRectsItemReasonMax = 250;
+
+export const saveTemplateDraftResponsePagesItemRectsMax = 100;
+
+export const saveTemplateDraftResponsePagesMax = 500;
+
+
+
+export const SaveTemplateDraftResponse = zod.object({
   "id": zod.int(),
   "manufacturer": zod.string().describe('Display manufacturer value; matching is canonical and case-insensitive.'),
   "manufacturerCanonical": zod.string(),
   "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(saveTemplateDraftResponseEligibleProductTypesMax),
   "name": zod.string(),
   "active": zod.boolean(),
   "pages": zod.array(zod.object({
   "pageNumber": zod.int().min(1),
-  "width": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemWidthExclusiveMin),
-  "height": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemHeightExclusiveMin),
+  "width": zod.number().gt(saveTemplateDraftResponsePagesItemWidthExclusiveMin),
+  "height": zod.number().gt(saveTemplateDraftResponsePagesItemHeightExclusiveMin),
   "rects": zod.array(zod.object({
-  "x": zod.number().min(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemXMin),
-  "y": zod.number().min(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemYMin),
-  "width": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemWidthExclusiveMin),
-  "height": zod.number().gt(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemHeightExclusiveMin),
-  "reason": zod.string().max(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsItemReasonMax).optional()
-})).max(replaceManufacturerRedactionTemplateFromPacketResponsePagesItemRectsMax)
-})).min(1).max(replaceManufacturerRedactionTemplateFromPacketResponsePagesMax),
+  "x": zod.number().min(saveTemplateDraftResponsePagesItemRectsItemXMin),
+  "y": zod.number().min(saveTemplateDraftResponsePagesItemRectsItemYMin),
+  "width": zod.number().gt(saveTemplateDraftResponsePagesItemRectsItemWidthExclusiveMin),
+  "height": zod.number().gt(saveTemplateDraftResponsePagesItemRectsItemHeightExclusiveMin),
+  "reason": zod.string().max(saveTemplateDraftResponsePagesItemRectsItemReasonMax).optional()
+})).max(saveTemplateDraftResponsePagesItemRectsMax)
+})).min(1).max(saveTemplateDraftResponsePagesMax),
+  "source": zod.union([zod.object({
+  "id": zod.int(),
+  "originalName": zod.string(),
+  "size": zod.int(),
+  "sha256": zod.string(),
+  "createdAt": zod.coerce.date()
+}),zod.null()]),
+  "sourceAvailable": zod.boolean(),
   "createdById": zod.string(),
   "createdByName": zod.string(),
   "updatedById": zod.string(),
@@ -1970,6 +2626,8 @@ export const listManufacturerPacketsResponseManualRedactionsItemHeightExclusiveM
 
 export const listManufacturerPacketsResponseManualRedactionsItemReasonMax = 250;
 
+export const listManufacturerPacketsResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const ListManufacturerPacketsResponseItem = zod.object({
@@ -2005,7 +2663,8 @@ export const ListManufacturerPacketsResponseItem = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(listManufacturerPacketsResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2065,6 +2724,8 @@ export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemHe
 
 export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemReasonMax = 250;
 
+export const requestManufacturerPacketUploadResponsePacketAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const RequestManufacturerPacketUploadResponse = zod.object({
@@ -2101,7 +2762,8 @@ export const RequestManufacturerPacketUploadResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(requestManufacturerPacketUploadResponsePacketAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2218,6 +2880,8 @@ export const getManufacturerPacketResponseManualRedactionsItemHeightExclusiveMin
 
 export const getManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
 
+export const getManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const GetManufacturerPacketResponse = zod.object({
@@ -2253,7 +2917,8 @@ export const GetManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(getManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2312,6 +2977,8 @@ export const setManufacturerPacketProductTypeResponseManualRedactionsItemHeightE
 
 export const setManufacturerPacketProductTypeResponseManualRedactionsItemReasonMax = 250;
 
+export const setManufacturerPacketProductTypeResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const SetManufacturerPacketProductTypeResponse = zod.object({
@@ -2347,7 +3014,8 @@ export const SetManufacturerPacketProductTypeResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(setManufacturerPacketProductTypeResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2399,6 +3067,8 @@ export const setManufacturerPacketManufacturerResponseManualRedactionsItemHeight
 
 export const setManufacturerPacketManufacturerResponseManualRedactionsItemReasonMax = 250;
 
+export const setManufacturerPacketManufacturerResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const SetManufacturerPacketManufacturerResponse = zod.object({
@@ -2434,7 +3104,8 @@ export const SetManufacturerPacketManufacturerResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(setManufacturerPacketManufacturerResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2478,6 +3149,8 @@ export const completeManufacturerPacketUploadResponseManualRedactionsItemHeightE
 
 export const completeManufacturerPacketUploadResponseManualRedactionsItemReasonMax = 250;
 
+export const completeManufacturerPacketUploadResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const CompleteManufacturerPacketUploadResponse = zod.object({
@@ -2513,7 +3186,8 @@ export const CompleteManufacturerPacketUploadResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(completeManufacturerPacketUploadResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2581,6 +3255,8 @@ export const setManufacturerPacketRedactionsResponseManualRedactionsItemHeightEx
 
 export const setManufacturerPacketRedactionsResponseManualRedactionsItemReasonMax = 250;
 
+export const setManufacturerPacketRedactionsResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const SetManufacturerPacketRedactionsResponse = zod.object({
@@ -2616,7 +3292,8 @@ export const SetManufacturerPacketRedactionsResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(setManufacturerPacketRedactionsResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2660,6 +3337,8 @@ export const approveManufacturerPacketResponseManualRedactionsItemHeightExclusiv
 
 export const approveManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
 
+export const approveManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const ApproveManufacturerPacketResponse = zod.object({
@@ -2695,7 +3374,8 @@ export const ApproveManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(approveManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
@@ -2739,6 +3419,8 @@ export const retryManufacturerPacketResponseManualRedactionsItemHeightExclusiveM
 
 export const retryManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
 
+export const retryManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax = 32;
+
 
 
 export const RetryManufacturerPacketResponse = zod.object({
@@ -2774,7 +3456,8 @@ export const RetryManufacturerPacketResponse = zod.object({
   "id": zod.int(),
   "name": zod.string(),
   "manufacturer": zod.string(),
-  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(retryManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
   "createdAt": zod.coerce.date(),

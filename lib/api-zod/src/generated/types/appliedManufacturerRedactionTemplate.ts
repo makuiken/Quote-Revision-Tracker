@@ -5,11 +5,16 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
-import type { AppliedManufacturerRedactionTemplateProductType } from './appliedManufacturerRedactionTemplateProductType';
+import type { QuoteProductType } from './quoteProductType';
 
 export interface AppliedManufacturerRedactionTemplate {
   id: number;
   name: string;
   manufacturer: string;
-  productType: AppliedManufacturerRedactionTemplateProductType;
+  productType: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes?: QuoteProductType[];
 }

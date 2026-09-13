@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ManufacturerRedactionTemplateProductType = typeof ManufacturerRedactionTemplateProductType[keyof typeof ManufacturerRedactionTemplateProductType];
+export type QuoteProductType = typeof QuoteProductType[keyof typeof QuoteProductType];
 
 
-export const ManufacturerRedactionTemplateProductType = {
+export const QuoteProductType = {
   doors: 'doors',
   interiorDoors: 'interiorDoors',
   exteriorDoors: 'exteriorDoors',

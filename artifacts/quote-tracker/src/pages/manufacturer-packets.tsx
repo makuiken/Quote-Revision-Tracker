@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Upload, FileText, Loader2, AlertTriangle, CheckCircle, RotateCcw, ZoomIn, ZoomOut, Save, X, Trash2, FileImage, LayoutList } from "lucide-react";
@@ -32,12 +32,10 @@ import {
   useDeleteManufacturerPacket,
   useSetManufacturerPacketProductType,
   useSetManufacturerPacketManufacturer,
-  useCreateManufacturerRedactionTemplate,
-  useListManufacturerRedactionTemplates,
-  getListManufacturerRedactionTemplatesQueryKey,
   useListManufacturerRedactionTemplateOptions,
-  useReplaceManufacturerRedactionTemplateFromPacket,
+  getListManufacturerRedactionTemplateOptionsQueryKey,
   type ManufacturerPacket,
+  type ManufacturerRedactionTemplateOption,
   type QuoteCategoriesItem,
   type PacketPageAnalysis,
   type PacketRect,
@@ -46,6 +44,37 @@ import {
 import { Input } from "@/components/ui/input";
 
 type ProductType = QuoteCategoriesItem;
+
+export function canonicalManufacturer(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+}
+
+export type TemplateFeedbackCode = "no_active_match" | "layout_incompatible";
+
+export function parseTemplateFeedback(
+  value: string | null | undefined,
+): { code: TemplateFeedbackCode; message: string } | null {
+  const match = value?.match(
+    /^\[template:(no_active_match|layout_incompatible)\]\s*(.*)$/,
+  );
+  if (!match) return null;
+  return {
+    code: match[1] as TemplateFeedbackCode,
+    message: match[2] || "Manual review is required.",
+  };
+}
+
+export function deduplicateManufacturerOptions(
+  options: readonly ManufacturerRedactionTemplateOption[],
+): ManufacturerRedactionTemplateOption[] {
+  const seen = new Set<string>();
+  return options.filter((option) => {
+    const key = `${option.productType}:${canonicalManufacturer(option.manufacturer)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export default function ManufacturerPacketsPage() {
   const { id } = useParams();
@@ -70,9 +99,16 @@ export default function ManufacturerPacketsPage() {
 function PacketsManager({ quoteId }: { quoteId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: packetData = [], isLoading } = useListManufacturerPackets(quoteId, {
+  const {
+    data: packetData = [],
+    isLoading,
+    isError,
+    refetch: refetchPackets,
+  } = useListManufacturerPackets(quoteId, {
     query: {
       queryKey: getListManufacturerPacketsQueryKey(quoteId),
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
       refetchInterval: (query) => {
         const hasPending = query.state.data?.some(p =>
           p.status === "queued" || p.status === "processing"
@@ -83,7 +119,18 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
   });
   const packets = packetData;
 
-  const { data: quoteDetail } = useGetQuote(quoteId);
+  const {
+    data: quoteDetail,
+    isLoading: isQuoteLoading,
+    isFetching: isQuoteFetching,
+    isError: isQuoteError,
+  } = useGetQuote(quoteId, {
+    query: {
+      queryKey: getGetQuoteQueryKey(quoteId),
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
+    },
+  });
   const quote = quoteDetail?.quote;
 
   const [activePacketId, setActivePacketId] = useState<number | 'manifest' | null>(null);
@@ -154,7 +201,13 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr] gap-6 items-start">
         <div className="space-y-4">
 
-          <UploadCard quoteId={quoteId} productTypes={(quote?.categories ?? []) as ProductType[]} />
+           <UploadCard
+             quoteId={quoteId}
+             productTypes={(quote?.categories ?? []) as ProductType[]}
+             isQuoteLoading={isQuoteLoading}
+             isQuoteFetching={isQuoteFetching}
+             isQuoteError={isQuoteError}
+           />
 
           <button
             onClick={() => setActivePacketId('manifest')}
@@ -178,7 +231,21 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
             </CardHeader>
             <CardContent className="p-3 space-y-2">
               {isLoading && <div className="text-center p-4"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground/70" /></div>}
-              {!isLoading && packets.length === 0 && (
+              {isError && (
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">
+                  <p className="font-semibold">Could not load uploaded quotes.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 h-8 border-red-200 bg-card text-red-700 hover:bg-red-100"
+                    onClick={() => void refetchPackets()}
+                  >
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Retry
+                  </Button>
+                </div>
+              )}
+              {!isLoading && !isError && packets.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-4 bg-muted rounded border border-dashed border-border">
                   No manufacturer quotes uploaded yet.
                 </p>
@@ -187,6 +254,7 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
                 <div key={packet.id} className="relative group rounded-lg border border-border bg-card">
                   <button
                     onClick={() => setActivePacketId(packet.id)}
+                    data-testid={`button-uploaded-packet-${packet.id}`}
                     className={`w-full text-left p-3 pr-10 rounded-t-lg transition-all ${
                       activePacketId === packet.id
                         ? "bg-muted ring-1 ring-inset ring-slate-400/30"
@@ -288,9 +356,10 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
         </div>
 
         <div className="min-w-0 h-[800px]">
-          {activePacketId === 'manifest' ? (
-            <ManifestBuilder quoteId={quoteId} hasApprovals={hasApprovals} packets={packets} />
-          ) : activePacket ? (
+          <div className={activePacketId === 'manifest' ? "h-full" : "hidden"}>
+            <ManifestBuilder quoteId={quoteId} hasApprovals={hasApprovals} packets={packets} onOpenPacket={setActivePacketId} />
+          </div>
+          {activePacketId === 'manifest' ? null : activePacket ? (
             <PacketDetails key={activePacket.id} quoteId={quoteId} packet={activePacket} hasApprovals={hasApprovals} />
           ) : (
             <Card className="h-full flex items-center justify-center border-dashed bg-muted/50">
@@ -381,7 +450,19 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${m.className}`}>{m.label}</span>;
 }
 
-function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: ProductType[] }) {
+function UploadCard({
+  quoteId,
+  productTypes,
+  isQuoteLoading,
+  isQuoteFetching,
+  isQuoteError,
+}: {
+  quoteId: number;
+  productTypes: ProductType[];
+  isQuoteLoading: boolean;
+  isQuoteFetching: boolean;
+  isQuoteError: boolean;
+}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -389,26 +470,89 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
   const [productType, setProductType] = useState<ProductType | "">("");
   const [manufacturer, setManufacturer] = useState("");
   const [customManufacturer, setCustomManufacturer] = useState(false);
-  const { data: templateOptions = [], isLoading: isLoadingTemplates } = useListManufacturerRedactionTemplateOptions();
+  const {
+    data: templateOptions = [],
+    isLoading: isLoadingTemplates,
+    isFetching: isFetchingTemplates,
+    isError: isTemplateOptionsError,
+    refetch: refetchTemplateOptions,
+  } = useListManufacturerRedactionTemplateOptions({
+    query: {
+      queryKey: getListManufacturerRedactionTemplateOptionsQueryKey(),
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
+    },
+  });
   const requestUpload = useRequestManufacturerPacketUpload();
   const completeUpload = useCompleteManufacturerPacketUpload();
-  const manufacturers = Array.from(new Set(
-    templateOptions
-      .filter((option) => option.productType === productType)
-      .map((option) => option.manufacturer),
-  ));
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const eligibleProductTypes = useMemo(
+    () => Array.from(new Set(productTypes)),
+    [productTypes],
+  );
+  const manufacturers = useMemo(
+    () => deduplicateManufacturerOptions(
+      templateOptions.filter((option) => option.productType === productType),
+    ),
+    [productType, templateOptions],
+  );
+
+  // A refetch can remove or rename an active option while this form is open.
+  // Never discard a value the salesperson typed: turn a stale saved choice
+  // into the manual "Other" path instead.
+  useEffect(() => {
+    if (!productType || !eligibleProductTypes.includes(productType)) {
+      if (productType && !eligibleProductTypes.includes(productType)) {
+        setProductType("");
+      }
+      return;
+    }
+    if (
+      customManufacturer ||
+      !manufacturer.trim() ||
+      isLoadingTemplates ||
+      isFetchingTemplates ||
+      isTemplateOptionsError
+    ) {
+      return;
+    }
+    const selected = manufacturers.find(
+      (option) => canonicalManufacturer(option.manufacturer) === canonicalManufacturer(manufacturer),
+    );
+    if (selected) {
+      if (selected.manufacturer !== manufacturer) {
+        setManufacturer(selected.manufacturer);
+      }
+    } else {
+      setCustomManufacturer(true);
+    }
+  }, [
+    customManufacturer,
+    eligibleProductTypes,
+    isLoadingTemplates,
+    isFetchingTemplates,
+    isTemplateOptionsError,
+    manufacturer,
+    manufacturers,
+    productType,
+  ]);
+
+  const uploadFile = async (file: File) => {
     if (!file) return;
     if (!productType) {
       toast({ title: "Product type required", description: "Choose the quote product type this manufacturer PDF belongs to before uploading.", variant: "destructive" });
-      e.target.value = "";
       return;
     }
     if (!manufacturer.trim()) {
       toast({ title: "Manufacturer required", description: "Please enter the manufacturer name before uploading.", variant: "destructive" });
-      e.target.value = "";
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".pdf") || (file.type && file.type !== "application/pdf")) {
+      toast({ title: "PDF required", description: "Choose a manufacturer quote saved as a PDF.", variant: "destructive" });
+      return;
+    }
+    if (file.size < 1 || file.size > 40 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Manufacturer quote PDFs must be no larger than 40 MiB.", variant: "destructive" });
       return;
     }
 
@@ -425,12 +569,19 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
       toast({ title: "Manufacturer quote uploaded", description: `${categoryLabel(productType)} selected. Processing started.` });
       queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
       setManufacturer("");
+      setCustomManufacturer(false);
     } catch (error) {
+      queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
       toast({ title: "Upload error", description: error instanceof Error ? error.message : "Failed to upload the manufacturer quote.", variant: "destructive" });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void uploadFile(file);
   };
 
   return (
@@ -443,18 +594,29 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
          <div className="mb-4 space-y-3">
            <div className="space-y-1.5">
              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Product Type</label>
-             <Select value={productType} onValueChange={(value) => {
+              <Select value={productType} onValueChange={(value) => {
                setProductType(value as ProductType);
                setManufacturer("");
                setCustomManufacturer(false);
-             }} disabled={isUploading || productTypes.length === 0}>
+              }} disabled={isUploading || isQuoteLoading || isQuoteFetching || eligibleProductTypes.length === 0}>
                <SelectTrigger className="bg-card font-medium text-sm h-10 border-border">
-                 <SelectValue placeholder={productTypes.length ? "Select product type..." : "No quote product types"} />
+                  <SelectValue placeholder={
+                    isQuoteLoading
+                      ? "Loading quote categories..."
+                      : isQuoteError
+                        ? "Quote categories unavailable"
+                        : eligibleProductTypes.length
+                          ? "Select product type..."
+                          : "No quote product types"
+                  } />
                </SelectTrigger>
                <SelectContent>
-                 {productTypes.map((type) => <SelectItem key={type} value={type}>{categoryLabel(type)}</SelectItem>)}
+                  {eligibleProductTypes.map((type) => <SelectItem key={type} value={type}>{categoryLabel(type)}</SelectItem>)}
                </SelectContent>
              </Select>
+              {isQuoteError && (
+                <p className="text-xs text-red-700" role="alert">Could not load this quote's eligible product categories. Refresh and try again.</p>
+              )}
            </div>
            <div className="space-y-1.5">
              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Manufacturer</label>
@@ -465,16 +627,42 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
                  setCustomManufacturer(isOther);
                  setManufacturer(isOther ? "" : value);
                }}
-               disabled={isUploading || !productType || isLoadingTemplates}
+                disabled={isUploading || !productType}
              >
                <SelectTrigger className="bg-card font-medium text-sm h-10 border-border">
-                 <SelectValue placeholder={!productType ? "Select product type first..." : isLoadingTemplates ? "Loading manufacturers..." : "Select manufacturer..."} />
+                 <SelectValue placeholder={
+                   !productType
+                     ? "Select product type first..."
+                     : isLoadingTemplates
+                       ? "Loading manufacturers..."
+                       : "Select manufacturer..."
+                 } />
                </SelectTrigger>
                <SelectContent>
-                 {manufacturers.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                 {manufacturers.map((option) => (
+                   <SelectItem key={`${option.productType}:${canonicalManufacturer(option.manufacturer)}`} value={option.manufacturer}>
+                     {option.manufacturer}
+                   </SelectItem>
+                 ))}
                  <SelectItem value="__other">Other manufacturer...</SelectItem>
                </SelectContent>
              </Select>
+             {isTemplateOptionsError ? (
+               <div className="flex items-center justify-between gap-2 text-xs text-red-700" role="alert">
+                 <span>Saved manufacturers could not be loaded.</span>
+                 <Button
+                   type="button"
+                   variant="ghost"
+                   size="sm"
+                   className="h-7 px-2 text-red-700 hover:bg-red-50 hover:text-red-800"
+                   onClick={() => void refetchTemplateOptions()}
+                 >
+                   <RotateCcw className="mr-1 h-3 w-3" /> Retry
+                 </Button>
+               </div>
+             ) : !isLoadingTemplates && manufacturers.length === 0 && productType ? (
+               <p className="text-xs text-muted-foreground">No saved manufacturer matches this quote category. Choose Other to enter one manually.</p>
+             ) : null}
              {customManufacturer && (
                <Input
                  aria-label="Other manufacturer name"
@@ -495,7 +683,7 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
           onClick={() => fileInputRef.current?.click()}
         >
           {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-          {isUploading ? "Uploading..." : "Upload Quote PDF"}
+          {isUploading ? "Uploading quote..." : "Upload Quote PDF"}
         </Button>
       </CardContent>
     </Card>
@@ -503,6 +691,22 @@ function UploadCard({ quoteId, productTypes }: { quoteId: number; productTypes: 
 }
 
 function PacketDetails({ quoteId, packet, hasApprovals }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean }) {
+  const retry = useRetryManufacturerPacket();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  if (packet.status === "awaiting_upload") {
+    return (
+      <Card className="h-full flex flex-col items-center justify-center p-12 text-center border-dashed bg-muted/50">
+        <Upload className="w-10 h-10 text-muted-foreground/70 mb-4" />
+        <h3 className="text-lg font-bold text-foreground mb-2">Upload is not complete</h3>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          The secure PDF upload has not finished yet. Return to the upload form and try the quote again.
+        </p>
+      </Card>
+    );
+  }
+
   if (packet.status === "queued" || packet.status === "processing") {
     return (
       <Card className="h-full flex flex-col items-center justify-center p-12 text-center border-dashed bg-muted/50">
@@ -516,8 +720,6 @@ function PacketDetails({ quoteId, packet, hasApprovals }: { quoteId: number, pac
   }
 
   if (packet.status === "failed") {
-    const retry = useRetryManufacturerPacket();
-    const queryClient = useQueryClient();
     return (
       <Card className="border-red-200 bg-red-50/50">
         <CardHeader>
@@ -535,7 +737,12 @@ function PacketDetails({ quoteId, packet, hasApprovals }: { quoteId: number, pac
             disabled={retry.isPending}
             onClick={() => {
               retry.mutate({ id: quoteId, packetId: packet.id }, {
-                onSuccess: () => queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) })
+                  onSuccess: () => queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) }),
+                  onError: (error: Error) => toast({
+                    title: "Retry failed",
+                    description: error.message || "The packet could not be queued again.",
+                    variant: "destructive",
+                  }),
               });
             }}
           >
@@ -579,6 +786,26 @@ function PageThumbnail({ quoteId, packetId, pageNumber, type }: { quoteId: numbe
   return <img src={url} className="w-full h-full object-cover" alt={`Pg ${pageNumber}`} />;
 }
 
+function TemplateFeedbackNotice({
+  feedback,
+}: {
+  feedback: { code: TemplateFeedbackCode; message: string };
+}) {
+  const title = feedback.code === "no_active_match"
+    ? "No active template matched"
+    : "Template layout was incompatible";
+  return (
+    <div
+      className="mt-2 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950"
+      data-testid={`packet-template-feedback-${feedback.code}`}
+      role="status"
+    >
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+      <span><strong>{title}:</strong> {feedback.message}</span>
+    </div>
+  );
+}
+
 function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -586,18 +813,6 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
 
   const { data: dbUser } = useGetCurrentUser();
   const isAdmin = dbUser?.role === 'admin';
-  const createTemplate = useCreateManufacturerRedactionTemplate();
-  const replaceTemplate = useReplaceManufacturerRedactionTemplateFromPacket();
-  const { data: templates } = useListManufacturerRedactionTemplates({
-    query: {
-      enabled: isAdmin,
-      queryKey: getListManufacturerRedactionTemplatesQueryKey()
-    }
-  });
-
-  const matchingTemplate = isAdmin && packet.manufacturer && packet.productType && templates ? templates.find(
-    t => t.manufacturerCanonical === packet.manufacturer!.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US") && t.productType === packet.productType
-  ) : null;
 
   const analysis = packet.analysis || [];
   const { data: manifest, isLoading: isManifestLoading } = useGetManufacturerPacketManifest(quoteId);
@@ -619,6 +834,7 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
   const pageRedactions = redactions[currentPageNum.toString()] || [];
 
   const isIncluded = manifest?.entries.some(e => e.packetId === packet.id);
+  const templateFeedback = parseTemplateFeedback(packet.failureMessage);
 
   const handleSaveRedactions = async (): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -639,54 +855,6 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
         }
       });
     });
-  };
-
-  const handleSaveDefaultTemplate = async () => {
-    if (!packet.manufacturer || !packet.productType) {
-      toast({ title: "Missing details", description: "Manufacturer and Product Type are required to save a template.", variant: "destructive" });
-      return;
-    }
-
-    if (matchingTemplate) {
-      if (!window.confirm(`Update the existing default template for ${packet.manufacturer} - ${categoryLabel(packet.productType as QuoteCategoriesItem)} with these redactions?`)) return;
-
-      const success = await handleSaveRedactions();
-      if (!success) return;
-
-      replaceTemplate.mutate({
-        id: matchingTemplate.id,
-        data: {
-          quoteId,
-          packetId: packet.id,
-          name: matchingTemplate.name,
-          active: matchingTemplate.active
-        }
-      }, {
-        onSuccess: () => {
-          toast({ title: "Template updated", description: "Future matching uploads will use these new redactions." });
-          queryClient.invalidateQueries({ queryKey: getListManufacturerRedactionTemplatesQueryKey() });
-        },
-        onError: (err: Error) => toast({ title: "Failed to update template", description: err.message, variant: "destructive" })
-      });
-    } else {
-      const success = await handleSaveRedactions();
-      if (!success) return;
-
-      createTemplate.mutate({
-        data: {
-          quoteId,
-          packetId: packet.id,
-          name: `Template for ${packet.manufacturer || packet.originalName}`,
-          active: true
-        }
-      }, {
-        onSuccess: () => {
-          toast({ title: "Template saved", description: "Future matching uploads will use these redactions." });
-          queryClient.invalidateQueries({ queryKey: getListManufacturerRedactionTemplatesQueryKey() });
-        },
-        onError: (err: Error) => toast({ title: "Failed to save template", description: err.message, variant: "destructive" })
-      });
-    }
   };
 
   const handleAddAllToPackage = () => {
@@ -736,7 +904,16 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
     });
   };
 
-  if (analysis.length === 0) return <Card><CardContent className="p-8 text-center text-muted-foreground">No page analysis data.</CardContent></Card>;
+  if (analysis.length === 0) {
+    return (
+      <Card>
+        <CardContent className="space-y-3 p-8 text-center text-muted-foreground">
+          {templateFeedback && <TemplateFeedbackNotice feedback={templateFeedback} />}
+          <p>No page analysis data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="h-full flex flex-col overflow-hidden border-border shadow-md bg-card">
@@ -752,10 +929,21 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
           </div>
           <p className="text-muted-foreground text-xs mt-0.5">
             {viewMode === 'source' ? "Draw boxes over private details, then generate a clean preview." : "Review the cleaned preview before adding to the package."}
-            {packet.appliedTemplate?.name && viewMode === 'source' && (
-              <span className="text-green-700 ml-2 font-medium">Auto-prepopulated from template: {packet.appliedTemplate.name}</span>
+            {packet.appliedTemplate?.name && (
+              <span className="text-green-700 ml-2 font-medium">
+                {viewMode === 'source' ? "Auto-prepopulated" : "Applied"} from “{packet.appliedTemplate.name}” ({packet.appliedTemplate.manufacturer} · {categoryLabel(packet.appliedTemplate.productType as QuoteCategoriesItem)}).
+              </span>
             )}
           </p>
+          {isAdmin && (
+            <Link
+              href="/admin/templates"
+              className="mt-1 inline-block text-xs font-semibold text-primary hover:underline"
+            >
+              Templates
+            </Link>
+          )}
+          {templateFeedback && <TemplateFeedbackNotice feedback={templateFeedback} />}
         </div>
         <div className="flex gap-3 items-center shrink-0 w-full md:w-auto justify-between md:justify-end">
           <div className="flex bg-muted p-1 rounded-md border border-border">
@@ -776,25 +964,9 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
 
           {viewMode === 'source' ? (
             <div className="flex gap-2">
-              {isAdmin && (
-                <div className="flex flex-col gap-1 items-end mr-2 justify-center">
-                  <Button
-                    onClick={handleSaveDefaultTemplate}
-                    disabled={createTemplate.isPending || replaceTemplate.isPending || submitRedactions.isPending || !packet.manufacturer || !packet.productType}
-                    variant="outline"
-                    className="h-9 font-bold border-primary text-primary hover:bg-primary/5"
-                  >
-                    {createTemplate.isPending || replaceTemplate.isPending || submitRedactions.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                    {matchingTemplate ? "Update Default Template" : "Save as Default Template"}
-                  </Button>
-                  <span className="text-[9px] text-muted-foreground max-w-[200px] text-right leading-tight">
-                    Templates only auto-apply to future uploads with the exact same manufacturer, product type, and page dimensions. Always review.
-                  </span>
-                </div>
-              )}
               <Button onClick={() => handleSaveRedactions()} disabled={submitRedactions.isPending} className="bg-foreground text-background hover:bg-foreground/90 h-9 font-bold">
                 {submitRedactions.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Generate Clean Preview
+                Approve
               </Button>
             </div>
           ) : (
@@ -894,7 +1066,7 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
   );
 }
 
-function ManifestBuilder({ quoteId, hasApprovals, packets }: { quoteId: number, hasApprovals: boolean, packets: ManufacturerPacket[] }) {
+function ManifestBuilder({ quoteId, hasApprovals, packets, onOpenPacket }: { quoteId: number, hasApprovals: boolean, packets: ManufacturerPacket[], onOpenPacket: (packetId: number) => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: manifest, isLoading } = useGetManufacturerPacketManifest(quoteId);
@@ -957,7 +1129,7 @@ function ManifestBuilder({ quoteId, hasApprovals, packets }: { quoteId: number, 
             </CardDescription>
           </div>
           <Button onClick={handleSave} disabled={setManifest.isPending} className="bg-foreground text-background font-bold shadow-sm">
-            {setManifest.isPending ? "Publishing..." : "Save Custom Order"}
+            {setManifest.isPending ? "Saving..." : "Save Quote Package"}
           </Button>
         </div>
       </CardHeader>
@@ -972,11 +1144,20 @@ function ManifestBuilder({ quoteId, hasApprovals, packets }: { quoteId: number, 
             const isReady = p.status === 'ready_for_approval' || p.status === 'approved';
             return (
             <div key={p.id} className="bg-card p-3 rounded-lg border border-border shadow-sm space-y-2">
-              <div className="font-bold text-sm truncate" title={p.originalName}>{p.originalName}</div>
-              <div className="flex justify-between items-center text-xs text-muted-foreground">
+              <button
+                type="button"
+                className="w-full rounded text-left hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                onClick={() => onOpenPacket(p.id)}
+                aria-label={`Open ${p.originalName} for review`}
+                data-testid={`button-open-available-packet-${p.id}`}
+              >
+              <span className="block font-bold text-sm truncate" title={p.originalName}>{p.originalName}</span>
+              <span className="flex justify-between items-center text-xs text-muted-foreground mt-2">
                 <span>{p.analysis?.length || 0} pages</span>
                 {!isReady && <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">{p.status.replace(/_/g, ' ')}</span>}
-              </div>
+              </span>
+              <span className="block mt-2 text-xs font-semibold text-primary">Open for review</span>
+              </button>
               <Button
                 size="sm"
                 variant="secondary"

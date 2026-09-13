@@ -250,6 +250,17 @@ export class ObjectStorageService {
     });
   }
 
+  /**
+   * Remove a private object only when a lifecycle operation has not committed
+   * a database reference to it. Template saves use this for best-effort
+   * cleanup of an immutable copy after a conflict/transaction failure; the
+   * source object uploaded to a draft is never deleted as historical evidence.
+   */
+  async deleteObjectEntity(objectPath: string): Promise<void> {
+    const file = this.getObjectEntityFileReference(objectPath);
+    await file.delete({ ignoreNotFound: true });
+  }
+
   normalizeObjectEntityPath(rawPath: string): string {
     if (!rawPath.startsWith('https://storage.googleapis.com/')) {
       return rawPath;

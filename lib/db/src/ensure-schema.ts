@@ -152,6 +152,7 @@ const RECONCILIATION_STATEMENTS: string[] = [
     manufacturer text NOT NULL,
     manufacturer_canonical text NOT NULL,
     product_type text NOT NULL,
+     eligible_product_types text[] NOT NULL DEFAULT '{}',
     name text NOT NULL,
     active boolean NOT NULL DEFAULT true,
     pages jsonb NOT NULL,
@@ -165,6 +166,87 @@ const RECONCILIATION_STATEMENTS: string[] = [
       UNIQUE (manufacturer_canonical, product_type)
   )`,
   `ALTER TABLE manufacturer_redaction_templates ADD COLUMN IF NOT EXISTS manufacturer text NOT NULL DEFAULT ''`,
+  // Multi-category templates retain product_type as the legacy primary key.
+  // Backfill every old row so lookup can safely use category overlap.
+  `ALTER TABLE manufacturer_redaction_templates
+     ADD COLUMN IF NOT EXISTS eligible_product_types text[]`,
+  `UPDATE manufacturer_redaction_templates
+     SET eligible_product_types = ARRAY[product_type]
+     WHERE eligible_product_types IS NULL OR cardinality(eligible_product_types) = 0`,
+  `ALTER TABLE manufacturer_redaction_templates
+     ALTER COLUMN eligible_product_types SET DEFAULT '{}'`,
+  `ALTER TABLE manufacturer_redaction_templates
+     ALTER COLUMN eligible_product_types SET NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_redaction_templates_eligible_types_gin_idx
+     ON manufacturer_redaction_templates USING gin (eligible_product_types)`,
+  // Standalone template authoring keeps source PDFs as immutable artifacts.
+  // Existing templates intentionally remain source-less when their original
+  // packet sample was never retained.
+  `CREATE TABLE IF NOT EXISTS manufacturer_template_samples (
+     id serial PRIMARY KEY,
+     template_id integer REFERENCES manufacturer_redaction_templates(id) ON DELETE SET NULL,
+     object_path text NOT NULL UNIQUE,
+     original_name text NOT NULL,
+     declared_size integer NOT NULL,
+     sha256 text NOT NULL,
+     created_by_id text NOT NULL,
+     created_by_name text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now()
+   )`,
+  `ALTER TABLE manufacturer_redaction_templates
+     ADD COLUMN IF NOT EXISTS source_sample_id integer`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_redaction_templates_source_sample_idx
+     ON manufacturer_redaction_templates (source_sample_id)`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_template_samples_template_idx
+     ON manufacturer_template_samples (template_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS manufacturer_template_drafts (
+     id serial PRIMARY KEY,
+     template_id integer REFERENCES manufacturer_redaction_templates(id) ON DELETE SET NULL,
+      original_template_id integer,
+     source_sample_id integer REFERENCES manufacturer_template_samples(id) ON DELETE SET NULL,
+     upload_object_path text UNIQUE,
+     original_name text,
+     declared_size integer,
+     source_sha256 text,
+     source_generation text,
+     base_template_updated_at timestamptz,
+     manufacturer text,
+     manufacturer_canonical text,
+     product_type text,
+      eligible_product_types text[] NOT NULL DEFAULT '{}',
+     name text,
+     active boolean NOT NULL DEFAULT true,
+     analysis jsonb,
+     manual_redactions jsonb,
+     status text NOT NULL DEFAULT 'awaiting_upload',
+     attempt_count integer NOT NULL DEFAULT 0,
+     processing_attempt_token text,
+     processing_started_at timestamptz,
+     failure_message text,
+     revision integer NOT NULL DEFAULT 0,
+     created_by_id text NOT NULL,
+     created_by_name text NOT NULL,
+     updated_by_id text NOT NULL,
+     updated_by_name text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     updated_at timestamptz NOT NULL DEFAULT now()
+   )`,
+  `ALTER TABLE manufacturer_template_drafts
+     ADD COLUMN IF NOT EXISTS eligible_product_types text[] NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE manufacturer_template_drafts
+     ADD COLUMN IF NOT EXISTS base_template_updated_at timestamptz`,
+  `ALTER TABLE manufacturer_template_drafts
+     ADD COLUMN IF NOT EXISTS original_template_id integer`,
+  `UPDATE manufacturer_template_drafts
+     SET original_template_id = template_id
+     WHERE original_template_id IS NULL AND template_id IS NOT NULL`,
+  `UPDATE manufacturer_template_drafts
+     SET eligible_product_types = ARRAY[product_type]
+     WHERE cardinality(eligible_product_types) = 0 AND product_type IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_template_drafts_status_idx
+     ON manufacturer_template_drafts (status, processing_started_at)`,
+  `CREATE INDEX IF NOT EXISTS manufacturer_template_drafts_template_idx
+     ON manufacturer_template_drafts (template_id, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS manufacturer_redaction_templates_active_key_idx
     ON manufacturer_redaction_templates (manufacturer_canonical, product_type)
     WHERE active = true`,

@@ -10,7 +10,7 @@ import {
   ObjectStorageService,
 } from '../lib/objectStorage';
 
-import { requireAuth, requireApproved } from '../middlewares/requireAuth';
+import { requireAuth, requireApproved, type AuthedRequest } from '../middlewares/requireAuth';
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -102,10 +102,23 @@ router.get(
  * be protected with authentication or ACL checks based on the use case.
  */
 // Attachments are team-internal: require a signed-in, approved user.
-router.get('/storage/objects/*path', requireAuth, requireApproved, async (req: Request, res: Response) => {
+router.get('/storage/objects/*path', requireAuth, requireApproved, async (req: AuthedRequest, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
+    // Template samples are private administrator artifacts. The regular
+    // object endpoint remains team-internal for quote attachments, but a
+    // guessed/stolen template path must never let an approved salesperson
+    // retrieve the original PDF.
+    if (
+      wildcardPath.startsWith('manufacturer-template-staging/') ||
+      wildcardPath.startsWith('manufacturer-template-samples/')
+    ) {
+      if (req.appUser?.role !== 'admin') {
+        res.status(403).json({ error: 'Administrator access required' });
+        return;
+      }
+    }
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile =
       await objectStorageService.getObjectEntityFile(objectPath);

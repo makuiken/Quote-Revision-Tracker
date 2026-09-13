@@ -5,6 +5,18 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+export type QuoteProductType = typeof QuoteProductType[keyof typeof QuoteProductType];
+
+
+export const QuoteProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
 export type PacketStatus = typeof PacketStatus[keyof typeof PacketStatus];
 
 
@@ -63,23 +75,16 @@ export const ManufacturerPacketProductType = {
  */
 export type ManufacturerPacketManualRedactions = {[key: string]: PacketRect[]} | null;
 
-export type AppliedManufacturerRedactionTemplateProductType = typeof AppliedManufacturerRedactionTemplateProductType[keyof typeof AppliedManufacturerRedactionTemplateProductType];
-
-
-export const AppliedManufacturerRedactionTemplateProductType = {
-  doors: 'doors',
-  interiorDoors: 'interiorDoors',
-  exteriorDoors: 'exteriorDoors',
-  windows: 'windows',
-  trim: 'trim',
-  millwork: 'millwork',
-} as const;
-
 export interface AppliedManufacturerRedactionTemplate {
   id: number;
   name: string;
   manufacturer: string;
-  productType: AppliedManufacturerRedactionTemplateProductType;
+  productType: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes?: QuoteProductType[];
 }
 
 export interface ManufacturerPacket {
@@ -119,24 +124,25 @@ export interface ManufacturerRedactionTemplatePage {
   rects: PacketRect[];
 }
 
-export type ManufacturerRedactionTemplateProductType = typeof ManufacturerRedactionTemplateProductType[keyof typeof ManufacturerRedactionTemplateProductType];
-
-
-export const ManufacturerRedactionTemplateProductType = {
-  doors: 'doors',
-  interiorDoors: 'interiorDoors',
-  exteriorDoors: 'exteriorDoors',
-  windows: 'windows',
-  trim: 'trim',
-  millwork: 'millwork',
-} as const;
+export interface ManufacturerTemplateSource {
+  id: number;
+  originalName: string;
+  size: number;
+  sha256: string;
+  createdAt: string;
+}
 
 export interface ManufacturerRedactionTemplate {
   id: number;
   /** Display manufacturer value; matching is canonical and case-insensitive. */
   manufacturer: string;
   manufacturerCanonical: string;
-  productType: ManufacturerRedactionTemplateProductType;
+  productType: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes: QuoteProductType[];
   name: string;
   active: boolean;
   /**
@@ -144,6 +150,8 @@ export interface ManufacturerRedactionTemplate {
      * @maxItems 500
      */
   pages: ManufacturerRedactionTemplatePage[];
+  source: ManufacturerTemplateSource | null;
+  sourceAvailable: boolean;
   createdById: string;
   createdByName: string;
   updatedById: string;
@@ -152,21 +160,190 @@ export interface ManufacturerRedactionTemplate {
   updatedAt: string;
 }
 
-export type ManufacturerRedactionTemplateOptionProductType = typeof ManufacturerRedactionTemplateOptionProductType[keyof typeof ManufacturerRedactionTemplateOptionProductType];
+export interface TemplateAnalysisPage {
+  /** @minimum 1 */
+  pageNumber: number;
+  /** @exclusiveMinimum 0 */
+  width: number;
+  /** @exclusiveMinimum 0 */
+  height: number;
+  pageType: string;
+  /** @maxItems 32 */
+  suggestedRects: PacketRect[];
+}
+
+export type TemplateDraftResponseStatus = typeof TemplateDraftResponseStatus[keyof typeof TemplateDraftResponseStatus];
 
 
-export const ManufacturerRedactionTemplateOptionProductType = {
-  doors: 'doors',
-  interiorDoors: 'interiorDoors',
-  exteriorDoors: 'exteriorDoors',
-  windows: 'windows',
-  trim: 'trim',
-  millwork: 'millwork',
+export const TemplateDraftResponseStatus = {
+  awaiting_upload: 'awaiting_upload',
+  analyzing: 'analyzing',
+  ready: 'ready',
+  saving: 'saving',
+  failed: 'failed',
+  cancelled: 'cancelled',
 } as const;
+
+/**
+ * @nullable
+ */
+export type TemplateDraftResponseManualRedactions = {[key: string]: PacketRect[]} | null;
+
+export interface TemplateDraftResponse {
+  id: number;
+  /** @nullable */
+  templateId: number | null;
+  status: TemplateDraftResponseStatus;
+  /** @nullable */
+  originalName: string | null;
+  /** @nullable */
+  declaredSize: number | null;
+  sourceAvailable: boolean;
+  /** @nullable */
+  baseTemplateUpdatedAt: string | null;
+  source: ManufacturerTemplateSource | null;
+  /** @nullable */
+  manufacturer: string | null;
+  /** @nullable */
+  manufacturerCanonical: string | null;
+  productType: QuoteProductType | null;
+  /** @maxItems 32 */
+  eligibleProductTypes: QuoteProductType[];
+  /** @nullable */
+  name: string | null;
+  active: boolean;
+  revision: number;
+  /** @nullable */
+  analysis: TemplateAnalysisPage[] | null;
+  /** @nullable */
+  manualRedactions: TemplateDraftResponseManualRedactions;
+  warnings: string[];
+  /** @nullable */
+  failureMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TemplateUploadInputContentType = typeof TemplateUploadInputContentType[keyof typeof TemplateUploadInputContentType];
+
+
+export const TemplateUploadInputContentType = {
+  'application/pdf': 'application/pdf',
+} as const;
+
+export interface TemplateUploadInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 41943040
+     */
+  size: number;
+  contentType: TemplateUploadInputContentType;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  manufacturer?: string;
+  productType?: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes?: QuoteProductType[];
+}
+
+export interface AnalyzeTemplateDraftInput {
+  /** @maxLength 200 */
+  manufacturer?: string;
+}
+
+export type TemplateEditDraftInputContentType = typeof TemplateEditDraftInputContentType[keyof typeof TemplateEditDraftInputContentType];
+
+
+export const TemplateEditDraftInputContentType = {
+  'application/pdf': 'application/pdf',
+} as const;
+
+export interface TemplateEditDraftInput {
+  replaceSample?: boolean;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 41943040
+     */
+  size?: number;
+  contentType?: TemplateEditDraftInputContentType;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  manufacturer?: string;
+  productType?: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes?: QuoteProductType[];
+}
+
+export interface TemplateUploadDraftResponse {
+  draft: TemplateDraftResponse;
+  uploadURL: string;
+  objectPath: string;
+  uploadExpiresAt: string;
+}
+
+export type TemplateRedactionsInputManualRedactions = {[key: string]: PacketRect[]};
+
+export interface TemplateRedactionsInput {
+  manualRedactions: TemplateRedactionsInputManualRedactions;
+}
+
+export type TemplatePreviewInputManualRedactions = {[key: string]: PacketRect[]};
+
+export interface TemplatePreviewInput {
+  /** @minimum 1 */
+  pageNumber: number;
+  manualRedactions?: TemplatePreviewInputManualRedactions;
+}
+
+export type TemplateSaveInputManualRedactions = {[key: string]: PacketRect[]};
+
+export interface TemplateSaveInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  manufacturer: string;
+  productType: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes: QuoteProductType[];
+  active: boolean;
+  expectedTemplateUpdatedAt?: string;
+  /** @minimum 0 */
+  expectedDraftRevision?: number;
+  manualRedactions?: TemplateSaveInputManualRedactions;
+}
 
 export interface ManufacturerRedactionTemplateOption {
   manufacturer: string;
-  productType: ManufacturerRedactionTemplateOptionProductType;
+  productType: QuoteProductType;
 }
 
 export interface ManufacturerRedactionTemplateFromPacketInput {

@@ -303,7 +303,9 @@ test.describe("manufacturer packet API contract", () => {
     // session used for the API contract, including source preview and a
     // rectangle interaction before the API redaction assertion above.
     await page.goto(`/quotes/${quoteId}/packets`);
-    await packetListEntry(page, firstFilename).click();
+    await page.getByRole("button", { name: /Customer Package Advanced/ }).click();
+    await expect(page.getByRole("button", { name: "Save Quote Package", exact: true })).toBeVisible();
+    await page.getByTestId(`button-open-available-packet-${first.packet.id}`).click();
     await expect(
       page.getByRole("heading", { name: firstFilename, exact: true }),
     ).toBeVisible();
@@ -802,7 +804,7 @@ async function authenticateApiContext(page: Page): Promise<void> {
 }
 
 function packetListEntry(page: Page, filename: string) {
-  return page.getByRole("button").filter({ hasText: filename });
+  return page.getByTestId(/^button-uploaded-packet-/).filter({ hasText: filename });
 }
 
 

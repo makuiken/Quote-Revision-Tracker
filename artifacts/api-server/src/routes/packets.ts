@@ -72,6 +72,10 @@ import { loadApprovedManifest } from "../lib/packets/service";
 import { renderPdfPreviewInWorker } from "../lib/packets/engine";
 import { invalidateApprovalCoverage, invalidateLegacyApproval } from "../lib/scopedApprovals";
 import { changedManifestProductTypes, manifestChanged } from "../lib/packets/manifestScope";
+import {
+  deduplicateTemplateOptions,
+  expandTemplateOptions,
+} from "../lib/packets/templates";
 
 const router: IRouter = Router();
 const storage = new ObjectStorageService();
@@ -82,17 +86,18 @@ router.get("/manufacturer-redaction-template-options", async (_req, res): Promis
   const templates = await db
     .select({
       manufacturer: manufacturerRedactionTemplatesTable.manufacturer,
-      productType: manufacturerRedactionTemplatesTable.productType,
+      manufacturerCanonical: manufacturerRedactionTemplatesTable.manufacturerCanonical,
+      eligibleProductTypes: manufacturerRedactionTemplatesTable.eligibleProductTypes,
     })
     .from(manufacturerRedactionTemplatesTable)
     .where(eq(manufacturerRedactionTemplatesTable.active, true))
     .orderBy(manufacturerRedactionTemplatesTable.manufacturer);
-  const unique = Array.from(
-    new Map(templates.map((template) => [
-      `${template.productType}:${template.manufacturer.trim().toLocaleLowerCase("en-US")}`,
-      template,
-    ])).values(),
-  );
+  const unique = deduplicateTemplateOptions(
+    expandTemplateOptions(templates),
+  ).map(({ manufacturer, productType }) => ({
+    manufacturer,
+    productType,
+  }));
   res.json(ListManufacturerRedactionTemplateOptionsResponse.parse(unique));
 });
 

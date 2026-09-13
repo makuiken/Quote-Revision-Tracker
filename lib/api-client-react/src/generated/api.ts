@@ -21,6 +21,7 @@ import type {
 
 import type {
   ActivityEntry,
+  AnalyzeTemplateDraftInput,
   AppUser,
   ArchiveQuoteInput,
   Attachment,
@@ -45,7 +46,6 @@ import type {
   ManufacturerPacketUpload,
   ManufacturerPacketUploadInput,
   ManufacturerRedactionTemplate,
-  ManufacturerRedactionTemplateFromPacketInput,
   ManufacturerRedactionTemplateOption,
   ManufacturerRedactionTemplateUpdateInput,
   PacketManufacturerInput,
@@ -72,6 +72,13 @@ import type {
   Signoff,
   SignoffInput,
   TeamMember,
+  TemplateDraftResponse,
+  TemplateEditDraftInput,
+  TemplatePreviewInput,
+  TemplateRedactionsInput,
+  TemplateSaveInput,
+  TemplateUploadDraftResponse,
+  TemplateUploadInput,
   UploadUrlRequest,
   UploadUrlResponse,
   UserRoleInput
@@ -800,16 +807,17 @@ export const getCreateManufacturerRedactionTemplateUrl = () => {
 }
 
 /**
- * @summary Create a redaction template from an analyzed packet (admin only)
+ * @deprecated
+ * @summary Retired packet-based template creation endpoint
  */
-export const createManufacturerRedactionTemplate = async (manufacturerRedactionTemplateFromPacketInput: ManufacturerRedactionTemplateFromPacketInput, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerRedactionTemplate> => {
+export const createManufacturerRedactionTemplate = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
 
-  return customFetch<ManufacturerRedactionTemplate>(getCreateManufacturerRedactionTemplateUrl(),
+  return customFetch<unknown>(getCreateManufacturerRedactionTemplateUrl(),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(manufacturerRedactionTemplateFromPacketInput)
+    method: 'POST'
+
+
   }
 );}
 
@@ -818,8 +826,8 @@ export const createManufacturerRedactionTemplate = async (manufacturerRedactionT
 
 
 export const getCreateManufacturerRedactionTemplateMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, TError,{data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, TError,{data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, TError,void, TContext> => {
 
 const mutationKey = ['createManufacturerRedactionTemplate'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -831,10 +839,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, {data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}> = (props) => {
-          const {data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, void> = () => {
 
-          return  createManufacturerRedactionTemplate(data,requestOptions)
+
+          return  createManufacturerRedactionTemplate(requestOptions)
         }
 
 
@@ -845,18 +853,19 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CreateManufacturerRedactionTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>>
-    export type CreateManufacturerRedactionTemplateMutationBody = BodyType<ManufacturerRedactionTemplateFromPacketInput>
+
     export type CreateManufacturerRedactionTemplateMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Create a redaction template from an analyzed packet (admin only)
+ * @deprecated
+ * @summary Retired packet-based template creation endpoint
  */
 export const useCreateManufacturerRedactionTemplate = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, TError,{data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createManufacturerRedactionTemplate>>,
         TError,
-        {data: BodyType<ManufacturerRedactionTemplateFromPacketInput>},
+        void,
         TContext
       > => {
       return useMutation(getCreateManufacturerRedactionTemplateMutationOptions(options));
@@ -1014,17 +1023,17 @@ export const getReplaceManufacturerRedactionTemplateFromPacketUrl = (id: number,
 }
 
 /**
- * @summary Replace template geometry from an analyzed packet (admin only)
+ * @deprecated
+ * @summary Retired packet-based template replacement endpoint
  */
-export const replaceManufacturerRedactionTemplateFromPacket = async (id: number,
-    manufacturerRedactionTemplateFromPacketInput: ManufacturerRedactionTemplateFromPacketInput, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerRedactionTemplate> => {
+export const replaceManufacturerRedactionTemplateFromPacket = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
 
-  return customFetch<ManufacturerRedactionTemplate>(getReplaceManufacturerRedactionTemplateFromPacketUrl(id),
+  return customFetch<unknown>(getReplaceManufacturerRedactionTemplateFromPacketUrl(id),
   {
     ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(manufacturerRedactionTemplateFromPacketInput)
+    method: 'PUT'
+
+
   }
 );}
 
@@ -1033,8 +1042,8 @@ export const replaceManufacturerRedactionTemplateFromPacket = async (id: number,
 
 
 export const getReplaceManufacturerRedactionTemplateFromPacketMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, TError,{id: number;data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, TError,{id: number;data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, TError,{id: number}, TContext> => {
 
 const mutationKey = ['replaceManufacturerRedactionTemplateFromPacket'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1046,10 +1055,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, {id: number;data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}> = (props) => {
-          const {id,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
 
-          return  replaceManufacturerRedactionTemplateFromPacket(id,data,requestOptions)
+          return  replaceManufacturerRedactionTemplateFromPacket(id,requestOptions)
         }
 
 
@@ -1060,21 +1069,683 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type ReplaceManufacturerRedactionTemplateFromPacketMutationResult = NonNullable<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>>
-    export type ReplaceManufacturerRedactionTemplateFromPacketMutationBody = BodyType<ManufacturerRedactionTemplateFromPacketInput>
+
     export type ReplaceManufacturerRedactionTemplateFromPacketMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Replace template geometry from an analyzed packet (admin only)
+ * @deprecated
+ * @summary Retired packet-based template replacement endpoint
  */
 export const useReplaceManufacturerRedactionTemplateFromPacket = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, TError,{id: number;data: BodyType<ManufacturerRedactionTemplateFromPacketInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof replaceManufacturerRedactionTemplateFromPacket>>,
         TError,
-        {id: number;data: BodyType<ManufacturerRedactionTemplateFromPacketInput>},
+        {id: number},
         TContext
       > => {
       return useMutation(getReplaceManufacturerRedactionTemplateFromPacketMutationOptions(options));
+    }
+
+export const getRequestTemplateDraftUploadUrlUrl = () => {
+
+
+
+
+  return `/api/admin/template-drafts/uploads/request-url`
+}
+
+/**
+ * @summary Create a standalone template draft and request a private sample upload URL
+ */
+export const requestTemplateDraftUploadUrl = async (templateUploadInput: TemplateUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<TemplateUploadDraftResponse> => {
+
+  return customFetch<TemplateUploadDraftResponse>(getRequestTemplateDraftUploadUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(templateUploadInput)
+  }
+);}
+
+
+
+
+
+export const getRequestTemplateDraftUploadUrlMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestTemplateDraftUploadUrl>>, TError,{data: BodyType<TemplateUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestTemplateDraftUploadUrl>>, TError,{data: BodyType<TemplateUploadInput>}, TContext> => {
+
+const mutationKey = ['requestTemplateDraftUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestTemplateDraftUploadUrl>>, {data: BodyType<TemplateUploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestTemplateDraftUploadUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestTemplateDraftUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof requestTemplateDraftUploadUrl>>>
+    export type RequestTemplateDraftUploadUrlMutationBody = BodyType<TemplateUploadInput>
+    export type RequestTemplateDraftUploadUrlMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a standalone template draft and request a private sample upload URL
+ */
+export const useRequestTemplateDraftUploadUrl = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestTemplateDraftUploadUrl>>, TError,{data: BodyType<TemplateUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestTemplateDraftUploadUrl>>,
+        TError,
+        {data: BodyType<TemplateUploadInput>},
+        TContext
+      > => {
+      return useMutation(getRequestTemplateDraftUploadUrlMutationOptions(options));
+    }
+
+export const getCreateManufacturerRedactionTemplateDraftUrl = (id: number,) => {
+
+
+
+
+  return `/api/admin/manufacturer-redaction-templates/${id}/drafts`
+}
+
+/**
+ * @summary Open an edit draft, optionally requesting an explicit sample replacement
+ */
+export const createManufacturerRedactionTemplateDraft = async (id: number,
+    templateEditDraftInput?: TemplateEditDraftInput, options?: Parameters<typeof customFetch>[1]): Promise<TemplateUploadDraftResponse | TemplateDraftResponse> => {
+
+  return customFetch<TemplateUploadDraftResponse | TemplateDraftResponse>(getCreateManufacturerRedactionTemplateDraftUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(templateEditDraftInput)
+  }
+);}
+
+
+
+
+
+export const getCreateManufacturerRedactionTemplateDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplateDraft>>, TError,{id: number;data?: BodyType<TemplateEditDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplateDraft>>, TError,{id: number;data?: BodyType<TemplateEditDraftInput>}, TContext> => {
+
+const mutationKey = ['createManufacturerRedactionTemplateDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createManufacturerRedactionTemplateDraft>>, {id: number;data?: BodyType<TemplateEditDraftInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createManufacturerRedactionTemplateDraft(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateManufacturerRedactionTemplateDraftMutationResult = NonNullable<Awaited<ReturnType<typeof createManufacturerRedactionTemplateDraft>>>
+    export type CreateManufacturerRedactionTemplateDraftMutationBody = BodyType<TemplateEditDraftInput> | undefined
+    export type CreateManufacturerRedactionTemplateDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Open an edit draft, optionally requesting an explicit sample replacement
+ */
+export const useCreateManufacturerRedactionTemplateDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createManufacturerRedactionTemplateDraft>>, TError,{id: number;data?: BodyType<TemplateEditDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createManufacturerRedactionTemplateDraft>>,
+        TError,
+        {id: number;data?: BodyType<TemplateEditDraftInput>},
+        TContext
+      > => {
+      return useMutation(getCreateManufacturerRedactionTemplateDraftMutationOptions(options));
+    }
+
+export const getGetTemplateDraftUrl = (draftId: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}`
+}
+
+/**
+ * @summary Get a standalone template draft
+ */
+export const getTemplateDraft = async (draftId: number, options?: Parameters<typeof customFetch>[1]): Promise<TemplateDraftResponse> => {
+
+  return customFetch<TemplateDraftResponse>(getGetTemplateDraftUrl(draftId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTemplateDraftQueryKey = (draftId: number,) => {
+    return [
+    `/api/admin/template-drafts/${draftId}`
+    ] as const;
+    }
+
+
+export const getGetTemplateDraftQueryOptions = <TData = Awaited<ReturnType<typeof getTemplateDraft>>, TError = ErrorType<ErrorResponse>>(draftId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTemplateDraft>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTemplateDraftQueryKey(draftId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTemplateDraft>>> = ({ signal }) => getTemplateDraft(draftId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: draftId !== null && draftId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTemplateDraft>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTemplateDraftQueryResult = NonNullable<Awaited<ReturnType<typeof getTemplateDraft>>>
+export type GetTemplateDraftQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a standalone template draft
+ */
+
+export function useGetTemplateDraft<TData = Awaited<ReturnType<typeof getTemplateDraft>>, TError = ErrorType<ErrorResponse>>(
+ draftId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTemplateDraft>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTemplateDraftQueryOptions(draftId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCancelTemplateDraftUrl = (draftId: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}`
+}
+
+/**
+ * @summary Cancel a template draft without changing a saved template
+ */
+export const cancelTemplateDraft = async (draftId: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getCancelTemplateDraftUrl(draftId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelTemplateDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelTemplateDraft>>, TError,{draftId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelTemplateDraft>>, TError,{draftId: number}, TContext> => {
+
+const mutationKey = ['cancelTemplateDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelTemplateDraft>>, {draftId: number}> = (props) => {
+          const {draftId} = props ?? {};
+
+          return  cancelTemplateDraft(draftId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelTemplateDraftMutationResult = NonNullable<Awaited<ReturnType<typeof cancelTemplateDraft>>>
+
+    export type CancelTemplateDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Cancel a template draft without changing a saved template
+ */
+export const useCancelTemplateDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelTemplateDraft>>, TError,{draftId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelTemplateDraft>>,
+        TError,
+        {draftId: number},
+        TContext
+      > => {
+      return useMutation(getCancelTemplateDraftMutationOptions(options));
+    }
+
+export const getAnalyzeTemplateDraftUrl = (draftId: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}/analyze`
+}
+
+/**
+ * @summary Analyze an uploaded private template sample with bounded processing
+ */
+export const analyzeTemplateDraft = async (draftId: number,
+    analyzeTemplateDraftInput?: AnalyzeTemplateDraftInput, options?: Parameters<typeof customFetch>[1]): Promise<TemplateDraftResponse> => {
+
+  return customFetch<TemplateDraftResponse>(getAnalyzeTemplateDraftUrl(draftId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(analyzeTemplateDraftInput)
+  }
+);}
+
+
+
+
+
+export const getAnalyzeTemplateDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeTemplateDraft>>, TError,{draftId: number;data?: BodyType<AnalyzeTemplateDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeTemplateDraft>>, TError,{draftId: number;data?: BodyType<AnalyzeTemplateDraftInput>}, TContext> => {
+
+const mutationKey = ['analyzeTemplateDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeTemplateDraft>>, {draftId: number;data?: BodyType<AnalyzeTemplateDraftInput>}> = (props) => {
+          const {draftId,data} = props ?? {};
+
+          return  analyzeTemplateDraft(draftId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeTemplateDraftMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeTemplateDraft>>>
+    export type AnalyzeTemplateDraftMutationBody = BodyType<AnalyzeTemplateDraftInput> | undefined
+    export type AnalyzeTemplateDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Analyze an uploaded private template sample with bounded processing
+ */
+export const useAnalyzeTemplateDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeTemplateDraft>>, TError,{draftId: number;data?: BodyType<AnalyzeTemplateDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeTemplateDraft>>,
+        TError,
+        {draftId: number;data?: BodyType<AnalyzeTemplateDraftInput>},
+        TContext
+      > => {
+      return useMutation(getAnalyzeTemplateDraftMutationOptions(options));
+    }
+
+export const getUpdateTemplateDraftRedactionsUrl = (draftId: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}/redactions`
+}
+
+/**
+ * @summary Save explicit redaction geometry on a template draft
+ */
+export const updateTemplateDraftRedactions = async (draftId: number,
+    templateRedactionsInput: TemplateRedactionsInput, options?: Parameters<typeof customFetch>[1]): Promise<TemplateDraftResponse> => {
+
+  return customFetch<TemplateDraftResponse>(getUpdateTemplateDraftRedactionsUrl(draftId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(templateRedactionsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTemplateDraftRedactionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTemplateDraftRedactions>>, TError,{draftId: number;data: BodyType<TemplateRedactionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTemplateDraftRedactions>>, TError,{draftId: number;data: BodyType<TemplateRedactionsInput>}, TContext> => {
+
+const mutationKey = ['updateTemplateDraftRedactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTemplateDraftRedactions>>, {draftId: number;data: BodyType<TemplateRedactionsInput>}> = (props) => {
+          const {draftId,data} = props ?? {};
+
+          return  updateTemplateDraftRedactions(draftId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTemplateDraftRedactionsMutationResult = NonNullable<Awaited<ReturnType<typeof updateTemplateDraftRedactions>>>
+    export type UpdateTemplateDraftRedactionsMutationBody = BodyType<TemplateRedactionsInput>
+    export type UpdateTemplateDraftRedactionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Save explicit redaction geometry on a template draft
+ */
+export const useUpdateTemplateDraftRedactions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTemplateDraftRedactions>>, TError,{draftId: number;data: BodyType<TemplateRedactionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTemplateDraftRedactions>>,
+        TError,
+        {draftId: number;data: BodyType<TemplateRedactionsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTemplateDraftRedactionsMutationOptions(options));
+    }
+
+export const getGetTemplateDraftSourcePageUrl = (draftId: number,
+    pageNumber: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}/source/pages/${pageNumber}`
+}
+
+/**
+ * @summary Render one private original source page for an administrator
+ */
+export const getTemplateDraftSourcePage = async (draftId: number,
+    pageNumber: number, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetTemplateDraftSourcePageUrl(draftId,pageNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTemplateDraftSourcePageQueryKey = (draftId: number,
+    pageNumber: number,) => {
+    return [
+    `/api/admin/template-drafts/${draftId}/source/pages/${pageNumber}`
+    ] as const;
+    }
+
+
+export const getGetTemplateDraftSourcePageQueryOptions = <TData = Awaited<ReturnType<typeof getTemplateDraftSourcePage>>, TError = ErrorType<ErrorResponse>>(draftId: number,
+    pageNumber: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTemplateDraftSourcePage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTemplateDraftSourcePageQueryKey(draftId,pageNumber);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTemplateDraftSourcePage>>> = ({ signal }) => getTemplateDraftSourcePage(draftId,pageNumber, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: draftId !== null && draftId !== undefined && pageNumber !== null && pageNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTemplateDraftSourcePage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTemplateDraftSourcePageQueryResult = NonNullable<Awaited<ReturnType<typeof getTemplateDraftSourcePage>>>
+export type GetTemplateDraftSourcePageQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Render one private original source page for an administrator
+ */
+
+export function useGetTemplateDraftSourcePage<TData = Awaited<ReturnType<typeof getTemplateDraftSourcePage>>, TError = ErrorType<ErrorResponse>>(
+ draftId: number,
+    pageNumber: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTemplateDraftSourcePage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTemplateDraftSourcePageQueryOptions(draftId,pageNumber,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPreviewTemplateDraftUrl = (draftId: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}/preview`
+}
+
+/**
+ * @summary Render a cleaned page preview without saving a template
+ */
+export const previewTemplateDraft = async (draftId: number,
+    templatePreviewInput: TemplatePreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getPreviewTemplateDraftUrl(draftId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(templatePreviewInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewTemplateDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewTemplateDraft>>, TError,{draftId: number;data: BodyType<TemplatePreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewTemplateDraft>>, TError,{draftId: number;data: BodyType<TemplatePreviewInput>}, TContext> => {
+
+const mutationKey = ['previewTemplateDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewTemplateDraft>>, {draftId: number;data: BodyType<TemplatePreviewInput>}> = (props) => {
+          const {draftId,data} = props ?? {};
+
+          return  previewTemplateDraft(draftId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewTemplateDraftMutationResult = NonNullable<Awaited<ReturnType<typeof previewTemplateDraft>>>
+    export type PreviewTemplateDraftMutationBody = BodyType<TemplatePreviewInput>
+    export type PreviewTemplateDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Render a cleaned page preview without saving a template
+ */
+export const usePreviewTemplateDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewTemplateDraft>>, TError,{draftId: number;data: BodyType<TemplatePreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewTemplateDraft>>,
+        TError,
+        {draftId: number;data: BodyType<TemplatePreviewInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewTemplateDraftMutationOptions(options));
+    }
+
+export const getSaveTemplateDraftUrl = (draftId: number,) => {
+
+
+
+
+  return `/api/admin/template-drafts/${draftId}/save`
+}
+
+/**
+ * @summary Atomically create or update a manufacturer template from a ready draft
+ */
+export const saveTemplateDraft = async (draftId: number,
+    templateSaveInput: TemplateSaveInput, options?: Parameters<typeof customFetch>[1]): Promise<ManufacturerRedactionTemplate> => {
+
+  return customFetch<ManufacturerRedactionTemplate>(getSaveTemplateDraftUrl(draftId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(templateSaveInput)
+  }
+);}
+
+
+
+
+
+export const getSaveTemplateDraftMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTemplateDraft>>, TError,{draftId: number;data: BodyType<TemplateSaveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTemplateDraft>>, TError,{draftId: number;data: BodyType<TemplateSaveInput>}, TContext> => {
+
+const mutationKey = ['saveTemplateDraft'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTemplateDraft>>, {draftId: number;data: BodyType<TemplateSaveInput>}> = (props) => {
+          const {draftId,data} = props ?? {};
+
+          return  saveTemplateDraft(draftId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTemplateDraftMutationResult = NonNullable<Awaited<ReturnType<typeof saveTemplateDraft>>>
+    export type SaveTemplateDraftMutationBody = BodyType<TemplateSaveInput>
+    export type SaveTemplateDraftMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Atomically create or update a manufacturer template from a ready draft
+ */
+export const useSaveTemplateDraft = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTemplateDraft>>, TError,{draftId: number;data: BodyType<TemplateSaveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTemplateDraft>>,
+        TError,
+        {draftId: number;data: BodyType<TemplateSaveInput>},
+        TContext
+      > => {
+      return useMutation(getSaveTemplateDraftMutationOptions(options));
     }
 
 export const getSetDependentFieldOptionsUrl = (category: 'window' | 'interiorDoor' | 'exteriorDoor',

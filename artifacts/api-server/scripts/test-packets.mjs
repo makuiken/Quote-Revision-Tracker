@@ -19,6 +19,7 @@ try {
       "src/lib/scopedPublicQuote.test.ts",
       "src/lib/packets/manifestScope.test.ts",
       "src/lib/packets/templates.test.ts",
+      "src/lib/templateLifecycle.test.ts",
     ],
     outdir,
     bundle: true,
@@ -42,6 +43,7 @@ try {
     "scopedPublicQuote.test.js",
     "packets/manifestScope.test.js",
     "packets/templates.test.js",
+    "templateLifecycle.test.js",
   ].map((file) => join(outdir, file));
   const child = spawn(process.execPath, ["--test", ...files], {
     stdio: "inherit",

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   manufacturerPacketManifestTable,
@@ -16,7 +16,12 @@ import {
   recoveryAction,
 } from "./recovery";
 import type { PacketPageAnalysis, RedactionRect } from "./types";
-import { canonicalManufacturer, matchingTemplateRedactions } from "./templates";
+import {
+  canonicalManufacturer,
+  matchingTemplateRedactions,
+  templateLayoutMismatchFeedback,
+  templateNoActiveMatchFeedback,
+} from "./templates";
 
 const storage = new ObjectStorageService();
 const MAX_PROCESSING_ATTEMPTS = 3;
@@ -271,6 +276,8 @@ export async function processPacket(packetId: number): Promise<void> {
     // Null means the reviewer has not explicitly accepted/changed the
     // suggestions. An empty object is a valid explicit review with no
     // redactions. A template can prefill review, but never sanitize or publish.
+    // Template geometry is applied only when the complete analyzed page layout
+    // matches; never carry a subset of boxes across a changed document.
     // packetEngine's compatibility interface is intersected with its legacy
     // type in the currently published declaration; the worker adapter returns
     // this profile alongside pages at runtime.
@@ -289,7 +296,7 @@ export async function processPacket(packetId: number): Promise<void> {
                   manufacturerRedactionTemplatesTable.manufacturerCanonical,
                   canonicalManufacturer(claimed.manufacturer),
                 ),
-                eq(manufacturerRedactionTemplatesTable.productType, claimed.productType),
+                sql`${manufacturerRedactionTemplatesTable.eligibleProductTypes} && ARRAY[${claimed.productType}]::text[]`,
                 eq(manufacturerRedactionTemplatesTable.active, true),
               ),
             )
@@ -298,6 +305,31 @@ export async function processPacket(packetId: number): Promise<void> {
       const manualFromTemplate = template
         ? matchingTemplateRedactions(analysis.pages, template.pages)
         : null;
+      const templateFeedback = template
+        ? manualFromTemplate
+          ? null
+          : templateLayoutMismatchFeedback(template.name)
+        : templateNoActiveMatchFeedback(claimed.manufacturer, claimed.productType);
+      if (template && !manualFromTemplate) {
+        logger.warn(
+          {
+            packetId: claimed.id,
+            templateId: template.id,
+            manufacturer: claimed.manufacturer,
+            productType: claimed.productType,
+          },
+          "Redaction template did not match the complete packet layout; manual review required",
+        );
+      } else if (!template) {
+        logger.info(
+          {
+            packetId: claimed.id,
+            manufacturer: claimed.manufacturer,
+            productType: claimed.productType,
+          },
+          "No active redaction template matched; manual review required",
+        );
+      }
       await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
         status: "needs_review",
         analysis: analysis.pages,
@@ -308,6 +340,10 @@ export async function processPacket(packetId: number): Promise<void> {
           manualFromTemplate ? template!.id : null,
         appliedRedactionTemplateName:
           manualFromTemplate ? template!.name : null,
+        // `failureMessage` is also the durable processing-feedback field for
+        // a needs_review packet. The prefix gives clients a stable reason
+        // without inferring it from the current active template options.
+        failureMessage: templateFeedback,
         detectedManufacturer:
           detectedProfile === "unknown" ? null : detectedProfile,
         pageCount: analysis.pages.length,
@@ -358,6 +394,7 @@ export async function processPacket(packetId: number): Promise<void> {
       sanitizedPdfSha256: hash,
       sanitizedPageObjectPaths: pagePaths,
       processingStartedAt: null,
+      failureMessage: null,
     });
   } catch (error) {
     await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {

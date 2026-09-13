@@ -26,6 +26,8 @@ tags:
     description: Manufacturer PDF packet review, approval, and signoff inclusion
   - name: admin
     description: Team member administration (admin only)
+  - name: template-admin
+    description: Standalone manufacturer template authoring (admin only)
 paths:
   /healthz:
     get:
@@ -193,25 +195,11 @@ paths:
     post:
       operationId: createManufacturerRedactionTemplate
       tags: [admin]
-      summary: Create a redaction template from an analyzed packet (admin only)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplateFromPacketInput" }
+      deprecated: true
+      summary: Retired packet-based template creation endpoint
       responses:
-        "201":
-          description: Created template
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
-        "400":
-          description: Packet is not analyzed or has no manual redaction boxes
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "409":
-          description: A template already exists for this manufacturer and product type
+        "410":
+          description: Use the standalone template draft upload and save workflow
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -261,9 +249,144 @@ paths:
     put:
       operationId: replaceManufacturerRedactionTemplateFromPacket
       tags: [admin]
-      summary: Replace template geometry from an analyzed packet (admin only)
+      deprecated: true
+      summary: Retired packet-based template replacement endpoint
       parameters:
         - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "410":
+          description: Use the standalone template draft upload and save workflow
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/uploads/request-url:
+    post:
+      operationId: requestTemplateDraftUploadUrl
+      tags: [template-admin]
+      summary: Create a standalone template draft and request a private sample upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TemplateUploadInput" }
+      responses:
+        "201":
+          description: Draft and presigned upload URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemplateUploadDraftResponse" }
+        "400":
+          description: Invalid upload metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/manufacturer-redaction-templates/{id}/drafts:
+    post:
+      operationId: createManufacturerRedactionTemplateDraft
+      tags: [template-admin]
+      summary: Open an edit draft, optionally requesting an explicit sample replacement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TemplateEditDraftInput" }
+      responses:
+        "201":
+          description: Edit draft, with upload URL when replacing the sample
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/TemplateUploadDraftResponse"
+                  - $ref: "#/components/schemas/TemplateDraftResponse"
+        "404":
+          description: Template not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/{draftId}:
+    get:
+      operationId: getTemplateDraft
+      tags: [template-admin]
+      summary: Get a standalone template draft
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Template draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemplateDraftResponse" }
+        "404":
+          description: Draft not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: cancelTemplateDraft
+      tags: [template-admin]
+      summary: Cancel a template draft without changing a saved template
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Cancelled (idempotent for an already-cancelled draft) }
+        "404":
+          description: Draft not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/{draftId}/analyze:
+    post:
+      operationId: analyzeTemplateDraft
+      tags: [template-admin]
+      summary: Analyze an uploaded private template sample with bounded processing
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnalyzeTemplateDraftInput" }
+      responses:
+        "200":
+          description: Analyzed draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemplateDraftResponse" }
+        "409":
+          description: Draft busy, stale, or retry limit reached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "422":
+          description: Invalid PDF or bounded processing failure
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/{draftId}/redactions:
+    patch:
+      operationId: updateTemplateDraftRedactions
+      tags: [template-admin]
+      summary: Save explicit redaction geometry on a template draft
+      parameters:
+        - name: draftId
           in: path
           required: true
           schema: { type: integer }
@@ -271,15 +394,97 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplateFromPacketInput" }
+            schema: { $ref: "#/components/schemas/TemplateRedactionsInput" }
+      responses:
+        "200":
+          description: Updated draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TemplateDraftResponse" }
+        "400":
+          description: Invalid page geometry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/{draftId}/source/pages/{pageNumber}:
+    get:
+      operationId: getTemplateDraftSourcePage
+      tags: [template-admin]
+      summary: Render one private original source page for an administrator
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: pageNumber
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Original page PNG (admin only)
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404":
+          description: Draft or retained source sample not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/{draftId}/preview:
+    post:
+      operationId: previewTemplateDraft
+      tags: [template-admin]
+      summary: Render a cleaned page preview without saving a template
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TemplatePreviewInput" }
+      responses:
+        "200":
+          description: Cleaned page PNG
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "409":
+          description: Draft is not ready for preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/template-drafts/{draftId}/save:
+    post:
+      operationId: saveTemplateDraft
+      tags: [template-admin]
+      summary: Atomically create or update a manufacturer template from a ready draft
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TemplateSaveInput" }
       responses:
         "200":
           description: Updated template
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
-        "400":
-          description: Packet is not analyzed or has no manual redaction boxes
+        "201":
+          description: Created template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManufacturerRedactionTemplate" }
+        "409":
+          description: Stale edit or manufacturer/product type conflict
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -1796,6 +2001,9 @@ components:
       required: true
       schema: { type: string }
   schemas:
+    QuoteProductType:
+      type: string
+      enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
     PacketStatus:
       type: string
       enum: [awaiting_upload, queued, processing, needs_review, ready_for_approval, approved, failed]
@@ -1857,8 +2065,12 @@ components:
         name: { type: string }
         manufacturer: { type: string }
         productType:
-          type: string
-          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+          $ref: "#/components/schemas/QuoteProductType"
+        eligibleProductTypes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/QuoteProductType" }
       required: [id, name, manufacturer, productType]
     ManufacturerRedactionTemplatePage:
       type: object
@@ -1880,8 +2092,12 @@ components:
           description: Display manufacturer value; matching is canonical and case-insensitive.
         manufacturerCanonical: { type: string }
         productType:
-          type: string
-          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+          $ref: "#/components/schemas/QuoteProductType"
+        eligibleProductTypes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/QuoteProductType" }
         name: { type: string }
         active: { type: boolean }
         pages:
@@ -1889,13 +2105,168 @@ components:
           minItems: 1
           maxItems: 500
           items: { $ref: "#/components/schemas/ManufacturerRedactionTemplatePage" }
+        source:
+          oneOf:
+            - $ref: "#/components/schemas/ManufacturerTemplateSource"
+            - type: "null"
+        sourceAvailable: { type: boolean }
         createdById: { type: string }
         createdByName: { type: string }
         updatedById: { type: string }
         updatedByName: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, manufacturer, manufacturerCanonical, productType, name, active, pages, createdById, createdByName, updatedById, updatedByName, createdAt, updatedAt]
+      required: [id, manufacturer, manufacturerCanonical, productType, eligibleProductTypes, name, active, pages, source, sourceAvailable, createdById, createdByName, updatedById, updatedByName, createdAt, updatedAt]
+    ManufacturerTemplateSource:
+      type: object
+      properties:
+        id: { type: integer }
+        originalName: { type: string }
+        size: { type: integer }
+        sha256: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, originalName, size, sha256, createdAt]
+    TemplateAnalysisPage:
+      type: object
+      properties:
+        pageNumber: { type: integer, minimum: 1 }
+        width: { type: number, exclusiveMinimum: 0 }
+        height: { type: number, exclusiveMinimum: 0 }
+        pageType: { type: string }
+        suggestedRects:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/PacketRect" }
+      required: [pageNumber, width, height, pageType, suggestedRects]
+    TemplateDraftResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        templateId: { type: ["integer", "null"] }
+        status:
+          type: string
+          enum: [awaiting_upload, analyzing, ready, saving, failed, cancelled]
+        originalName: { type: ["string", "null"] }
+        declaredSize: { type: ["integer", "null"] }
+        sourceAvailable: { type: boolean }
+        baseTemplateUpdatedAt: { type: ["string", "null"], format: date-time }
+        source:
+          oneOf:
+            - $ref: "#/components/schemas/ManufacturerTemplateSource"
+            - type: "null"
+        manufacturer: { type: ["string", "null"] }
+        manufacturerCanonical: { type: ["string", "null"] }
+        productType:
+          oneOf:
+            - $ref: "#/components/schemas/QuoteProductType"
+            - type: "null"
+        eligibleProductTypes:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/QuoteProductType" }
+        name: { type: ["string", "null"] }
+        active: { type: boolean }
+        revision: { type: integer }
+        analysis:
+          type: ["array", "null"]
+          items: { $ref: "#/components/schemas/TemplateAnalysisPage" }
+        manualRedactions:
+          type: ["object", "null"]
+          additionalProperties:
+            type: array
+            items: { $ref: "#/components/schemas/PacketRect" }
+        warnings:
+          type: array
+          items: { type: string }
+        failureMessage: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, templateId, status, originalName, declaredSize, sourceAvailable, baseTemplateUpdatedAt, source, manufacturer, manufacturerCanonical, productType, eligibleProductTypes, name, active, revision, analysis, manualRedactions, warnings, failureMessage, createdAt, updatedAt]
+    TemplateUploadInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        size: { type: integer, minimum: 1, maximum: 41943040 }
+        contentType: { type: string, enum: [application/pdf] }
+        manufacturer: { type: string, minLength: 1, maxLength: 200 }
+        productType: { $ref: "#/components/schemas/QuoteProductType" }
+        eligibleProductTypes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/QuoteProductType" }
+      required: [name, size, contentType]
+    AnalyzeTemplateDraftInput:
+      type: object
+      properties:
+        manufacturer: { type: string, maxLength: 200 }
+    TemplateEditDraftInput:
+      type: object
+      properties:
+        replaceSample: { type: boolean }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        size: { type: integer, minimum: 1, maximum: 41943040 }
+        contentType: { type: string, enum: [application/pdf] }
+        manufacturer: { type: string, minLength: 1, maxLength: 200 }
+        productType: { $ref: "#/components/schemas/QuoteProductType" }
+        eligibleProductTypes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/QuoteProductType" }
+    TemplateUploadDraftResponse:
+      type: object
+      properties:
+        draft: { $ref: "#/components/schemas/TemplateDraftResponse" }
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+        uploadExpiresAt: { type: string, format: date-time }
+      required: [draft, uploadURL, objectPath, uploadExpiresAt]
+    TemplateRedactionsInput:
+      type: object
+      properties:
+        manualRedactions:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            type: array
+            maxItems: 32
+            items: { $ref: "#/components/schemas/PacketRect" }
+      required: [manualRedactions]
+    TemplatePreviewInput:
+      type: object
+      properties:
+        pageNumber: { type: integer, minimum: 1 }
+        manualRedactions:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            type: array
+            maxItems: 32
+            items: { $ref: "#/components/schemas/PacketRect" }
+      required: [pageNumber]
+    TemplateSaveInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        manufacturer: { type: string, minLength: 1, maxLength: 200 }
+        productType: { $ref: "#/components/schemas/QuoteProductType" }
+        eligibleProductTypes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/QuoteProductType" }
+        active: { type: boolean }
+        expectedTemplateUpdatedAt: { type: string, format: date-time }
+        expectedDraftRevision: { type: integer, minimum: 0 }
+        manualRedactions:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            type: array
+            maxItems: 32
+            items: { $ref: "#/components/schemas/PacketRect" }
+      required: [name, manufacturer, productType, eligibleProductTypes, active]
     ManufacturerRedactionTemplateOption:
       type: object
       required: [manufacturer, productType]
@@ -1903,8 +2274,7 @@ components:
         manufacturer:
           type: string
         productType:
-          type: string
-          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+          $ref: "#/components/schemas/QuoteProductType"
     ManufacturerRedactionTemplateFromPacketInput:
       type: object
       properties:

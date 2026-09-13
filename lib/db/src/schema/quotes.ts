@@ -275,9 +275,16 @@ export const manufacturerRedactionTemplatesTable = pgTable(
     manufacturer: text("manufacturer").notNull(),
     manufacturerCanonical: text("manufacturer_canonical").notNull(),
     productType: text("product_type").notNull(),
+    // Primary productType remains for legacy packet/template compatibility.
+    // New templates may be eligible for several quote categories.
+    eligibleProductTypes: text("eligible_product_types").array().notNull().default([]),
     name: text("name").notNull(),
     active: boolean("active").notNull().default(true),
     pages: jsonb("pages").$type<ManufacturerRedactionTemplatePage[]>().notNull(),
+    // A template's source is an immutable sample artifact. Existing templates
+    // may have no sourceSampleId because source retention was not available
+    // when they were created.
+    sourceSampleId: integer("source_sample_id"),
     createdById: text("created_by_id").notNull(),
     createdByName: text("created_by_name").notNull(),
     updatedById: text("updated_by_id").notNull(),
@@ -295,6 +302,81 @@ export const manufacturerRedactionTemplatesTable = pgTable(
     ),
   ],
 );
+
+// Immutable private source artifacts for standalone template authoring. A
+// replacement creates a new row and never overwrites the prior PDF; deleting
+// the current template leaves the artifact row available for historical
+// recovery/audit rather than cascading into object storage.
+export const manufacturerTemplateSamplesTable = pgTable(
+  "manufacturer_template_samples",
+  {
+    id: serial("id").primaryKey(),
+    templateId: integer("template_id").references(
+      () => manufacturerRedactionTemplatesTable.id,
+      { onDelete: "set null" },
+    ),
+    objectPath: text("object_path").notNull().unique(),
+    originalName: text("original_name").notNull(),
+    declaredSize: integer("declared_size").notNull(),
+    sha256: text("sha256").notNull(),
+    createdById: text("created_by_id").notNull(),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+// A draft has no quote/customer parent. It is a bounded, admin-only workflow
+// record and can be cancelled without mutating a saved template.
+export const manufacturerTemplateDraftsTable = pgTable("manufacturer_template_drafts", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").references(
+    () => manufacturerRedactionTemplatesTable.id,
+    { onDelete: "set null" },
+  ),
+  // Immutable identity for edit/replacement drafts. Unlike templateId, this
+  // is intentionally not a foreign key: deleting the saved template must not
+  // turn an edit into a new-template draft.
+  originalTemplateId: integer("original_template_id"),
+  sourceSampleId: integer("source_sample_id").references(
+    () => manufacturerTemplateSamplesTable.id,
+    { onDelete: "set null" },
+  ),
+  uploadObjectPath: text("upload_object_path").unique(),
+  originalName: text("original_name"),
+  declaredSize: integer("declared_size"),
+  sourceSha256: text("source_sha256"),
+  sourceGeneration: text("source_generation"),
+  // Snapshot of the saved template revision when an edit/replacement draft
+  // was opened. Null is retained for legacy drafts and must be reopened.
+  baseTemplateUpdatedAt: timestamp("base_template_updated_at", { withTimezone: true }),
+  manufacturer: text("manufacturer"),
+  manufacturerCanonical: text("manufacturer_canonical"),
+  productType: text("product_type"),
+  eligibleProductTypes: text("eligible_product_types").array().notNull().default([]),
+  name: text("name"),
+  active: boolean("active").notNull().default(true),
+  analysis: jsonb("analysis").$type<PacketPageAnalysis[] | null>(),
+  manualRedactions: jsonb("manual_redactions")
+    .$type<Record<string, PacketRedaction[]> | null>(),
+  status: text("status")
+    .$type<"awaiting_upload" | "analyzing" | "ready" | "saving" | "failed" | "cancelled">()
+    .notNull()
+    .default("awaiting_upload"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  processingAttemptToken: text("processing_attempt_token"),
+  processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
+  failureMessage: text("failure_message"),
+  revision: integer("revision").notNull().default(0),
+  createdById: text("created_by_id").notNull(),
+  createdByName: text("created_by_name").notNull(),
+  updatedById: text("updated_by_id").notNull(),
+  updatedByName: text("updated_by_name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
 
 // An issued scoped link locks the exact content the customer is asked to
 // review. Requests are append-only: expired/stale requests are retained as
@@ -451,3 +533,7 @@ export type AppUser = typeof usersTable.$inferSelect;
 export type FieldOptions = typeof fieldOptionsTable.$inferSelect;
 export type ManufacturerRedactionTemplate =
   typeof manufacturerRedactionTemplatesTable.$inferSelect;
+export type ManufacturerTemplateSample =
+  typeof manufacturerTemplateSamplesTable.$inferSelect;
+export type ManufacturerTemplateDraft =
+  typeof manufacturerTemplateDraftsTable.$inferSelect;

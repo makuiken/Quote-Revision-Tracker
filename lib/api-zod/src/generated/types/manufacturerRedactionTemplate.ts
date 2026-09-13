@@ -6,14 +6,20 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ManufacturerRedactionTemplatePage } from './manufacturerRedactionTemplatePage';
-import type { ManufacturerRedactionTemplateProductType } from './manufacturerRedactionTemplateProductType';
+import type { ManufacturerTemplateSource } from './manufacturerTemplateSource';
+import type { QuoteProductType } from './quoteProductType';
 
 export interface ManufacturerRedactionTemplate {
   id: number;
   /** Display manufacturer value; matching is canonical and case-insensitive. */
   manufacturer: string;
   manufacturerCanonical: string;
-  productType: ManufacturerRedactionTemplateProductType;
+  productType: QuoteProductType;
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  eligibleProductTypes: QuoteProductType[];
   name: string;
   active: boolean;
   /**
@@ -21,6 +27,8 @@ export interface ManufacturerRedactionTemplate {
      * @maxItems 500
      */
   pages: ManufacturerRedactionTemplatePage[];
+  source: ManufacturerTemplateSource | null;
+  sourceAvailable: boolean;
   createdById: string;
   createdByName: string;
   updatedById: string;
