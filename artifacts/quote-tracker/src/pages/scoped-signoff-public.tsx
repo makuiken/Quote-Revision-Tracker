@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Printer, ArrowLeft } from "lucide-react";
+import { Printer, ArrowLeft, Copy, Check } from "lucide-react";
 import { useParams, Link } from "wouter";
 import { useAuth } from "@clerk/react";
 import {
@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toaster";
 import { SignoffDocument } from "@/components/signoff-document";
+import { copyTextToClipboard } from "@/lib/copy-text";
 
 function ScopedPacketPage({
   token,
@@ -110,6 +111,7 @@ function ScopedPacketViewer({
 export default function ScopedPublicSignoffPage() {
   const { token } = useParams();
   const { toast } = useToast();
+  const [linkCopied, setLinkCopied] = useState(false);
   const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
   const onManifestStateChange = React.useCallback((next: { hasManifest: boolean; isReady: boolean; error?: string }) => {
     setManifestState((current) => current.hasManifest === next.hasManifest && current.isReady === next.isReady && current.error === next.error ? current : next);
@@ -150,6 +152,12 @@ export default function ScopedPublicSignoffPage() {
     },
   });
   const isEmployee = dbUser?.status === "approved";
+  const copyShareLink = async () => {
+    await copyTextToClipboard(window.location.href);
+    setLinkCopied(true);
+    toast({ title: "Link copied", description: "The customer approval link is ready to share." });
+    window.setTimeout(() => setLinkCopied(false), 2000);
+  };
 
   if (isLoading) return <div className="flex min-h-[100dvh] items-center justify-center bg-gray-100 text-gray-600">Loading approval document…</div>;
   if (isError || !detail) {
@@ -185,9 +193,17 @@ export default function ScopedPublicSignoffPage() {
               </Button>
             )}
           </div>
-          <Button onClick={() => window.print()} disabled={Boolean(disabledReason)} className="bg-black text-white hover:bg-gray-800" title="Print this exact approval document or choose Save as PDF.">
-            <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            {isEmployee && (
+              <Button variant="outline" onClick={copyShareLink} className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50">
+                {linkCopied ? <Check className="mr-2 h-4 w-4 text-green-700" /> : <Copy className="mr-2 h-4 w-4" />}
+                {linkCopied ? "Link Copied" : "Copy Share Link"}
+              </Button>
+            )}
+            <Button onClick={() => window.print()} disabled={Boolean(disabledReason)} className="bg-black text-white hover:bg-gray-800" title="Print this exact approval document or choose Save as PDF.">
+              <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
+            </Button>
+          </div>
         </div>
         <SignoffDocument
           quote={detail.quote}
