@@ -1060,41 +1060,37 @@ export default function QuoteDetailPage() {
                 )}
               </div>
               
-              <div className="space-y-6 pl-2">
+              <div className="space-y-6">
                 {revisions.length === 0 ? (
                   <div className="text-center py-10 bg-muted rounded-lg border border-dashed border-border">
                     <MessageSquare className="w-8 h-8 mx-auto text-muted-foreground/70 mb-2" />
                     <p className="text-sm font-medium text-muted-foreground">No revisions logged yet.</p>
                   </div>
                 ) : (
-                  <div className="space-y-8">
-                    <div className="relative before:absolute before:inset-0 before:ml-[15px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-slate-200 before:to-transparent space-y-8">
+                  <div className="space-y-4">
+                    <div className="space-y-3">
                       {[...revisions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || b.id - a.id).slice((revisionPage - 1) * REVISIONS_PER_PAGE, revisionPage * REVISIONS_PER_PAGE).map((rev) => (
-                        <div key={rev.id} className="relative flex items-start md:justify-center">
-                          <div className="absolute left-0 md:left-1/2 -ml-3 md:-ml-[13px] top-1 h-6 w-6 rounded-full border-4 border-white bg-slate-300 flex items-center justify-center shadow-sm z-10"></div>
-                          <div className="ml-8 md:ml-0 md:w-full md:grid md:grid-cols-2 gap-8 w-full relative">
-                             {/* Desktop alternating layout, mobile always right */}
-                             <div className="md:col-start-2 md:col-span-1 bg-card border border-border p-4 rounded-xl shadow-sm hover:border-border transition-colors">
-                                <div className="flex justify-between items-start mb-2">
-                                  <div>
-                                    <span className="font-bold text-sm text-foreground block">{rev.authorName}</span>
-                                    <span className="text-xs font-medium text-muted-foreground">{format(new Date(rev.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
-                                  </div>
-                    <CopyButton variant="ghost" className="h-6 w-6 text-muted-foreground [&>svg]:w-3 [&>svg]:h-3 p-0" title="Copy note text" getText={() => rev.note} />
-                                </div>
-                                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed mb-3">
-                                  {rev.note}
-                                </p>
-                                {(rev.categories?.length ?? 0) > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border">
-                                    {rev.categories!.map((tag) => (
-                                      <Badge key={tag} variant="secondary" className="text-[10px] font-bold uppercase tracking-wider px-2 py-0 bg-muted text-muted-foreground">
-                                        {categoryLabel(tag)}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-                             </div>
+                        <div key={rev.id} className="overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-colors hover:border-primary/30">
+                          <div className="flex items-start justify-between gap-4 border-b border-border bg-muted/40 px-4 py-3">
+                            <div className="min-w-0">
+                              <span className="block truncate text-sm font-bold text-foreground">{rev.authorName}</span>
+                              <span className="text-xs font-medium text-muted-foreground">{format(new Date(rev.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
+                            </div>
+                            <CopyButton variant="ghost" className="h-7 w-7 shrink-0 p-0 text-muted-foreground [&>svg]:h-3.5 [&>svg]:w-3.5" title="Copy note text" getText={() => rev.note} />
+                          </div>
+                          <div className="px-4 py-3">
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                              {rev.note}
+                            </p>
+                            {(rev.categories?.length ?? 0) > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">
+                                {rev.categories!.map((tag) => (
+                                  <Badge key={tag} variant="secondary" className="bg-muted px-2 py-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                    {categoryLabel(tag)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
