@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText, FileEdit, Archive, ArchiveRestore, Clock } from "lucide-react";
+import { Printer, PenTool, CheckCircle, AlertCircle, MessageSquare, ArrowLeft, Edit, Paperclip, Upload, Download, Trash2, FileImage, FileText, FileEdit, Archive, ArchiveRestore, Clock, ChevronRight } from "lucide-react";
 import { 
   useGetQuote, 
   getGetQuoteQueryKey,
@@ -1169,35 +1169,58 @@ export default function QuoteDetailPage() {
                   <div className="pt-2 space-y-2">
                     {signedSnapshots
                       .filter((approval) => coverage.some((item) => item.approvalId === approval.approvalId))
-                      .map((approval) => (
-                        <div key={approval.approvalId} className="space-y-1">
-                          <Button asChild size="sm" className="w-full text-xs font-bold">
-                            <Link href={`/scoped-sign/${approval.token}`}>
-                              <Printer className="w-4 h-4 mr-2 shrink-0" />
-                              View / Print Signoff
-                            </Link>
-                          </Button>
-                          <p className="text-xs text-muted-foreground text-center">
-                            {approval.productTypes.map(productTypeLabel).join(" · ")}
-                            {coverage.some((item) => item.approvalId === approval.approvalId && item.status === "needs_resigning") &&
-                              " — Original signed document; changed products need re-signing"}
-                          </p>
-                        </div>
-                      ))}
+                      .map((approval) => {
+                        const needsResigning = coverage.some(
+                          (item) => item.approvalId === approval.approvalId && item.status === "needs_resigning",
+                        );
+
+                        return (
+                          <Link
+                            key={approval.approvalId}
+                            href={`/scoped-sign/${approval.token}`}
+                            className="group flex items-center gap-3 rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/40"
+                          >
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                              <Printer className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-semibold text-foreground">
+                                View or print signoff
+                              </span>
+                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                {approval.productTypes.map(productTypeLabel).join(" · ")}
+                              </span>
+                              {needsResigning && (
+                                <span className="mt-1 block text-xs font-medium text-amber-700">
+                                  Original signed copy · Updates need re-signing
+                                </span>
+                              )}
+                            </span>
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                          </Link>
+                        );
+                      })}
                     {(scopedApprovalData?.approvals ?? [])
                       .filter((approval) => approval.status === "open")
                       .map((approval) => (
-                        <div key={approval.token} className="space-y-1">
-                          <Button asChild variant="secondary" size="sm" className="w-full text-xs font-bold">
-                            <Link href={`/scoped-sign/${approval.token}`}>
-                              <Printer className="w-4 h-4 mr-2 shrink-0" />
-                              View / Print Unsigned Signoff
-                            </Link>
-                          </Button>
-                          <p className="text-xs text-muted-foreground text-center">
-                            {approval.productTypes.map(productTypeLabel).join(" · ")}
-                          </p>
-                        </div>
+                        <Link
+                          key={approval.token}
+                          href={`/scoped-sign/${approval.token}`}
+                          className="group flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-3 transition-colors hover:border-primary/40 hover:bg-muted/60"
+                        >
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                            <FileText className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold text-foreground">
+                              Preview unsigned signoff
+                            </span>
+                            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                              {approval.productTypes.map(productTypeLabel).join(" · ")}
+                            </span>
+                          </span>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                        </Link>
                       ))}
                     <Button asChild variant="outline" size="sm" className="w-full text-xs font-bold bg-card">
                       <Link href={`/quotes/${quoteId}/signoff`}>
