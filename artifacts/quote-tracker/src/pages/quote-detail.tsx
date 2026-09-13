@@ -954,10 +954,10 @@ export default function QuoteDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 lg:gap-10 items-start">
           {/* Main Content Area: Revisions & Updates */}
           <div className="space-y-6">
-            <Card className="border-border shadow-md ring-1 ring-ring/5">
+            <Card className="border-border shadow-md ring-1 ring-ring/5 overflow-hidden">
               <CardContent className="p-0">
                 <form onSubmit={handleAddUpdate} className="flex flex-col">
-                  <div className="p-4 border-b bg-muted rounded-t-lg">
+                  <div className="p-4 border-b bg-muted">
                     <Label htmlFor="note" className="text-base font-bold text-foreground block mb-1">Add a revision to Quote #{quote.quoteNumber}</Label>
                     <p className="text-sm text-muted-foreground mb-3">{quote.customerName}{quote.projectName ? ` · ${quote.projectName}` : ""}</p>
                     <div className="flex flex-col sm:flex-row gap-3">
@@ -973,7 +973,7 @@ export default function QuoteDetailPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="bg-card px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-b-lg">
+                  <div className="bg-card px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex-1 w-full min-w-0">
                       <span className="text-sm font-semibold text-muted-foreground block mb-2 sm:mb-1.5">Which products does this update concern?</span>
                       <p className="text-xs text-muted-foreground mb-2">{tags.length ? "Only the selected products are affected." : "No selection means a general update for all products."}</p>
