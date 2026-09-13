@@ -1166,7 +1166,39 @@ export default function QuoteDetailPage() {
                       </div>
                     </div>
                   )}
-                  <div className="pt-2">
+                  <div className="pt-2 space-y-2">
+                    {signedSnapshots
+                      .filter((approval) => coverage.some((item) => item.approvalId === approval.approvalId))
+                      .map((approval) => (
+                        <div key={approval.approvalId} className="space-y-1">
+                          <Button asChild size="sm" className="w-full text-xs font-bold">
+                            <Link href={`/scoped-sign/${approval.token}`}>
+                              <Printer className="w-4 h-4 mr-2 shrink-0" />
+                              View / Print Signoff
+                            </Link>
+                          </Button>
+                          <p className="text-xs text-muted-foreground text-center">
+                            {approval.productTypes.map(productTypeLabel).join(" · ")}
+                            {coverage.some((item) => item.approvalId === approval.approvalId && item.status === "needs_resigning") &&
+                              " — Original signed document; changed products need re-signing"}
+                          </p>
+                        </div>
+                      ))}
+                    {(scopedApprovalData?.approvals ?? [])
+                      .filter((approval) => approval.status === "open")
+                      .map((approval) => (
+                        <div key={approval.token} className="space-y-1">
+                          <Button asChild variant="secondary" size="sm" className="w-full text-xs font-bold">
+                            <Link href={`/scoped-sign/${approval.token}`}>
+                              <Printer className="w-4 h-4 mr-2 shrink-0" />
+                              View / Print Unsigned Signoff
+                            </Link>
+                          </Button>
+                          <p className="text-xs text-muted-foreground text-center">
+                            {approval.productTypes.map(productTypeLabel).join(" · ")}
+                          </p>
+                        </div>
+                      ))}
                     <Button asChild variant="outline" size="sm" className="w-full text-xs font-bold bg-card">
                       <Link href={`/quotes/${quoteId}/signoff`}>
                         Manage Approvals
