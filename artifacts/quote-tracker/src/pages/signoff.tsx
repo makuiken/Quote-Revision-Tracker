@@ -427,7 +427,7 @@ export default function SignoffPage() {
                           <Share2 className="mr-2 h-3.5 w-3.5" /> Share link
                         </Button>
                         <Button asChild variant="outline" size="sm" className="bg-muted text-foreground col-span-2">
-                          <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> Open exact preview</Link>
+                          <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> Open preview</Link>
                         </Button>
                         <Button
                           variant="ghost"
