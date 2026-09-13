@@ -1,22 +1,28 @@
 import React, { useEffect, useState } from "react";
-import { Printer, ArrowLeft, Copy, Check } from "lucide-react";
+import { Printer, ArrowLeft, Copy, Check, Mail } from "lucide-react";
 import { useParams, Link } from "wouter";
 import { useAuth } from "@clerk/react";
 import {
   getGetPublicScopedManufacturerPacketPageQueryKey,
   getGetPublicScopedManufacturerPacketQueryKey,
   getGetPublicScopedSignoffQueryKey,
+  getGetShareInfoQueryKey,
   useGetPublicScopedManufacturerPacket,
   useGetPublicScopedManufacturerPacketPage,
   useGetPublicScopedSignoff,
+  useGetShareInfo,
   useSavePublicScopedSignoff,
   useGetCurrentUser,
   getGetCurrentUserQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
 import { SignoffDocument } from "@/components/signoff-document";
 import { copyTextToClipboard } from "@/lib/copy-text";
+import { categoryLabel } from "@/lib/revision-categories";
 
 function ScopedPacketPage({
   token,
@@ -111,6 +117,8 @@ function ScopedPacketViewer({
 export default function ScopedPublicSignoffPage() {
   const { token } = useParams();
   const { toast } = useToast();
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
   const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
   const onManifestStateChange = React.useCallback((next: { hasManifest: boolean; isReady: boolean; error?: string }) => {
@@ -151,11 +159,18 @@ export default function ScopedPublicSignoffPage() {
       queryKey: getGetCurrentUserQueryKey(),
     },
   });
+  const { data: shareInfo } = useGetShareInfo({
+    query: {
+      enabled: shareOpen,
+      queryKey: getGetShareInfoQueryKey(),
+    },
+  });
   const isEmployee = dbUser?.status === "approved";
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const shareUrl = `${shareInfo?.publicOrigin ?? window.location.origin}${basePath}/scoped-sign/${token}`;
   const copyShareLink = async () => {
-    await copyTextToClipboard(window.location.href);
+    await copyTextToClipboard(shareUrl);
     setLinkCopied(true);
-    toast({ title: "Link copied", description: "The customer approval link is ready to share." });
     window.setTimeout(() => setLinkCopied(false), 2000);
   };
 
@@ -195,9 +210,9 @@ export default function ScopedPublicSignoffPage() {
           </div>
           <div className="flex items-center gap-2">
             {isEmployee && (
-              <Button variant="outline" onClick={copyShareLink} className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50">
-                {linkCopied ? <Check className="mr-2 h-4 w-4 text-green-700" /> : <Copy className="mr-2 h-4 w-4" />}
-                {linkCopied ? "Link Copied" : "Copy Share Link"}
+              <Button variant="outline" onClick={() => setShareOpen(true)} className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50">
+                <Copy className="mr-2 h-4 w-4" />
+                Share Link
               </Button>
             )}
             <Button onClick={() => window.print()} disabled={Boolean(disabledReason)} className="bg-black text-white hover:bg-gray-800" title="Print this exact approval document or choose Save as PDF.">
@@ -227,6 +242,54 @@ export default function ScopedPublicSignoffPage() {
             },
           })}
         />
+        <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="font-serif text-xl font-bold">Share Approval Link</DialogTitle>
+              <DialogDescription className="mt-2 text-muted-foreground">
+                This link allows the customer to review and approve only the selected products.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-2 rounded-md border border-border bg-muted p-4 text-sm">
+              <div className="flex gap-2">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                <div>
+                  <strong className="mb-0.5 block text-foreground">Included in this link:</strong>
+                  <span className="text-foreground">{detail.productTypes.map(categoryLabel).join(", ")}</span>
+                </div>
+              </div>
+              {detail.notIncludedProductTypes.length > 0 && (
+                <div className="mt-3 flex gap-2 border-t border-border pt-3">
+                  <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-border bg-card" />
+                  <div>
+                    <strong className="mb-0.5 block text-muted-foreground">Not included:</strong>
+                    <span className="text-muted-foreground">{detail.notIncludedProductTypes.map(categoryLabel).join(", ")}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mt-2 space-y-2">
+              <Label htmlFor="preview-share-link">Customer signing link</Label>
+              <div className="flex gap-2">
+                <Input id="preview-share-link" readOnly value={shareUrl} onClick={(event) => event.currentTarget.select()} className="bg-card text-sm" />
+                <Button variant="outline" size="icon" onClick={copyShareLink} title="Copy scope-bound link" className="shrink-0 bg-card">
+                  {linkCopied ? <Check className="h-4 w-4 text-green-700" /> : <Copy className="h-4 w-4 text-foreground" />}
+                </Button>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="preview-share-email">Customer email</Label>
+              <div className="flex gap-2">
+                <Input id="preview-share-email" value={shareEmail} onChange={(event) => setShareEmail(event.target.value)} type="email" placeholder="customer@example.com" className="bg-card" />
+                <Button asChild className="shrink-0">
+                  <a href={`mailto:${shareEmail}?subject=${encodeURIComponent(`Approval requested – Quote #${detail.quote.quoteNumber}`)}&body=${encodeURIComponent(`Hi ${detail.quote.customerName},\n\nPlease review and approve ${detail.productTypes.map(categoryLabel).join(", ")} for Quote #${detail.quote.quoteNumber}.\n\n${shareUrl}\n\nThis link includes only the product types listed above.\n\nThank you,\nKuiken Brothers`)}`}>
+                    <Mail className="mr-2 h-4 w-4" /> Open Email
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
