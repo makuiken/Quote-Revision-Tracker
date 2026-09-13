@@ -397,7 +397,7 @@ export default function SignoffPage() {
                       </Link>
                     </Button>
                     <Button className="flex-1 h-11 bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => setShareOpen(true)}>
-                      <Share2 className="mr-2 h-4 w-4" /> Share customer link
+                      <Share2 className="mr-2 h-4 w-4" /> Share new signoff
                     </Button>
                   </div>
                 </CardContent>
