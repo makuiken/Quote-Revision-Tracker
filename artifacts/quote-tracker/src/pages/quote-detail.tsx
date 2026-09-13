@@ -164,7 +164,7 @@ function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readO
     <Card className="border-border">
       <CardHeader className="pb-3 border-b">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="flex items-center gap-2 text-base font-bold uppercase tracking-wider text-foreground">
+          <CardTitle className="flex items-center gap-2 text-base font-bold text-foreground">
             <Paperclip className="w-4 h-4" />
             Attachments
           </CardTitle>
