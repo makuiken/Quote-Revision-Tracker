@@ -277,11 +277,11 @@ export function SignoffDocument({
             <p className="mt-1 text-sm">
               <strong>Included:</strong> {productTypes!.map(categoryLabel).join(", ")}
             </p>
-            <p className="mt-1 text-sm text-gray-600">
-              <strong>Not included:</strong> {notIncludedProductTypes?.length
-                ? notIncludedProductTypes.map(categoryLabel).join(", ")
-                : "No other active product types."}
-            </p>
+            {Boolean(notIncludedProductTypes?.length) && (
+              <p className="mt-1 text-sm text-gray-600">
+                <strong>Not included:</strong> {notIncludedProductTypes!.map(categoryLabel).join(", ")}
+              </p>
+            )}
             <p className="mt-2 text-xs text-gray-600">
               Shared terms and shared revisions shown in this document apply only to the included scope; they do not approve a product type listed as not included.
             </p>
