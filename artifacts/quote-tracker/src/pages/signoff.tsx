@@ -25,7 +25,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
 import { categoryLabel } from "@/lib/revision-categories";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 function ScopedShareDialog({
   approval,
@@ -451,62 +450,53 @@ export default function SignoffPage() {
           </div>
 
           <div className="space-y-6">
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="revisions" className="border-none">
-                <AccordionTrigger className="hover:no-underline rounded-lg border border-border bg-card p-4 shadow-sm font-serif text-lg font-bold text-foreground">
-                  Review revisions
-                </AccordionTrigger>
-                <AccordionContent className="pt-4">
-                  <Card className="border-border shadow-sm bg-card overflow-hidden">
-                    <CardHeader className="bg-muted/50 border-b pb-4">
-                      <CardTitle className="text-base font-bold text-foreground">Revision inclusion</CardTitle>
-                      <CardDescription className="text-muted-foreground text-xs">
-                        Control which revisions appear in future customer documents. This never removes an entry from the internal revision log.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      {detail.revisions.length === 0 ? (
-                        <div className="p-6 text-center text-sm font-medium text-muted-foreground">
-                          No revisions have been recorded for this quote.
+            <Card className="border-border shadow-sm bg-card overflow-hidden">
+              <CardHeader className="bg-muted/50 border-b pb-4">
+                <CardTitle className="font-serif text-lg font-bold text-foreground">Review revisions</CardTitle>
+                <CardDescription className="text-muted-foreground text-xs">
+                  Control which revisions appear in future customer documents. This never removes an entry from the internal revision log.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {detail.revisions.length === 0 ? (
+                  <div className="p-6 text-center text-sm font-medium text-muted-foreground">
+                    No revisions have been recorded for this quote.
+                  </div>
+                ) : (
+                  <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto overscroll-contain">
+                    {detail.revisions.map((revision) => (
+                      <div key={revision.id} className="p-4 hover:bg-muted transition-colors">
+                        <div className="flex justify-between items-start gap-4 mb-2">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-foreground block">{revision.authorName}</span>
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground block tracking-wider mt-0.5">
+                              {revision.excludedFromSignoff ? "Excluded from customer documents" : "Included in customer documents"}
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className={`h-7 px-2 text-xs font-bold ${revision.excludedFromSignoff ? "bg-card text-muted-foreground" : "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground border-primary"}`}
+                            disabled={setRevisionExclusion.isPending}
+                            onClick={() => setRevisionExclusion.mutate({
+                              id: quoteId,
+                              revisionId: revision.id,
+                              data: { excludedFromSignoff: !revision.excludedFromSignoff },
+                            })}
+                          >
+                            {revision.excludedFromSignoff ? "Include" : "Exclude"}
+                          </Button>
                         </div>
-                      ) : (
-                        <div className="divide-y divide-slate-100">
-                          {detail.revisions.map((revision) => (
-                            <div key={revision.id} className="p-4 hover:bg-muted transition-colors">
-                              <div className="flex justify-between items-start gap-4 mb-2">
-                                <div className="min-w-0">
-                                  <span className="text-xs font-bold text-foreground block">{revision.authorName}</span>
-                                  <span className="text-[10px] uppercase font-bold text-muted-foreground block tracking-wider mt-0.5">
-                                    {revision.excludedFromSignoff ? "Excluded from customer documents" : "Included in customer documents"}
-                                  </span>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className={`h-7 px-2 text-xs font-bold ${revision.excludedFromSignoff ? "bg-card text-muted-foreground" : "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground border-primary"}`}
-                                  disabled={setRevisionExclusion.isPending}
-                                  onClick={() => setRevisionExclusion.mutate({
-                                    id: quoteId,
-                                    revisionId: revision.id,
-                                    data: { excludedFromSignoff: !revision.excludedFromSignoff },
-                                  })}
-                                >
-                                  {revision.excludedFromSignoff ? "Include" : "Exclude"}
-                                </Button>
-                              </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed bg-card border rounded p-2 shadow-sm">
-                                {revision.note}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+                        <p className="text-xs text-muted-foreground leading-relaxed bg-card border rounded p-2 shadow-sm">
+                          {revision.note}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
         </div>
