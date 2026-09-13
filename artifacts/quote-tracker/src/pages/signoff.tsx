@@ -393,7 +393,7 @@ export default function SignoffPage() {
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <Button asChild className="flex-1 h-11 bg-card text-foreground border-border hover:bg-muted" variant="outline">
                       <Link href={`/scoped-sign/${prepared.token}`}>
-                        <ExternalLink className="mr-2 h-4 w-4" /> Open exact preview
+                        <ExternalLink className="mr-2 h-4 w-4" /> Open preview
                       </Link>
                     </Button>
                     <Button className="flex-1 h-11 bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => setShareOpen(true)}>
