@@ -6,6 +6,6 @@ description: Merged task-agent work may add drizzle schema code without the colu
 
 **Why:** Post-merge reconciliation did not run a schema push; the app 500'd on quote listing because `share_token` and the whole `attachments` table were missing despite the code being merged.
 
-**How to apply:** `drizzle-kit push` is interactive and fails in non-TTY shells (even with --force when it wants rename prompts); apply safe additive DDL directly via SQL instead, keeping it identical to the drizzle schema.
+**How to apply:** Keep the Drizzle schema and development reconciliation in sync. Development reconciliation may repair local drift, but must be atomic and time-bounded. Production schema changes are applied only by Replit's publish-time schema diff.
 
-**Also:** every drizzle schema change must be mirrored as an idempotent statement in `lib/db/src/ensure-schema.ts` (startup reconciliation) — code review rejects schema changes that only touch the drizzle schema, since deployed DBs are repaired at startup, not by push.
+**Also:** production startup is read-only and fail-closed. It verifies required tables, columns, constraints, and critical indexes, but never runs DDL, backfills, or repair statements.

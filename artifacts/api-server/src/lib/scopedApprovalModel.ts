@@ -17,6 +17,28 @@ export function canAccessScopedPublicToken(status: string): boolean {
   return status !== "revoked";
 }
 
+/**
+ * Pure finalization gate used after an expensive render/upload. The database
+ * transaction still owns the row locks; this keeps the exact stale and
+ * idempotent decisions easy to exercise without object storage in unit tests.
+ */
+export function scopedApprovalFinalizationDecision(input: {
+  existingApproval: boolean;
+  submittedVersion: string;
+  currentVersion: string;
+  preparedSnapshotFingerprint: string;
+  currentSnapshotFingerprint: string;
+}): "ready" | "stale" | "alreadySigned" {
+  if (input.existingApproval) return "alreadySigned";
+  if (
+    input.submittedVersion !== input.currentVersion ||
+    input.preparedSnapshotFingerprint !== input.currentSnapshotFingerprint
+  ) {
+    return "stale";
+  }
+  return "ready";
+}
+
 /** Both new snapshots and historical public reads omit excluded revisions. */
 export function publicScopedRevisions<T extends { excludedFromSignoff: boolean }>(revisions: T[]): T[] {
   return revisions.filter((revision) => !revision.excludedFromSignoff);

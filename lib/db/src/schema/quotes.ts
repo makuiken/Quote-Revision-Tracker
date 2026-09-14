@@ -7,6 +7,7 @@ import {
   integer,
   boolean,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -439,6 +440,34 @@ export const scopedApprovalCoverageTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique("scoped_approval_coverage_quote_type_unique").on(table.quoteId, table.productType)],
+);
+
+// Database-backed claim/lease for unsigned signoff document builds. The
+// document itself remains an immutable object; this table only coordinates
+// cache misses across API replicas.
+export const unsignedDocumentBuildsTable = pgTable(
+  "unsigned_document_builds",
+  {
+    id: serial("id").primaryKey(),
+    quoteId: integer("quote_id")
+      .notNull()
+      .references(() => quotesTable.id, { onDelete: "cascade" }),
+    documentVersion: text("document_version").notNull(),
+    objectPath: text("object_path").notNull(),
+    claimToken: text("claim_token").notNull(),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("unsigned_document_builds_quote_version_unique").on(
+      table.quoteId,
+      table.documentVersion,
+    ),
+    index("unsigned_document_builds_lease_idx").on(table.leaseUntil),
+  ],
 );
 
 // The current customer-visible packet order. It is intentionally a single

@@ -1,4 +1,4 @@
-import { ensureSchema } from "@workspace/db";
+import { assertSchemaCompatible, ensureSchema } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startPacketJobRecovery } from "./lib/packets/service";
@@ -17,11 +17,22 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Fail loudly at startup (not at query time) if the database schema is behind.
+// Development may reconcile an old local database. Production is read-only:
+// schema changes must have been applied before publishing the API.
+const isDevelopment = process.env.NODE_ENV === "development";
 try {
-  await ensureSchema();
+  if (isDevelopment) {
+    await ensureSchema();
+  } else {
+    await assertSchemaCompatible();
+  }
 } catch (err) {
-  logger.error({ err }, "Database schema reconciliation failed");
+  logger.error(
+    { err },
+    isDevelopment
+      ? "Database schema reconciliation failed"
+      : "Database schema compatibility check failed",
+  );
   process.exit(1);
 }
 startPacketJobRecovery();

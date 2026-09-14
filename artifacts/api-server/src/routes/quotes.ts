@@ -26,6 +26,7 @@ import {
   usersTable,
   fieldOptionsTable,
   manufacturerPacketsTable,
+  unsignedDocumentBuildsTable,
   type Signoff,
   scopedApprovalRequestsTable,
   scopedApprovalsTable,
@@ -115,7 +116,27 @@ const packetStorage = new ObjectStorageService();
 const unsignedDocumentBuilds = new Map<string, Promise<void>>();
 let activeUnsignedDocumentBuilds = 0;
 const MAX_UNSIGNED_DOCUMENT_BUILDS = 2;
+const UNSIGNED_BUILD_LEASE_MS = 180_000;
+const UNSIGNED_BUILD_WAIT_MS = 8_000;
+const UNSIGNED_BUILD_POLL_MS = 100;
 export class UnsignedDocumentBuildCapacityError extends Error {}
+
+// Process-local counters are intentionally cheap and additive to the
+// database lease. They make cache stampedes and capacity pressure visible in
+// each replica's structured logs without making metrics a correctness
+// dependency.
+export const unsignedDocumentMetrics = {
+  cacheHits: 0,
+  claims: 0,
+  claimConflicts: 0,
+  waits: 0,
+  builds: 0,
+  failures: 0,
+};
+
+function logUnsignedDocumentMetric(event: string, fields: Record<string, unknown> = {}) {
+  console.info("unsigned_document_cache", { event, ...fields });
+}
 
 router.use(requireAuth);
 
@@ -533,6 +554,8 @@ export async function ensureUnsignedDocumentCached(
   const path = `/objects/signoff-documents/${quote.id}/unsigned/${version}.pdf`;
   try {
     await packetStorage.getObjectEntityFile(path);
+    unsignedDocumentMetrics.cacheHits += 1;
+    logUnsignedDocumentMetric("hit", { quoteId: quote.id, version });
     return path;
   } catch (error) {
     if (!(error instanceof ObjectNotFoundError)) throw error;
@@ -540,36 +563,136 @@ export async function ensureUnsignedDocumentCached(
   const key = `${quote.id}:${version}`;
   let build = unsignedDocumentBuilds.get(key);
   if (!build) {
-    if (activeUnsignedDocumentBuilds >= MAX_UNSIGNED_DOCUMENT_BUILDS) {
-      throw new UnsignedDocumentBuildCapacityError(
-        "Too many combined document builds are currently in progress.",
-      );
-    }
-    activeUnsignedDocumentBuilds += 1;
     build = (async () => {
-      const document = await createUnsignedSignoffDocument(
-        quote,
-        revisions,
-        manifest,
-      );
-      try {
-        await packetStorage.saveObjectEntityImmutable(
-          path,
-          document.bytes,
-          "application/pdf",
+      // The claim is durable and replica-safe. A process-local capacity check
+      // is made only after a cache miss and before doing expensive work.
+      const claimToken = randomUUID();
+      let ownsClaim = false;
+      const claimDeadline = Date.now() + UNSIGNED_BUILD_WAIT_MS;
+      const claim = async (): Promise<boolean> => {
+        const leaseUntil = new Date(Date.now() + UNSIGNED_BUILD_LEASE_MS);
+        const claimed = await db.transaction(async (tx) => {
+          const [inserted] = await tx
+            .insert(unsignedDocumentBuildsTable)
+            .values({
+              quoteId: quote.id,
+              documentVersion: version,
+              objectPath: path,
+              claimToken,
+              leaseUntil,
+            })
+            .onConflictDoNothing({
+              target: [
+                unsignedDocumentBuildsTable.quoteId,
+                unsignedDocumentBuildsTable.documentVersion,
+              ],
+            })
+            .returning({ id: unsignedDocumentBuildsTable.id });
+          if (inserted) return true;
+          const [expired] = await tx
+            .update(unsignedDocumentBuildsTable)
+            .set({ claimToken, objectPath: path, leaseUntil, updatedAt: new Date() })
+            .where(
+              and(
+                eq(unsignedDocumentBuildsTable.quoteId, quote.id),
+                eq(unsignedDocumentBuildsTable.documentVersion, version),
+                sql`${unsignedDocumentBuildsTable.leaseUntil} < now()`,
+              ),
+            )
+            .returning({ id: unsignedDocumentBuildsTable.id });
+          return Boolean(expired);
+        });
+        if (claimed) {
+          unsignedDocumentMetrics.claims += 1;
+          logUnsignedDocumentMetric("claim", { quoteId: quote.id, version });
+        } else {
+          unsignedDocumentMetrics.claimConflicts += 1;
+          logUnsignedDocumentMetric("claim_conflict", { quoteId: quote.id, version });
+        }
+        return claimed;
+      };
+
+      while (!ownsClaim && Date.now() < claimDeadline) {
+        ownsClaim = await claim();
+        if (ownsClaim) break;
+        unsignedDocumentMetrics.waits += 1;
+        logUnsignedDocumentMetric("wait", { quoteId: quote.id, version });
+        try {
+          await packetStorage.getObjectEntityFile(path);
+          return;
+        } catch (error) {
+          if (!(error instanceof ObjectNotFoundError)) throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, UNSIGNED_BUILD_POLL_MS));
+      }
+      if (!ownsClaim) {
+        throw new UnsignedDocumentBuildCapacityError(
+          "Another replica is still building this document; retry shortly.",
         );
+      }
+      if (activeUnsignedDocumentBuilds >= MAX_UNSIGNED_DOCUMENT_BUILDS) {
+        // Do not retain a claim while waiting for local build capacity.
+        await db.delete(unsignedDocumentBuildsTable).where(
+          and(
+            eq(unsignedDocumentBuildsTable.quoteId, quote.id),
+            eq(unsignedDocumentBuildsTable.documentVersion, version),
+            eq(unsignedDocumentBuildsTable.claimToken, claimToken),
+          ),
+        );
+        throw new UnsignedDocumentBuildCapacityError(
+          "Too many combined document builds are currently in progress.",
+        );
+      }
+      activeUnsignedDocumentBuilds += 1;
+      unsignedDocumentMetrics.builds += 1;
+      logUnsignedDocumentMetric("build_start", { quoteId: quote.id, version });
+      try {
+        const document = await createUnsignedSignoffDocument(
+          quote,
+          revisions,
+          manifest,
+        );
+        try {
+          await packetStorage.saveObjectEntityImmutable(
+            path,
+            document.bytes,
+            "application/pdf",
+          );
+        } catch (error) {
+          if ((error as { code?: number }).code !== 412) throw error;
+        }
+        logUnsignedDocumentMetric("build_complete", { quoteId: quote.id, version });
       } catch (error) {
-        if ((error as { code?: number }).code !== 412) throw error;
+        unsignedDocumentMetrics.failures += 1;
+        logUnsignedDocumentMetric("build_failed", { quoteId: quote.id, version });
+        throw error;
+      } finally {
+        activeUnsignedDocumentBuilds -= 1;
+        try {
+          await db.delete(unsignedDocumentBuildsTable).where(
+            and(
+              eq(unsignedDocumentBuildsTable.quoteId, quote.id),
+              eq(unsignedDocumentBuildsTable.documentVersion, version),
+              eq(unsignedDocumentBuildsTable.claimToken, claimToken),
+            ),
+          );
+        } catch (error) {
+          // The immutable object is already usable; a stale claim is safely
+          // recoverable after its lease expires.
+          logUnsignedDocumentMetric("claim_release_failed", {
+            quoteId: quote.id,
+            version,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     })();
     unsignedDocumentBuilds.set(key, build);
     void build.then(
       () => {
-        activeUnsignedDocumentBuilds -= 1;
         unsignedDocumentBuilds.delete(key);
       },
       () => {
-        activeUnsignedDocumentBuilds -= 1;
         unsignedDocumentBuilds.delete(key);
       },
     );
@@ -593,6 +716,40 @@ export async function ensureLegacySignedDocumentSnapshot(
   void quoteId;
   void expected;
   return null;
+}
+
+/**
+ * An uploaded signed PDF is deliberately cleaned up only after the final
+ * approval transaction has failed or rejected the prepared snapshot. The
+ * generated path is random and the exact-path checks below cover every
+ * approval table, so a committed evidence row is never removed.
+ */
+export async function cleanupUploadedDocumentIfUnreferenced(
+  objectPath: string,
+): Promise<void> {
+  const [legacy] = await db
+    .select({ id: signoffsTable.id })
+    .from(signoffsTable)
+    .where(eq(signoffsTable.signedDocumentObjectPath, objectPath))
+    .limit(1);
+  if (legacy) return;
+  const [scoped] = await db
+    .select({ id: scopedApprovalsTable.id })
+    .from(scopedApprovalsTable)
+    .where(eq(scopedApprovalsTable.signedDocumentObjectPath, objectPath))
+    .limit(1);
+  if (scoped) return;
+  try {
+    await packetStorage.deleteObjectEntity(objectPath);
+  } catch (error) {
+    // Cleanup is best effort and must never turn a correctly reported stale
+    // or concurrent approval into a 500. The object remains unreferenced and
+    // can be removed by storage lifecycle tooling.
+    console.warn("unreferenced_signoff_object_cleanup_failed", {
+      objectPath,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 router.get("/share-info", async (_req, res): Promise<void> => {
@@ -1776,7 +1933,7 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
   // match the current content (quote edits, new revisions, exclusions).
   // The quote row is locked and re-read inside the transaction so the
   // version check cannot race a concurrent mutation.
-  const signoff = await db.transaction(async (tx) => {
+  const prepared = await db.transaction(async (tx) => {
     const current = await lockQuoteRow(tx, quote.id);
     if (!current || current.archivedAt) return null;
     const [existing] = await tx
@@ -1802,52 +1959,16 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
         ),
       )
       .orderBy(revisionsTable.createdAt);
-    const signedAt = new Date();
-    const approvedPacketPages = await loadManifestPdfPages(approvedPacket);
-    const signedDocument = await createSignedPacketDocument({
-      quote: current,
-      revisions,
-      signoff: {
-        customerName: validated.customerName,
-        stakeholderRole: parsed.data.stakeholderRole,
-        signatureType: parsed.data.signatureType,
-        signatureData: validated.signatureData,
-        signedAt,
-      },
-      approvedPacketPages,
-    });
-    const signedDocumentObjectPath = `/objects/signoff-documents/${quote.id}/${randomUUID()}.pdf`;
-    const approvedManifestHash = hashApprovedManifest(approvedPacket);
-    await packetStorage.saveObjectEntityImmutable(
-      signedDocumentObjectPath,
-      signedDocument.bytes,
-      "application/pdf",
-    );
-    const [row] = await tx
-      .insert(signoffsTable)
-      .values({
-        quoteId: quote.id,
-        customerName: validated.customerName,
-        stakeholderRole: parsed.data.stakeholderRole,
-        signatureType: parsed.data.signatureType,
-        signatureData: validated.signatureData,
-        signedPacketId: approvedPacket[0]?.packetId ?? null,
-        signedPacketSha256: approvedManifestHash,
-        signedDocumentObjectPath,
-        signedDocumentSha256: signedDocument.sha256,
-        signedAt,
-      })
-      .returning();
-    return row;
+    return { current, revisions, approvedPacket, signedAt: new Date(), version: parsed.data.documentVersion };
   });
 
-  if (signoff === "alreadySigned") {
+  if (prepared === "alreadySigned") {
     res.status(409).json({
       error: "This legacy signoff is immutable. Create a new scoped approval for a replacement signature.",
     });
     return;
   }
-  if (!signoff) {
+  if (!prepared) {
     res.status(409).json({
       error:
         "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
@@ -1855,7 +1976,72 @@ router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(SaveSignoffResponse.parse(signoff));
+  const signedDocumentObjectPath = `/objects/signoff-documents/${quote.id}/${randomUUID()}.pdf`;
+  try {
+    const signedDocument = await createSignedPacketDocument({
+      quote: prepared.current,
+      revisions: prepared.revisions,
+      signoff: {
+        customerName: validated.customerName,
+        stakeholderRole: parsed.data.stakeholderRole,
+        signatureType: parsed.data.signatureType,
+        signatureData: validated.signatureData,
+        signedAt: prepared.signedAt,
+      },
+      approvedPacketPages: await loadManifestPdfPages(prepared.approvedPacket),
+    });
+    await packetStorage.saveObjectEntityImmutable(
+      signedDocumentObjectPath,
+      signedDocument.bytes,
+      "application/pdf",
+    );
+    const signoff = await db.transaction(async (tx) => {
+      const current = await lockQuoteRow(tx, quote.id);
+      if (!current || current.archivedAt) return null;
+      const [existing] = await tx
+        .select({ id: signoffsTable.id })
+        .from(signoffsTable)
+        .where(eq(signoffsTable.quoteId, quote.id))
+        .for("update");
+      if (existing) return "alreadySigned" as const;
+      const included = await loadIncludedRevisions(tx, quote.id);
+      const approvedPacket = await loadApprovedManifest(tx, quote.id);
+      if (computeDocumentVersion(current, included, approvedPacket) !== prepared.version) return null;
+      const [row] = await tx.insert(signoffsTable).values({
+        quoteId: quote.id,
+        customerName: validated.customerName,
+        stakeholderRole: parsed.data.stakeholderRole,
+        signatureType: parsed.data.signatureType,
+        signatureData: validated.signatureData,
+        signedPacketId: approvedPacket[0]?.packetId ?? null,
+        signedPacketSha256: hashApprovedManifest(approvedPacket),
+        signedDocumentObjectPath,
+        signedDocumentSha256: signedDocument.sha256,
+        signedAt: prepared.signedAt,
+      }).returning();
+      return row;
+    });
+    if (signoff === "alreadySigned") {
+      await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
+      res.status(409).json({
+        error: "This legacy signoff is immutable. Create a new scoped approval for a replacement signature.",
+      });
+      return;
+    }
+    if (!signoff) {
+      await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
+      res.status(409).json({
+        error: "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
+      });
+      return;
+    }
+    res.json(SaveSignoffResponse.parse(signoff));
+  } catch (error) {
+    try { await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath); } catch (cleanupError) {
+      req.log.warn({ err: cleanupError, path: signedDocumentObjectPath }, "Unable to clean up unreferenced legacy signoff PDF");
+    }
+    throw error;
+  }
 });
 
 router.delete("/quotes/:id/signoff", async (req, res): Promise<void> => {

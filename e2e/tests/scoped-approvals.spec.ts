@@ -978,7 +978,9 @@ test.describe.serial("scoped approval API contract", () => {
     await expect(
       page.getByRole("heading", { name: "Preview Ready" }),
     ).toBeVisible();
-    const exactPreview = page.getByRole("link", { name: "Open exact preview" }).last();
+    const exactPreview = page
+      .getByRole("link", { name: "Open preview", exact: true })
+      .last();
     const publicDocumentPath = await exactPreview.getAttribute("href");
     if (!publicDocumentPath) {
       throw new Error("Open exact preview did not expose a scoped public-document path.");
@@ -1044,7 +1046,7 @@ test.describe.serial("scoped approval API contract", () => {
       page.getByRole("heading", { name: "Preview Ready" }),
     ).toBeVisible();
     const openPreview = page
-      .getByRole("link", { name: "Open exact preview" })
+      .getByRole("link", { name: "Open preview", exact: true })
       .first();
     const previewHref = await openPreview.getAttribute("href");
     if (!previewHref) throw new Error("Open scoped preview did not expose a token URL");

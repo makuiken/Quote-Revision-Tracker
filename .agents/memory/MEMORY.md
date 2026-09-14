@@ -6,3 +6,4 @@
 - [Field-options dependency model](field-options-dependency.md) — parent-scoped dropdown lists keyed with '' sentinels, not NULLs; one parent per field; parent rename doesn't cascade.
 - [E2E testing setup](e2e-testing.md) — Playwright suite in `e2e/`; Clerk headless sign-in needs ticket strategy, system chromium on NixOS, drizzle push needs a TTY.
 - [Template eligibility](template-eligibility.md) — shared door templates may cover multiple categories; eligibility stays separate from quote classification and human review.
+- [Distributed PDF work](distributed-pdf-work.md) — use global slots and DB leases across replicas; render outside locks, then revalidate before committing immutable evidence.

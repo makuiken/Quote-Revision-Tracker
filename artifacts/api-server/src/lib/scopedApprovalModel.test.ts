@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAccessScopedPublicToken, hashLockedScopedContent, normalizeProductScope, publicScopedRevisions } from "./scopedApprovalModel";
+import {
+  canAccessScopedPublicToken,
+  hashLockedScopedContent,
+  normalizeProductScope,
+  publicScopedRevisions,
+  scopedApprovalFinalizationDecision,
+} from "./scopedApprovalModel";
 
 test("scoped product type validation rejects duplicates and unrelated types", () => {
   assert.deepEqual(normalizeProductScope(["windows", "interiorDoors"], ["windows", "interiorDoors"]), ["windows", "interiorDoors"]);
@@ -44,5 +50,36 @@ test("excluded revisions never enter scoped public snapshots", () => {
       { note: "do not disclose", excludedFromSignoff: true },
     ]),
     [{ note: "include", excludedFromSignoff: false }],
+  );
+});
+
+test("a stale scoped render is rejected after its upload, while a concurrent second approval is idempotent", () => {
+  const base = {
+    existingApproval: false,
+    submittedVersion: "v1",
+    currentVersion: "v1",
+    preparedSnapshotFingerprint: "snapshot-a",
+    currentSnapshotFingerprint: "snapshot-a",
+  };
+  assert.equal(
+    scopedApprovalFinalizationDecision({
+      ...base,
+      currentVersion: "v2",
+    }),
+    "stale",
+  );
+  assert.equal(
+    scopedApprovalFinalizationDecision({
+      ...base,
+      existingApproval: true,
+    }),
+    "alreadySigned",
+  );
+  assert.equal(
+    scopedApprovalFinalizationDecision({
+      ...base,
+      existingApproval: false,
+    }),
+    "ready",
   );
 });

@@ -5,6 +5,14 @@ export interface RecoverablePacketState {
 
 export const PROCESSING_ABANDONED_AFTER_MS = 15 * 60 * 1000;
 
+export function nextRecoveryScanCursor(
+  lastCandidateId: number,
+  candidateCount: number,
+  pageSize: number,
+): number {
+  return candidateCount < pageSize ? 0 : lastCandidateId;
+}
+
 export function isAbandonedProcessingJob(
   packet: RecoverablePacketState,
   now = Date.now(),

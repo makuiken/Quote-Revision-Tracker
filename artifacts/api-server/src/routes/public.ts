@@ -34,6 +34,7 @@ import {
   computeDocumentVersion,
   ensureUnsignedDocumentCached,
   ensureLegacySignedDocumentSnapshot,
+  cleanupUploadedDocumentIfUnreferenced,
   UnsignedDocumentBuildCapacityError,
   loadManifestPdfPages,
   loadIncludedRevisions,
@@ -54,7 +55,11 @@ import {
 } from "../lib/scopedApprovals";
 import { projectScopedPublicQuote } from "../lib/scopedPublicQuote";
 import { legacyApprovalMetadata } from "../lib/legacyApproval";
-import { canAccessScopedPublicToken, publicScopedRevisions } from "../lib/scopedApprovalModel";
+import {
+  canAccessScopedPublicToken,
+  publicScopedRevisions,
+  scopedApprovalFinalizationDecision,
+} from "../lib/scopedApprovalModel";
 
 // Public, token-gated routes. No login required — access is granted by
 // knowing the unguessable share token attached to a quote.
@@ -110,6 +115,10 @@ function asScopedSnapshot(value: unknown): ScopedSnapshot | null {
   // their preview a deterministic fallback rather than current wall-clock time.
   if (typeof snapshot.preparedAt !== "string") snapshot.preparedAt = "1970-01-01T00:00:00.000Z";
   return snapshot;
+}
+
+function snapshotJson(snapshot: ScopedSnapshot): string {
+  return JSON.stringify(snapshot);
 }
 
 async function scopedRequestByToken(token: string) {
@@ -181,7 +190,7 @@ router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (re
     res.status(404).json({ error: "Invalid or revoked scoped approval link" });
     return;
   }
-  const outcome = await db.transaction(async (tx) => {
+  const prepared = await db.transaction(async (tx) => {
     const quote = await lockQuoteRow(tx, requestIdentity.quoteId);
     if (!quote || quote.archivedAt) return { kind: "stale" as const };
     const [request] = await tx.select().from(scopedApprovalRequestsTable)
@@ -191,7 +200,7 @@ router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (re
       )).for("update");
     if (!request || request.status === "revoked") return { kind: "notFound" as const };
     if (request.status !== "open" || request.documentVersion !== body.documentVersion) return { kind: "stale" as const };
-    const snapshot = asScopedSnapshot(request.snapshot);
+    const snapshot = asScopedSnapshot(JSON.parse(JSON.stringify(request.snapshot)));
     if (!snapshot) return { kind: "stale" as const };
     // The request's preparation time is part of its locked PDF/version. Do
     // not mint a fresh render date while checking a submitted signature.
@@ -206,51 +215,112 @@ router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (re
         .where(eq(scopedApprovalRequestsTable.id, request.id));
       return { kind: "stale" as const };
     }
-    const signedAt = new Date();
+    return {
+      kind: "ready" as const,
+      quote,
+      request,
+      snapshot,
+      snapshotFingerprint: snapshotJson(snapshot),
+      signedAt: new Date(),
+    };
+  });
+  if (prepared.kind === "notFound") { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
+  if (prepared.kind === "stale") { res.status(409).json({ error: "This scoped approval has changed or is no longer current. Ask your sales representative for a new link." }); return; }
+
+  // Downloads, PDF generation, and object upload intentionally happen after
+  // the quote/request locks are released. The final transaction below repeats
+  // the immutable snapshot/version check before committing evidence.
+  const path = `/objects/scoped-signoff-documents/${prepared.request.quoteId}/${prepared.request.id}-${randomUUID()}.pdf`;
+  try {
     const document = await createSignedPacketDocument({
-      quote: snapshot.quote,
-      revisions: snapshot.revisions as typeof revisionsTable.$inferSelect[],
-      approvedPacketPages: await loadScopedManifestPdfPages(snapshot),
+      quote: prepared.snapshot.quote,
+      revisions: prepared.snapshot.revisions as typeof revisionsTable.$inferSelect[],
+      approvedPacketPages: await loadScopedManifestPdfPages(prepared.snapshot),
       scope: {
-        included: snapshot.productTypes.map(productTypeLabel),
-        notIncluded: snapshot.notIncludedProductTypes.map(productTypeLabel),
+        included: prepared.snapshot.productTypes.map(productTypeLabel),
+        notIncluded: prepared.snapshot.notIncludedProductTypes.map(productTypeLabel),
       },
-      documentDate: new Date(snapshot.preparedAt),
+      documentDate: new Date(prepared.snapshot.preparedAt),
       signoff: {
         customerName: validated.customerName,
         stakeholderRole: parsed.stakeholderRole as "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
         signatureType: parsed.signatureType as "typed" | "drawn",
         signatureData: validated.signatureData,
-        signedAt,
+        signedAt: prepared.signedAt,
       },
     });
-    const path = `/objects/scoped-signoff-documents/${request.quoteId}/${request.id}-${randomUUID()}.pdf`;
     await packetStorage.saveObjectEntityImmutable(path, document.bytes, "application/pdf");
-    const [approval] = await tx.insert(scopedApprovalsTable).values({
-      requestId: request.id, quoteId: request.quoteId, productTypes: request.productTypes,
-      snapshot, documentVersion: request.documentVersion, customerName: validated.customerName,
-      stakeholderRole: String(parsed.stakeholderRole), signatureType: String(parsed.signatureType),
-      signatureData: validated.signatureData, signedDocumentObjectPath: path,
-      signedDocumentSha256: document.sha256, signedAt,
-    }).returning();
-    await tx.update(scopedApprovalRequestsTable).set({ status: "signed", signedAt })
-      .where(eq(scopedApprovalRequestsTable.id, request.id));
-    // Upsert each type independently; a combined approval becomes current
-    // coverage for each selected type without touching unrelated types.
-    for (const productType of request.productTypes) {
-      await tx.insert(scopedApprovalCoverageTable).values({
-        quoteId: request.quoteId, productType, approvalId: approval!.id, status: "signed",
-        invalidatedAt: null, invalidationReason: null, updatedAt: signedAt,
-      }).onConflictDoUpdate({
-        target: [scopedApprovalCoverageTable.quoteId, scopedApprovalCoverageTable.productType],
-        set: { approvalId: approval!.id, status: "signed", invalidatedAt: null, invalidationReason: null, updatedAt: signedAt },
+    const outcome = await db.transaction(async (tx) => {
+      const quote = await lockQuoteRow(tx, prepared.request.quoteId);
+      if (!quote || quote.archivedAt) return { kind: "stale" as const };
+      const [request] = await tx.select().from(scopedApprovalRequestsTable)
+        .where(and(
+          eq(scopedApprovalRequestsTable.id, prepared.request.id),
+          eq(scopedApprovalRequestsTable.quoteId, quote.id),
+        )).for("update");
+      if (!request || request.status === "revoked") return { kind: "notFound" as const };
+      if (request.status !== "open" || request.documentVersion !== body.documentVersion) {
+        return { kind: "stale" as const };
+      }
+      const currentSnapshot = asScopedSnapshot(JSON.parse(JSON.stringify(request.snapshot)));
+      if (!currentSnapshot || snapshotJson(currentSnapshot) !== prepared.snapshotFingerprint) {
+        return { kind: "stale" as const };
+      }
+      const current = await buildScopedSnapshot(
+        tx,
+        quote,
+        request.productTypes,
+        currentSnapshot.preparedAt,
+      );
+      if (
+        current.unclassifiedPacket ||
+        scopedDocumentVersion(current.snapshot) !== request.documentVersion
+      ) {
+        return { kind: "stale" as const };
+      }
+      const [existing] = await tx.select({ id: scopedApprovalsTable.id })
+        .from(scopedApprovalsTable)
+        .where(eq(scopedApprovalsTable.requestId, request.id))
+        .for("update");
+      const decision = scopedApprovalFinalizationDecision({
+        existingApproval: Boolean(existing),
+        submittedVersion: body.documentVersion,
+        currentVersion: request.documentVersion,
+        preparedSnapshotFingerprint: prepared.snapshotFingerprint,
+        currentSnapshotFingerprint: snapshotJson(currentSnapshot),
       });
+      if (decision !== "ready") return { kind: decision as "stale" | "alreadySigned" };
+      const [approval] = await tx.insert(scopedApprovalsTable).values({
+        requestId: request.id, quoteId: request.quoteId, productTypes: request.productTypes,
+        snapshot: currentSnapshot, documentVersion: request.documentVersion, customerName: validated.customerName,
+        stakeholderRole: String(parsed.stakeholderRole), signatureType: String(parsed.signatureType),
+        signatureData: validated.signatureData, signedDocumentObjectPath: path,
+        signedDocumentSha256: document.sha256, signedAt: prepared.signedAt,
+      }).returning();
+      await tx.update(scopedApprovalRequestsTable).set({ status: "signed", signedAt: prepared.signedAt })
+        .where(eq(scopedApprovalRequestsTable.id, request.id));
+      for (const productType of request.productTypes) {
+        await tx.insert(scopedApprovalCoverageTable).values({
+          quoteId: request.quoteId, productType, approvalId: approval!.id, status: "signed",
+          invalidatedAt: null, invalidationReason: null, updatedAt: prepared.signedAt,
+        }).onConflictDoUpdate({
+          target: [scopedApprovalCoverageTable.quoteId, scopedApprovalCoverageTable.productType],
+          set: { approvalId: approval!.id, status: "signed", invalidatedAt: null, invalidationReason: null, updatedAt: prepared.signedAt },
+        });
+      }
+      return { kind: "ok" as const, approval: approval! };
+    });
+    if (outcome.kind === "notFound") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
+    if (outcome.kind === "stale") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(409).json({ error: "This scoped approval has changed or is no longer current. Ask your sales representative for a new link." }); return; }
+    if (outcome.kind === "alreadySigned") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(409).json({ error: "This scoped approval is already signed." }); return; }
+    if (outcome.kind !== "ok") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(500).json({ error: "The scoped approval could not be finalized." }); return; }
+    res.json(scopedSignoffRow(outcome.approval));
+  } catch (error) {
+    try { await cleanupUploadedDocumentIfUnreferenced(path); } catch (cleanupError) {
+      req.log.warn({ err: cleanupError, path }, "Unable to clean up unreferenced scoped signoff PDF");
     }
-    return { kind: "ok" as const, approval: approval! };
-  });
-  if (outcome.kind === "notFound") { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-  if (outcome.kind === "stale") { res.status(409).json({ error: "This scoped approval has changed or is no longer current. Ask your sales representative for a new link." }); return; }
-  res.json(scopedSignoffRow(outcome.approval));
+    throw error;
+  }
 });
 
 router.get("/public/scoped-signoff/:token/packet", async (req, res): Promise<void> => {
@@ -418,7 +488,7 @@ router.put(
     // or exclusion) after the customer loaded it, they must review the latest
     // version before signing. The quote row is locked and re-read inside the
     // transaction so the version check cannot race a concurrent mutation.
-    const signoff = await db.transaction(async (tx) => {
+    const prepared = await db.transaction(async (tx) => {
       const current = await lockQuoteRow(tx, quote.id);
       if (!current || current.archivedAt) return null;
       const [existing] = await tx
@@ -444,29 +514,52 @@ router.put(
           ),
         )
         .orderBy(revisionsTable.createdAt);
-      const signedAt = new Date();
-      const approvedPacketPages = await loadManifestPdfPages(approvedPacket);
+      return { current, revisions, approvedPacket, signedAt: new Date(), version: parsed.data.documentVersion };
+    });
+
+    if (prepared === "alreadySigned") {
+      res.status(409).json({
+        error: "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
+      });
+      return;
+    }
+    if (!prepared) {
+      res.status(409).json({
+        error:
+          "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
+      });
+      return;
+    }
+
+    const signedDocumentObjectPath = `/objects/signoff-documents/${quote.id}/${randomUUID()}.pdf`;
+    try {
       const signedDocument = await createSignedPacketDocument({
-        quote: current,
-        revisions,
+        quote: prepared.current,
+        revisions: prepared.revisions,
         signoff: {
           customerName: validated.customerName,
           stakeholderRole: parsed.data.stakeholderRole,
           signatureType: parsed.data.signatureType,
           signatureData: validated.signatureData,
-          signedAt,
+          signedAt: prepared.signedAt,
         },
-        approvedPacketPages,
+        approvedPacketPages: await loadManifestPdfPages(prepared.approvedPacket),
       });
-      const signedDocumentObjectPath = `/objects/signoff-documents/${quote.id}/${randomUUID()}.pdf`;
       await packetStorage.saveObjectEntityImmutable(
         signedDocumentObjectPath,
         signedDocument.bytes,
         "application/pdf",
       );
-      const [row] = await tx
-        .insert(signoffsTable)
-        .values({
+      const signoff = await db.transaction(async (tx) => {
+        const current = await lockQuoteRow(tx, quote.id);
+        if (!current || current.archivedAt) return null;
+        const [existing] = await tx.select({ id: signoffsTable.id })
+          .from(signoffsTable).where(eq(signoffsTable.quoteId, quote.id)).for("update");
+        if (existing) return "alreadySigned" as const;
+        const included = await loadIncludedRevisions(tx, quote.id);
+        const approvedPacket = await loadApprovedManifest(tx, quote.id);
+        if (computeDocumentVersion(current, included, approvedPacket) !== prepared.version) return null;
+        const [row] = await tx.insert(signoffsTable).values({
           quoteId: quote.id,
           customerName: validated.customerName,
           stakeholderRole: parsed.data.stakeholderRole,
@@ -476,27 +569,31 @@ router.put(
           signedPacketSha256: hashApprovedManifest(approvedPacket),
           signedDocumentObjectPath,
           signedDocumentSha256: signedDocument.sha256,
-          signedAt,
-        })
-        .returning();
-      return row;
-    });
-
-    if (signoff === "alreadySigned") {
-      res.status(409).json({
-        error: "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
+          signedAt: prepared.signedAt,
+        }).returning();
+        return row;
       });
-      return;
+      if (signoff === "alreadySigned") {
+        await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
+        res.status(409).json({
+          error: "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
+        });
+        return;
+      }
+      if (!signoff) {
+        await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
+        res.status(409).json({
+          error: "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
+        });
+        return;
+      }
+      res.json(SavePublicSignoffResponse.parse(signoff));
+    } catch (error) {
+      try { await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath); } catch (cleanupError) {
+        req.log.warn({ err: cleanupError, path: signedDocumentObjectPath }, "Unable to clean up unreferenced legacy signoff PDF");
+      }
+      throw error;
     }
-    if (!signoff) {
-      res.status(409).json({
-        error:
-          "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
-      });
-      return;
-    }
-
-    res.json(SavePublicSignoffResponse.parse(signoff));
   },
 );
 

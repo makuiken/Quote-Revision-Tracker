@@ -458,9 +458,9 @@ test.describe.serial("quote-to-signoff flow", () => {
     await signTyped(page);
 
     await page.goto(`${quoteUrl}/signoff`);
-    await page
-      .getByRole("button", { name: "Review revisions", exact: true })
-      .click();
+    await expect(
+      page.getByRole("heading", { name: "Review revisions", exact: true }),
+    ).toBeVisible();
     await page
       .getByRole("button", { name: "Exclude", exact: true })
       .first()
@@ -610,7 +610,7 @@ async function prepareExactPreview(page: Page): Promise<void> {
   await expect(
     page.getByRole("heading", { name: "Preview Ready" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Open exact preview" }).last().click();
+  await page.getByRole("link", { name: "Open preview", exact: true }).last().click();
   await expect(page).toHaveURL(/\/scoped-sign\/[^/]+$/);
   scopedPreviewUrl = new URL(page.url()).pathname;
 }

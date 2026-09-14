@@ -1,18 +1,19 @@
 import { pool } from "./index";
 
 /**
- * Idempotent schema reconciliation, run at API server startup.
+ * Idempotent schema reconciliation, run at API server startup in development.
  *
  * Each statement must be safe to run repeatedly (IF NOT EXISTS / no-ops on an
  * up-to-date database). Add a statement here whenever the Drizzle schema gains
  * a column or index, so a database that predates the change is repaired
  * automatically instead of failing at query time.
  *
- * A Postgres advisory lock ensures that simultaneous cold-starts (autoscale)
- * don't race on DDL — only one instance runs reconciliation at a time; the
- * others wait and then see a no-op database.
+ * Production deliberately does not call this function: DDL/DML reconciliation
+ * belongs in the publish/schema-application step, not an API cold start.
  */
 const ADVISORY_LOCK_KEY = 7_472_657_361; // stable arbitrary key for this app
+const LOCK_TIMEOUT = "5s";
+const STATEMENT_TIMEOUT = "30s";
 
 const RECONCILIATION_STATEMENTS: string[] = [
   // quotes.share_token was added after the initial schema; older databases lack it.
@@ -308,20 +309,474 @@ const RECONCILIATION_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS scoped_approval_coverage_quote_status_idx
     ON scoped_approval_coverage (quote_id, status)`,
+  // Cross-replica coordination for immutable unsigned document cache misses.
+  // Leases make crashed builders recoverable without holding a quote lock.
+  `CREATE TABLE IF NOT EXISTS unsigned_document_builds (
+    id serial PRIMARY KEY,
+    quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+    document_version text NOT NULL,
+    object_path text NOT NULL,
+    claim_token text NOT NULL,
+    lease_until timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT unsigned_document_builds_quote_version_unique
+      UNIQUE (quote_id, document_version)
+  )`,
+  `CREATE INDEX IF NOT EXISTS unsigned_document_builds_lease_idx
+    ON unsigned_document_builds (lease_until)`,
+];
+
+/**
+ * The API's production preflight contract. Keep this list deliberately
+ * independent from RECONCILIATION_STATEMENTS: checking production must remain
+ * read-only, and must not accidentally grow a repair path.
+ */
+const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
+  users: ["id", "clerk_user_id", "name", "email", "role", "status", "created_at"],
+  quotes: [
+    "id", "quote_number", "customer_name", "project_name", "job_address",
+    "categories", "specs", "notes", "share_token", "created_by_id",
+    "created_by_name", "archived_at", "archive_reason", "archived_by_id",
+    "archived_by_name", "created_at", "updated_at",
+  ],
+  revisions: [
+    "id", "quote_id", "author_id", "author_name", "note", "categories",
+    "excluded_from_signoff", "created_at",
+  ],
+  revision_drafts: [
+    "id", "quote_id", "author_id", "note", "categories", "created_at", "updated_at",
+  ],
+  signoffs: [
+    "id", "quote_id", "customer_name", "stakeholder_role", "signature_type",
+    "signature_data", "signed_packet_id", "signed_packet_sha256",
+    "signed_document_object_path", "signed_document_sha256", "legacy_status",
+    "legacy_invalidated_at", "legacy_invalidation_reason", "signed_at",
+  ],
+  attachments: [
+    "id", "quote_id", "name", "object_path", "content_type", "size",
+    "uploaded_by_id", "uploaded_by_name", "created_at",
+  ],
+  manufacturer_packets: [
+    "id", "quote_id", "manufacturer", "product_type", "detected_manufacturer",
+    "original_name", "declared_size", "upload_object_path", "source_object_path",
+    "sanitized_pdf_object_path", "sanitized_pdf_sha256", "sanitized_page_object_paths",
+    "analysis", "manual_redactions", "applied_redaction_template_id",
+    "applied_redaction_template_name", "status", "page_count", "attempt_count",
+    "processing_attempt_token", "processing_started_at", "failure_message",
+    "approved_at", "approved_by_id", "approved_by_name", "created_at", "updated_at",
+  ],
+  manufacturer_redaction_templates: [
+    "id", "manufacturer", "manufacturer_canonical", "product_type",
+    "eligible_product_types", "name", "active", "pages", "source_sample_id",
+    "created_by_id", "created_by_name", "updated_by_id", "updated_by_name",
+    "created_at", "updated_at",
+  ],
+  manufacturer_template_samples: [
+    "id", "template_id", "object_path", "original_name", "declared_size", "sha256",
+    "created_by_id", "created_by_name", "created_at",
+  ],
+  manufacturer_template_drafts: [
+    "id", "template_id", "original_template_id", "source_sample_id",
+    "upload_object_path", "original_name", "declared_size", "source_sha256",
+    "source_generation", "base_template_updated_at", "manufacturer",
+    "manufacturer_canonical", "product_type", "eligible_product_types", "name",
+    "active", "analysis", "manual_redactions", "status", "attempt_count",
+    "processing_attempt_token", "processing_started_at", "failure_message",
+    "revision", "created_by_id", "created_by_name", "updated_by_id",
+    "updated_by_name", "created_at", "updated_at",
+  ],
+  scoped_approval_requests: [
+    "id", "quote_id", "token", "product_types", "snapshot", "document_version",
+    "status", "created_by_id", "created_at", "signed_at",
+  ],
+  scoped_approvals: [
+    "id", "request_id", "quote_id", "product_types", "snapshot", "document_version",
+    "customer_name", "stakeholder_role", "signature_type", "signature_data",
+    "signed_document_object_path", "signed_document_sha256", "signed_at",
+  ],
+  scoped_approval_coverage: [
+    "id", "quote_id", "product_type", "approval_id", "status", "invalidated_at",
+    "invalidation_reason", "updated_at",
+  ],
+  manufacturer_packet_manifest: [
+    "id", "quote_id", "packet_id", "page_number", "page_order", "created_at",
+  ],
+  field_options: [
+    "id", "category", "field", "parent_field", "parent_value", "grand_field",
+    "grand_value", "values", "updated_at",
+  ],
+  unsigned_document_builds: [
+    "id", "quote_id", "document_version", "object_path", "claim_token",
+    "lease_until", "created_at", "updated_at",
+  ],
+};
+
+type RequiredIndex = {
+  table: string;
+  columns: readonly string[];
+  unique: boolean;
+  /** Set for indexes created by reconciliation, where the name is part of
+   * the compatibility contract (for example, a partial index). */
+  name?: string;
+};
+
+const REQUIRED_INDEXES: readonly RequiredIndex[] = [
+  // Primary keys and unique constraints/indexes used to enforce identity and
+  // idempotency.
+  { table: "users", columns: ["id"], unique: true },
+  { table: "quotes", columns: ["id"], unique: true },
+  { table: "revisions", columns: ["id"], unique: true },
+  { table: "revision_drafts", columns: ["id"], unique: true },
+  { table: "signoffs", columns: ["id"], unique: true },
+  { table: "attachments", columns: ["id"], unique: true },
+  { table: "manufacturer_packets", columns: ["id"], unique: true },
+  { table: "manufacturer_redaction_templates", columns: ["id"], unique: true },
+  { table: "manufacturer_template_samples", columns: ["id"], unique: true },
+  { table: "manufacturer_template_drafts", columns: ["id"], unique: true },
+  { table: "scoped_approval_requests", columns: ["id"], unique: true },
+  { table: "scoped_approvals", columns: ["id"], unique: true },
+  { table: "scoped_approval_coverage", columns: ["id"], unique: true },
+  { table: "manufacturer_packet_manifest", columns: ["id"], unique: true },
+  { table: "field_options", columns: ["id"], unique: true },
+  { table: "unsigned_document_builds", columns: ["id"], unique: true },
+  { table: "users", columns: ["clerk_user_id"], unique: true },
+  { table: "quotes", columns: ["share_token"], unique: true, name: "quotes_share_token_unique" },
+  { table: "revision_drafts", columns: ["quote_id", "author_id"], unique: true },
+  { table: "signoffs", columns: ["quote_id"], unique: true },
+  { table: "manufacturer_packets", columns: ["upload_object_path"], unique: true },
+  { table: "manufacturer_packets", columns: ["source_object_path"], unique: true },
+  { table: "manufacturer_packets", columns: ["sanitized_pdf_object_path"], unique: true },
+  {
+    table: "manufacturer_redaction_templates",
+    columns: ["manufacturer_canonical", "product_type"],
+    unique: true,
+  },
+  { table: "manufacturer_template_samples", columns: ["object_path"], unique: true },
+  { table: "manufacturer_template_drafts", columns: ["upload_object_path"], unique: true },
+  { table: "scoped_approval_requests", columns: ["token"], unique: true },
+  { table: "scoped_approvals", columns: ["request_id"], unique: true },
+  { table: "scoped_approvals", columns: ["signed_document_object_path"], unique: true },
+  {
+    table: "scoped_approval_coverage",
+    columns: ["quote_id", "product_type"],
+    unique: true,
+  },
+  {
+    table: "manufacturer_packet_manifest",
+    columns: ["quote_id", "page_order"],
+    unique: true,
+  },
+  {
+    table: "manufacturer_packet_manifest",
+    columns: ["quote_id", "packet_id", "page_number"],
+    unique: true,
+  },
+  {
+    table: "field_options",
+    columns: [
+      "category", "field", "parent_field", "parent_value", "grand_field", "grand_value",
+    ],
+    unique: true,
+  },
+  {
+    table: "unsigned_document_builds",
+    columns: ["quote_id", "document_version"],
+    unique: true,
+  },
+
+  // Only correctness-critical indexes belong in the startup compatibility
+  // contract. Development reconciliation may add performance indexes, but a
+  // missing optimization must not make a correctly declared production
+  // schema unavailable.
+  {
+    table: "unsigned_document_builds",
+    columns: ["lease_until"],
+    unique: false,
+    name: "unsigned_document_builds_lease_idx",
+  },
 ];
 
 export async function ensureSchema(): Promise<void> {
   const client = await pool.connect();
+  let transactionStarted = false;
   try {
-    // Advisory lock: at most one instance runs DDL at a time. The lock is
-    // automatically released when the client is returned to the pool.
-    await client.query("SELECT pg_advisory_lock($1)", [ADVISORY_LOCK_KEY]);
-    try {
-      for (const statement of RECONCILIATION_STATEMENTS) {
-        await client.query(statement);
-      }
-    } finally {
-      await client.query("SELECT pg_advisory_unlock($1)", [ADVISORY_LOCK_KEY]);
+    // DDL and its data backfills are one unit. If a later compatibility repair
+    // fails, rollback prevents a half-upgraded development database.
+    await client.query("BEGIN");
+    transactionStarted = true;
+    await client.query(`SET LOCAL lock_timeout = '${LOCK_TIMEOUT}'`);
+    await client.query(`SET LOCAL statement_timeout = '${STATEMENT_TIMEOUT}'`);
+    // Transaction-scoped advisory locking avoids leaking a session lock if a
+    // statement or connection fails. The lock timeout bounds cold-start waits.
+    await client.query("SELECT pg_advisory_xact_lock($1)", [ADVISORY_LOCK_KEY]);
+    for (const statement of RECONCILIATION_STATEMENTS) {
+      await client.query(statement);
+    }
+    await client.query("COMMIT");
+    transactionStarted = false;
+  } catch (err) {
+    if (transactionStarted) {
+      await client.query("ROLLBACK").catch(() => undefined);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+type TableRow = { table_name: string };
+type ColumnRow = { table_name: string; column_name: string };
+type IndexRow = {
+  table_name: string;
+  index_name: string;
+  is_unique: boolean;
+  is_valid: boolean;
+  predicate: string | null;
+  definition: string;
+  columns: string[] | null;
+};
+type ColumnContractRow = {
+  table_name: string;
+  column_name: string;
+  udt_name: string;
+  is_nullable: "YES" | "NO";
+};
+type ForeignKeyRow = {
+  table_name: string;
+  column_name: string;
+  foreign_table_name: string;
+  foreign_column_name: string;
+  delete_rule: string;
+};
+
+const REQUIRED_COLUMN_CONTRACTS: readonly {
+  table: string;
+  column: string;
+  type: string;
+  nullable: boolean;
+}[] = [
+  { table: "quotes", column: "id", type: "int4", nullable: false },
+  { table: "quotes", column: "archived_at", type: "timestamptz", nullable: true },
+  { table: "manufacturer_packets", column: "quote_id", type: "int4", nullable: false },
+  { table: "manufacturer_packets", column: "status", type: "text", nullable: false },
+  { table: "manufacturer_packets", column: "attempt_count", type: "int4", nullable: false },
+  { table: "manufacturer_packets", column: "processing_attempt_token", type: "text", nullable: true },
+  { table: "manufacturer_packets", column: "processing_started_at", type: "timestamptz", nullable: true },
+  { table: "manufacturer_packets", column: "sanitized_page_object_paths", type: "jsonb", nullable: true },
+  { table: "scoped_approval_requests", column: "snapshot", type: "jsonb", nullable: false },
+  { table: "scoped_approval_requests", column: "document_version", type: "text", nullable: false },
+  { table: "scoped_approvals", column: "signed_document_object_path", type: "text", nullable: false },
+  { table: "scoped_approvals", column: "signed_document_sha256", type: "text", nullable: false },
+  { table: "unsigned_document_builds", column: "quote_id", type: "int4", nullable: false },
+  { table: "unsigned_document_builds", column: "document_version", type: "text", nullable: false },
+  { table: "unsigned_document_builds", column: "object_path", type: "text", nullable: false },
+  { table: "unsigned_document_builds", column: "claim_token", type: "text", nullable: false },
+  { table: "unsigned_document_builds", column: "lease_until", type: "timestamptz", nullable: false },
+];
+
+const REQUIRED_FOREIGN_KEYS: readonly {
+  table: string;
+  column: string;
+  foreignTable: string;
+  foreignColumn: string;
+  deleteRule: string;
+}[] = [
+  {
+    table: "manufacturer_packets",
+    column: "quote_id",
+    foreignTable: "quotes",
+    foreignColumn: "id",
+    deleteRule: "CASCADE",
+  },
+  {
+    table: "unsigned_document_builds",
+    column: "quote_id",
+    foreignTable: "quotes",
+    foreignColumn: "id",
+    deleteRule: "CASCADE",
+  },
+  {
+    table: "scoped_approvals",
+    column: "request_id",
+    foreignTable: "scoped_approval_requests",
+    foreignColumn: "id",
+    deleteRule: "RESTRICT",
+  },
+];
+
+/**
+ * Verify the schema that the production API is allowed to use.
+ *
+ * This function intentionally contains SELECTs only. Production schema
+ * changes must be applied before publishing; an API instance must never race
+ * other instances while attempting DDL or a data backfill.
+ */
+export async function assertSchemaCompatible(): Promise<void> {
+  const client = await pool.connect();
+  const requiredTables = Object.keys(REQUIRED_COLUMNS);
+  try {
+    const tables = await client.query<TableRow>(
+      `SELECT table_name
+         FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+          AND table_name = ANY($1::text[])`,
+      [requiredTables],
+    );
+    const actualTables = new Set(tables.rows.map((row) => row.table_name));
+    const missingTables = requiredTables.filter((table) => !actualTables.has(table));
+
+    const columns = await client.query<ColumnRow>(
+      `SELECT table_name, column_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ANY($1::text[])`,
+      [requiredTables],
+    );
+    const actualColumns = new Set(
+      columns.rows.map((row) => `${row.table_name}.${row.column_name}`),
+    );
+    const missingColumns = requiredTables
+      .filter((table) => actualTables.has(table))
+      .flatMap((table) =>
+        REQUIRED_COLUMNS[table]
+          .filter((column) => !actualColumns.has(`${table}.${column}`))
+          .map((column) => `${table}.${column}`),
+      );
+
+    // pg_index is used instead of index names alone so a renamed equivalent
+    // unique constraint remains valid. Named reconciliation indexes still
+    // require their name because their partial/opclass behavior is important.
+    const indexes = await client.query<IndexRow>(
+      `SELECT table_class.relname AS table_name,
+              index_class.relname AS index_name,
+              index_info.indisunique AS is_unique,
+              index_info.indisvalid AS is_valid,
+              pg_get_expr(index_info.indpred, index_info.indrelid) AS predicate,
+              pg_get_indexdef(index_info.indexrelid) AS definition,
+              array_agg(attribute.attname::text ORDER BY index_columns.ordinality)
+                FILTER (WHERE attribute.attname IS NOT NULL) AS columns
+         FROM pg_index AS index_info
+         JOIN pg_class AS table_class
+           ON table_class.oid = index_info.indrelid
+         JOIN pg_namespace AS table_namespace
+           ON table_namespace.oid = table_class.relnamespace
+         JOIN pg_class AS index_class
+           ON index_class.oid = index_info.indexrelid
+         LEFT JOIN LATERAL unnest(index_info.indkey) WITH ORDINALITY
+           AS index_columns(attnum, ordinality) ON true
+         LEFT JOIN pg_attribute AS attribute
+           ON attribute.attrelid = table_class.oid
+          AND attribute.attnum = index_columns.attnum
+        WHERE table_namespace.nspname = 'public'
+          AND table_class.relname = ANY($1::text[])
+        GROUP BY table_class.relname, index_class.relname, index_info.indisunique,
+                 index_info.indisvalid, index_info.indpred, index_info.indrelid,
+                 index_info.indexrelid`,
+      [requiredTables],
+    );
+    const missingIndexes = REQUIRED_INDEXES.filter((required) => {
+      return !indexes.rows.some((actual) => {
+        const columnsMatch =
+          (actual.columns ?? []).join(",") === required.columns.join(",");
+        return (
+          actual.table_name === required.table &&
+          actual.is_unique === required.unique &&
+          actual.is_valid &&
+          actual.predicate === null &&
+          columnsMatch &&
+          (!required.name || actual.index_name === required.name)
+        );
+      });
+    }).map((required) => {
+      const identity = `${required.table}(${required.columns.join(", ")})`;
+      return required.name ? `${required.name} ${identity}` : identity;
+    });
+
+    const columnContracts = await client.query<ColumnContractRow>(
+      `SELECT table_name, column_name, udt_name, is_nullable
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND (table_name, column_name) IN (
+            SELECT contract.table_name, contract.column_name
+              FROM unnest($1::text[], $2::text[])
+                   AS contract(table_name, column_name)
+          )`,
+      [
+        REQUIRED_COLUMN_CONTRACTS.map((contract) => contract.table),
+        REQUIRED_COLUMN_CONTRACTS.map((contract) => contract.column),
+      ],
+    );
+    const missingColumnContracts = REQUIRED_COLUMN_CONTRACTS.filter((required) => {
+      return !columnContracts.rows.some(
+        (actual) =>
+          actual.table_name === required.table &&
+          actual.column_name === required.column &&
+          actual.udt_name === required.type &&
+          (actual.is_nullable === "YES") === required.nullable,
+      );
+    }).map(
+      (required) =>
+        `${required.table}.${required.column} ${required.type} ${required.nullable ? "NULL" : "NOT NULL"}`,
+    );
+
+    const foreignKeys = await client.query<ForeignKeyRow>(
+      `SELECT tc.table_name,
+              kcu.column_name,
+              ccu.table_name AS foreign_table_name,
+              ccu.column_name AS foreign_column_name,
+              rc.delete_rule
+         FROM information_schema.table_constraints AS tc
+         JOIN information_schema.key_column_usage AS kcu
+           ON kcu.constraint_schema = tc.constraint_schema
+          AND kcu.constraint_name = tc.constraint_name
+         JOIN information_schema.referential_constraints AS rc
+           ON rc.constraint_schema = tc.constraint_schema
+          AND rc.constraint_name = tc.constraint_name
+         JOIN information_schema.constraint_column_usage AS ccu
+           ON ccu.constraint_schema = rc.unique_constraint_schema
+          AND ccu.constraint_name = rc.unique_constraint_name
+        WHERE tc.constraint_schema = 'public'
+          AND tc.constraint_type = 'FOREIGN KEY'`,
+    );
+    const missingForeignKeys = REQUIRED_FOREIGN_KEYS.filter((required) => {
+      return !foreignKeys.rows.some(
+        (actual) =>
+          actual.table_name === required.table &&
+          actual.column_name === required.column &&
+          actual.foreign_table_name === required.foreignTable &&
+          actual.foreign_column_name === required.foreignColumn &&
+          actual.delete_rule === required.deleteRule,
+      );
+    }).map(
+      (required) =>
+        `${required.table}.${required.column} -> ${required.foreignTable}.${required.foreignColumn} ON DELETE ${required.deleteRule}`,
+    );
+
+    if (
+      missingTables.length ||
+      missingColumns.length ||
+      missingIndexes.length ||
+      missingColumnContracts.length ||
+      missingForeignKeys.length
+    ) {
+      const details = [
+        missingTables.length ? `tables: ${missingTables.join(", ")}` : "",
+        missingColumns.length ? `columns: ${missingColumns.join(", ")}` : "",
+        missingIndexes.length ? `indexes: ${missingIndexes.join(", ")}` : "",
+        missingColumnContracts.length
+          ? `column contracts: ${missingColumnContracts.join(", ")}`
+          : "",
+        missingForeignKeys.length
+          ? `foreign keys: ${missingForeignKeys.join(", ")}`
+          : "",
+      ].filter(Boolean);
+      throw new Error(
+        "Production database schema is incompatible with this API. " +
+          "Apply the current schema before publishing; startup will not reconcile it. " +
+          `Missing ${details.join("; ")}.`,
+      );
     }
   } finally {
     client.release();
