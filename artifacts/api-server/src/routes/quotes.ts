@@ -23,6 +23,7 @@ import {
   signoffsTable,
   revisionDraftsTable,
   attachmentsTable,
+  attachmentUploadsTable,
   usersTable,
   fieldOptionsTable,
   manufacturerPacketsTable,
@@ -110,6 +111,11 @@ import {
 } from "../lib/scopedApprovals";
 import { quoteApprovalImpact } from "../lib/quoteApprovalImpact";
 import { legacyApprovalMetadata } from "../lib/legacyApproval";
+import {
+  cleanupAttachmentUpload,
+  markAttachmentUploadForCleanup,
+  normalizeAttachmentContentType,
+} from "../lib/attachmentUploads";
 
 const router: IRouter = Router();
 const packetStorage = new ObjectStorageService();
@@ -1362,14 +1368,71 @@ router.delete("/quotes/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [quote] = await db
-    .delete(quotesTable)
-    .where(eq(quotesTable.id, params.data.id))
-    .returning();
+  const outcome = await db.transaction(async (tx) => {
+    const attachmentRows = await tx
+      .select({
+        objectPath: attachmentsTable.objectPath,
+        uploadSessionId: attachmentsTable.uploadSessionId,
+        name: attachmentsTable.name,
+        size: attachmentsTable.size,
+        contentType: attachmentsTable.contentType,
+        uploadedById: attachmentsTable.uploadedById,
+      })
+      .from(attachmentsTable)
+      .where(eq(attachmentsTable.quoteId, params.data.id));
+    const uploadRows = await tx
+      .select({ id: attachmentUploadsTable.id })
+      .from(attachmentUploadsTable)
+      .where(eq(attachmentUploadsTable.quoteId, params.data.id));
+    const uploadIds = uploadRows.map((upload) => upload.id);
+    const now = new Date();
+    for (const attachment of attachmentRows) {
+      if (!attachment.uploadSessionId && attachment.objectPath.startsWith("/objects/uploads/")) {
+        const [created] = await tx
+          .insert(attachmentUploadsTable)
+          .values({
+            id: randomUUID(),
+            quoteId: params.data.id,
+            objectPath: attachment.objectPath,
+            finalObjectPath: attachment.objectPath,
+            originalName: attachment.name,
+            declaredSize: attachment.size ?? 1,
+            declaredContentType: attachment.contentType ?? "application/octet-stream",
+            createdById: attachment.uploadedById,
+            status: "delete_pending",
+            expiresAt: now,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing()
+          .returning({ id: attachmentUploadsTable.id });
+        if (created) uploadIds.push(created.id);
+      }
+    }
+    if (uploadIds.length) {
+      await tx
+        .update(attachmentUploadsTable)
+        .set({ status: "delete_pending", updatedAt: new Date() })
+        .where(inArray(attachmentUploadsTable.id, uploadIds));
+    }
+    const [quote] = await tx
+      .delete(quotesTable)
+      .where(eq(quotesTable.id, params.data.id))
+      .returning();
+    return { quote, attachmentRows, uploadIds };
+  });
 
-  if (!quote) {
+  if (!outcome.quote) {
     res.status(404).json({ error: "Quote not found" });
     return;
+  }
+  for (const uploadId of outcome.uploadIds) {
+    void cleanupAttachmentUpload(uploadId).catch((error) => {
+        req.log.warn(
+          { err: error, uploadId },
+          "Deleted quote attachment cleanup deferred",
+        );
+    });
   }
   res.sendStatus(204);
 });
@@ -1748,25 +1811,124 @@ router.post(
       return;
     }
 
-    const quote = await loadQuote(params.data.id, res);
-    if (!quote) return;
-    if (!guardNotArchived(quote, res)) return;
+    const [pendingUpload] = await db
+      .select()
+      .from(attachmentUploadsTable)
+      .where(
+        and(
+          eq(attachmentUploadsTable.id, parsed.data.uploadId),
+          eq(attachmentUploadsTable.quoteId, params.data.id),
+          eq(attachmentUploadsTable.createdById, req.userId!),
+        ),
+      );
+    if (
+      !pendingUpload ||
+      pendingUpload.status !== "pending" ||
+      pendingUpload.expiresAt.getTime() <= Date.now()
+    ) {
+      res.status(409).json({ error: "This upload is invalid, expired, or already used." });
+      return;
+    }
+
+    let metadata: Awaited<ReturnType<ObjectStorageService["getObjectEntityMetadata"]>>;
+    try {
+      metadata = await packetStorage.getObjectEntityMetadata(pendingUpload.objectPath);
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        res.status(409).json({ error: "The file upload has not completed." });
+        return;
+      }
+      throw error;
+    }
+    const actualContentType = normalizeAttachmentContentType(
+      metadata.contentType ?? "application/octet-stream",
+    );
+    const declaredContentType = normalizeAttachmentContentType(
+      pendingUpload.declaredContentType,
+    );
+    if (
+      !metadata.generation ||
+      metadata.size !== pendingUpload.declaredSize ||
+      actualContentType !== declaredContentType
+    ) {
+      const claimedForCleanup = await markAttachmentUploadForCleanup(pendingUpload.id);
+      if (claimedForCleanup) {
+        void cleanupAttachmentUpload(pendingUpload.id).catch((error) => {
+          req.log.warn({ err: error, uploadId: pendingUpload.id }, "Rejected attachment cleanup failed");
+        });
+      }
+      res.status(422).json({ error: "The uploaded file does not match its approved size or type." });
+      return;
+    }
+    try {
+      await packetStorage.copyObjectEntityImmutable(
+        pendingUpload.objectPath,
+        pendingUpload.finalObjectPath,
+        metadata.generation,
+      );
+    } catch {
+      res.status(409).json({
+        error: "The uploaded file changed during verification. Upload it again.",
+      });
+      return;
+    }
 
     const profile = await getUserProfile(req.userId!);
-    const [attachment] = await db
-      .insert(attachmentsTable)
-      .values({
-        quoteId: quote.id,
-        name: parsed.data.name,
-        objectPath: parsed.data.objectPath,
-        contentType: parsed.data.contentType ?? null,
-        size: parsed.data.size ?? null,
-        uploadedById: req.userId!,
-        uploadedByName: profile.name,
-      })
-      .returning();
+    const outcome = await db.transaction(async (tx) => {
+      const current = await lockQuoteRow(tx, params.data.id);
+      if (!current) return { kind: "notFound" as const };
+      if (current.archivedAt) return { kind: "archived" as const };
+      const [upload] = await tx
+        .select()
+        .from(attachmentUploadsTable)
+        .where(
+          and(
+            eq(attachmentUploadsTable.id, pendingUpload.id),
+            eq(attachmentUploadsTable.quoteId, current.id),
+            eq(attachmentUploadsTable.createdById, req.userId!),
+          ),
+        )
+        .for("update");
+      if (
+        !upload ||
+        upload.status !== "pending" ||
+        upload.expiresAt.getTime() <= Date.now()
+      ) {
+        return { kind: "invalidUpload" as const };
+      }
+      const [attachment] = await tx
+        .insert(attachmentsTable)
+        .values({
+          quoteId: current.id,
+          name: upload.originalName,
+          objectPath: upload.finalObjectPath,
+          uploadSessionId: upload.id,
+          contentType: actualContentType,
+          size: metadata.size,
+          uploadedById: req.userId!,
+          uploadedByName: profile.name,
+        })
+        .returning();
+      await tx
+        .update(attachmentUploadsTable)
+        .set({ status: "source_cleanup_pending", updatedAt: new Date() })
+        .where(eq(attachmentUploadsTable.id, upload.id));
+      return { kind: "created" as const, attachment };
+    });
 
-    res.status(201).json(CreateAttachmentResponse.parse(attachment));
+    if (outcome.kind === "notFound") {
+      res.status(404).json({ error: "Quote not found" });
+      return;
+    }
+    if (outcome.kind === "archived") {
+      res.status(400).json({ error: "Restore this quote before adding files." });
+      return;
+    }
+    if (outcome.kind === "invalidUpload") {
+      res.status(409).json({ error: "This upload expired or was already used." });
+      return;
+    }
+    res.status(201).json(CreateAttachmentResponse.parse(outcome.attachment));
   },
 );
 
@@ -1783,8 +1945,8 @@ router.delete(
     // deletion cannot race an archive.
     const outcome = await db.transaction(async (tx) => {
       const current = await lockQuoteRow(tx, params.data.id);
-      if (!current) return "notFound" as const;
-      if (current.archivedAt) return "archived" as const;
+      if (!current) return { kind: "notFound" as const };
+      if (current.archivedAt) return { kind: "archived" as const };
       const [attachment] = await tx
         .delete(attachmentsTable)
         .where(
@@ -1794,18 +1956,64 @@ router.delete(
           ),
         )
         .returning();
-      return attachment ? ("deleted" as const) : ("notFound" as const);
+      if (!attachment) return { kind: "notFound" as const };
+      if (attachment.uploadSessionId) {
+        await tx
+          .update(attachmentUploadsTable)
+          .set({ status: "delete_pending", updatedAt: new Date() })
+          .where(eq(attachmentUploadsTable.id, attachment.uploadSessionId));
+      }
+      let cleanupUploadId = attachment.uploadSessionId;
+      if (!cleanupUploadId && attachment.objectPath.startsWith("/objects/uploads/")) {
+        const [stillReferenced] = await tx
+          .select({ id: attachmentsTable.id })
+          .from(attachmentsTable)
+          .where(eq(attachmentsTable.objectPath, attachment.objectPath))
+          .limit(1);
+        if (!stillReferenced) {
+          const now = new Date();
+          const tombstoneId = randomUUID();
+          const [tombstone] = await tx
+            .insert(attachmentUploadsTable)
+            .values({
+              id: tombstoneId,
+              quoteId: current.id,
+              objectPath: attachment.objectPath,
+              finalObjectPath: attachment.objectPath,
+              originalName: attachment.name,
+              declaredSize: attachment.size ?? 1,
+              declaredContentType: attachment.contentType ?? "application/octet-stream",
+              createdById: attachment.uploadedById,
+              status: "delete_pending",
+              expiresAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .onConflictDoNothing()
+            .returning({ id: attachmentUploadsTable.id });
+          cleanupUploadId = tombstone?.id;
+        }
+      }
+      return { kind: "deleted" as const, attachment, cleanupUploadId };
     });
 
-    if (outcome === "archived") {
+    if (outcome.kind === "archived") {
       res.status(400).json({
         error: "This quote is archived. Restore it to make changes.",
       });
       return;
     }
-    if (outcome === "notFound") {
+    if (outcome.kind === "notFound") {
       res.status(404).json({ error: "Attachment not found" });
       return;
+    }
+    if (outcome.cleanupUploadId) {
+      void cleanupAttachmentUpload(outcome.cleanupUploadId).catch((error) => {
+        req.log.warn(
+          { err: error, uploadId: outcome.cleanupUploadId },
+          "Deleted attachment cleanup deferred",
+        );
+      });
     }
     res.sendStatus(204);
   },

@@ -2,6 +2,7 @@ import { assertSchemaCompatible, ensureSchema } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startPacketJobRecovery } from "./lib/packets/service";
+import { startAttachmentUploadRecovery } from "./lib/attachmentUploads";
 
 const rawPort = process.env["PORT"];
 
@@ -36,6 +37,7 @@ try {
   process.exit(1);
 }
 startPacketJobRecovery();
+startAttachmentUploadRecovery();
 
 app.listen(port, (err) => {
   if (err) {

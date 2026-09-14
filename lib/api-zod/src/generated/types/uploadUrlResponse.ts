@@ -8,7 +8,9 @@
 import type { UploadUrlRequest } from './uploadUrlRequest';
 
 export interface UploadUrlResponse {
+  /** @minLength 1 */
+  uploadId: string;
   uploadURL: string;
   objectPath: string;
-  metadata?: UploadUrlRequest;
+  metadata: UploadUrlRequest;
 }

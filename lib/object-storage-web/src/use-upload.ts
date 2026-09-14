@@ -2,12 +2,14 @@ import { useCallback, useState } from 'react';
 import type { UppyFile } from '@uppy/core';
 
 interface UploadMetadata {
+  quoteId: number;
   name: string;
   size: number;
   contentType: string;
 }
 
 interface UploadResponse {
+  uploadId: string;
   uploadURL: string;
   objectPath: string;
   metadata: UploadMetadata;
@@ -18,6 +20,7 @@ interface UseUploadOptions {
   basePath?: string;
   onSuccess?: (response: UploadResponse) => void;
   onError?: (error: Error) => void;
+  requestData?: Record<string, unknown>;
 }
 
 /**
@@ -67,6 +70,7 @@ export function useUpload(options: UseUploadOptions = {}) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          ...options.requestData,
           name: file.name,
           size: file.size,
           contentType: file.type || 'application/octet-stream',
@@ -80,7 +84,7 @@ export function useUpload(options: UseUploadOptions = {}) {
 
       return response.json();
     },
-    [],
+    [basePath, options.requestData],
   );
 
   const uploadToPresignedUrl = useCallback(
@@ -142,6 +146,7 @@ export function useUpload(options: UseUploadOptions = {}) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          ...options.requestData,
           name: file.name,
           size: file.size,
           contentType: file.type || 'application/octet-stream',
@@ -159,7 +164,7 @@ export function useUpload(options: UseUploadOptions = {}) {
         headers: { 'Content-Type': file.type || 'application/octet-stream' },
       };
     },
-    [],
+    [basePath, options.requestData],
   );
 
   return {

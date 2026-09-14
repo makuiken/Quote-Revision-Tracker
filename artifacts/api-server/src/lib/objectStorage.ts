@@ -186,6 +186,7 @@ export class ObjectStorageService {
   async getObjectEntityMetadata(objectPath: string): Promise<{
     size: number;
     generation: string | undefined;
+    contentType: string | undefined;
   }> {
     const file = await this.getObjectEntityFile(objectPath);
     const [metadata] = await file.getMetadata();
@@ -193,7 +194,11 @@ export class ObjectStorageService {
     if (!Number.isSafeInteger(size) || size < 0) {
       throw new Error("Object has an invalid size.");
     }
-    return { size, generation: metadata.generation ? String(metadata.generation) : undefined };
+    return {
+      size,
+      generation: metadata.generation ? String(metadata.generation) : undefined,
+      contentType: metadata.contentType ? String(metadata.contentType) : undefined,
+    };
   }
 
   async downloadObjectBytesBounded(
@@ -227,12 +232,16 @@ export class ObjectStorageService {
     destinationPath: string,
     sourceGeneration?: string,
   ): Promise<void> {
-    const source = await this.getObjectEntityFile(sourcePath);
+    const sourceReference = await this.getObjectEntityFile(sourcePath);
+    const source = sourceGeneration
+      ? sourceReference.bucket.file(sourceReference.name, {
+          generation: sourceGeneration,
+        })
+      : sourceReference;
     const destination = this.getObjectEntityFileReference(destinationPath);
     await source.copy(destination, {
       preconditionOpts: {
         ifGenerationMatch: 0,
-        ...(sourceGeneration ? { ifSourceGenerationMatch: sourceGeneration } : {}),
       },
     });
   }

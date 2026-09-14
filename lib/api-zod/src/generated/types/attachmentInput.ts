@@ -8,11 +8,5 @@
 
 export interface AttachmentInput {
   /** @minLength 1 */
-  name: string;
-  /** @minLength 1 */
-  objectPath: string;
-  /** @nullable */
-  contentType?: string | null;
-  /** @nullable */
-  size?: number | null;
+  uploadId: string;
 }

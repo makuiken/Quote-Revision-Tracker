@@ -4285,7 +4285,7 @@ export const getRequestUploadUrlUrl = () => {
 }
 
 /**
- * @summary Request a presigned URL for file upload
+ * @summary Create a quote-bound upload session and request its presigned URL
  */
 export const requestUploadUrl = async (uploadUrlRequest: UploadUrlRequest, options?: Parameters<typeof customFetch>[1]): Promise<UploadUrlResponse> => {
 
@@ -4334,7 +4334,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RequestUploadUrlMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Request a presigned URL for file upload
+ * @summary Create a quote-bound upload session and request its presigned URL
  */
 export const useRequestUploadUrl = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<UploadUrlRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}

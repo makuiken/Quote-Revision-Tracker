@@ -1427,7 +1427,7 @@ paths:
     post:
       tags: [storage]
       operationId: requestUploadUrl
-      summary: Request a presigned URL for file upload
+      summary: Create a quote-bound upload session and request its presigned URL
       requestBody:
         required: true
         content:
@@ -1435,8 +1435,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UploadUrlRequest"
       responses:
-        "200":
-          description: Presigned upload URL generated
+        "201":
+          description: Quote-bound upload session created
           content:
             application/json:
               schema:
@@ -2366,15 +2366,17 @@ components:
       required: [entries]
     UploadUrlRequest:
       type: object
-      required: [name, size, contentType]
+      required: [quoteId, name, size, contentType]
       properties:
-        name: { type: string, minLength: 1 }
-        size: { type: integer, minimum: 1 }
-        contentType: { type: string, minLength: 1 }
+        quoteId: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        size: { type: integer, minimum: 1, maximum: 26214400 }
+        contentType: { type: string, minLength: 1, maxLength: 255 }
     UploadUrlResponse:
       type: object
-      required: [uploadURL, objectPath]
+      required: [uploadId, uploadURL, objectPath, metadata]
       properties:
+        uploadId: { type: string, minLength: 1 }
         uploadURL: { type: string, format: uri }
         objectPath: { type: string }
         metadata:
@@ -2394,11 +2396,8 @@ components:
     AttachmentInput:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
-        objectPath: { type: string, minLength: 1 }
-        contentType: { type: ["string", "null"] }
-        size: { type: ["integer", "null"] }
-      required: [name, objectPath]
+        uploadId: { type: string, minLength: 1 }
+      required: [uploadId]
     HealthStatus:
       type: object
       properties:

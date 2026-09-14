@@ -2482,32 +2482,44 @@ export const RemoveUserResponse = zod.void()
 
 
 /**
- * @summary Request a presigned URL for file upload
+ * @summary Create a quote-bound upload session and request its presigned URL
  */
 
+export const requestUploadUrlBodyNameMax = 255;
 
+export const requestUploadUrlBodySizeMax = 26214400;
+
+export const requestUploadUrlBodyContentTypeMax = 255;
 
 
 
 export const RequestUploadUrlBody = zod.object({
-  "name": zod.string().min(1),
-  "size": zod.int().min(1),
-  "contentType": zod.string().min(1)
+  "quoteId": zod.int().min(1),
+  "name": zod.string().min(1).max(requestUploadUrlBodyNameMax),
+  "size": zod.int().min(1).max(requestUploadUrlBodySizeMax),
+  "contentType": zod.string().min(1).max(requestUploadUrlBodyContentTypeMax)
 })
 
 
 
+export const requestUploadUrlResponseMetadataNameMax = 255;
+
+export const requestUploadUrlResponseMetadataSizeMax = 26214400;
+
+export const requestUploadUrlResponseMetadataContentTypeMax = 255;
 
 
 
 export const RequestUploadUrlResponse = zod.object({
+  "uploadId": zod.string().min(1),
   "uploadURL": zod.url(),
   "objectPath": zod.string(),
   "metadata": zod.object({
-  "name": zod.string().min(1),
-  "size": zod.int().min(1),
-  "contentType": zod.string().min(1)
-}).optional()
+  "quoteId": zod.int().min(1),
+  "name": zod.string().min(1).max(requestUploadUrlResponseMetadataNameMax),
+  "size": zod.int().min(1).max(requestUploadUrlResponseMetadataSizeMax),
+  "contentType": zod.string().min(1).max(requestUploadUrlResponseMetadataContentTypeMax)
+})
 })
 
 
@@ -2561,12 +2573,8 @@ export const CreateAttachmentParams = zod.object({
 
 
 
-
 export const CreateAttachmentBody = zod.object({
-  "name": zod.string().min(1),
-  "objectPath": zod.string().min(1),
-  "contentType": zod.string().nullish(),
-  "size": zod.int().nullish()
+  "uploadId": zod.string().min(1)
 })
 
 export const CreateAttachmentResponse = zod.object({

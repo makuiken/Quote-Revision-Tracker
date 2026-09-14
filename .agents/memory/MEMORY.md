@@ -7,3 +7,4 @@
 - [E2E testing setup](e2e-testing.md) — Playwright suite in `e2e/`; Clerk headless sign-in needs ticket strategy, system chromium on NixOS, drizzle push needs a TTY.
 - [Template eligibility](template-eligibility.md) — shared door templates may cover multiple categories; eligibility stays separate from quote classification and human review.
 - [Distributed PDF work](distributed-pdf-work.md) — use global slots and DB leases across replicas; render outside locks, then revalidate before committing immutable evidence.
+- [Presigned upload finalization](presigned-upload-finalization.md) — attach only generation-bound immutable copies; keep cleanup tombstones until every issued write URL expires.

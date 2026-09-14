@@ -111,6 +111,7 @@ function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readO
   const deleteAttachment = useDeleteAttachment();
 
   const { uploadFile, isUploading, progress } = useUpload({
+    requestData: { quoteId },
     onError: (err) => {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     },
@@ -121,26 +122,16 @@ function AttachmentsCard({ quoteId, readOnly = false }: { quoteId: number; readO
     for (const file of Array.from(files)) {
       const result = await uploadFile(file);
       if (!result) continue;
-      createAttachment.mutate(
-        {
+      try {
+        await createAttachment.mutateAsync({
           id: quoteId,
-          data: {
-            name: file.name,
-            objectPath: result.objectPath,
-            contentType: file.type || null,
-            size: file.size,
-          },
-        },
-        {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: getListAttachmentsQueryKey(quoteId) });
-            toast({ title: "File attached", description: `${file.name} was added to this quote.` });
-          },
-          onError: () => {
-            toast({ title: "Error", description: `Failed to save ${file.name}.`, variant: "destructive" });
-          },
-        },
-      );
+          data: { uploadId: result.uploadId },
+        });
+        queryClient.invalidateQueries({ queryKey: getListAttachmentsQueryKey(quoteId) });
+        toast({ title: "File attached", description: `${file.name} was added to this quote.` });
+      } catch {
+        toast({ title: "Error", description: `Failed to save ${file.name}.`, variant: "destructive" });
+      }
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };

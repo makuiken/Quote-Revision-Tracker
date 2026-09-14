@@ -481,18 +481,31 @@ export interface ManufacturerPacketManifestInput {
 }
 
 export interface UploadUrlRequest {
-  /** @minLength 1 */
-  name: string;
   /** @minimum 1 */
+  quoteId: number;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 26214400
+     */
   size: number;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
   contentType: string;
 }
 
 export interface UploadUrlResponse {
+  /** @minLength 1 */
+  uploadId: string;
   uploadURL: string;
   objectPath: string;
-  metadata?: UploadUrlRequest;
+  metadata: UploadUrlRequest;
 }
 
 export interface Attachment {
@@ -510,13 +523,7 @@ export interface Attachment {
 
 export interface AttachmentInput {
   /** @minLength 1 */
-  name: string;
-  /** @minLength 1 */
-  objectPath: string;
-  /** @nullable */
-  contentType?: string | null;
-  /** @nullable */
-  size?: number | null;
+  uploadId: string;
 }
 
 export interface HealthStatus {

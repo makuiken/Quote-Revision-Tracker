@@ -39,6 +39,41 @@ const RECONCILIATION_STATEMENTS: string[] = [
   // Default quote list sort.
   `CREATE INDEX IF NOT EXISTS quotes_created_at_idx ON quotes (created_at DESC)`,
 
+  // Quote attachment uploads are server-issued capabilities. Pending and
+  // delete-pending rows survive long enough for bounded storage cleanup.
+  `CREATE TABLE IF NOT EXISTS attachment_uploads (
+    id text PRIMARY KEY,
+    quote_id integer REFERENCES quotes(id) ON DELETE SET NULL,
+    object_path text NOT NULL UNIQUE,
+    final_object_path text,
+    original_name text NOT NULL,
+    declared_size integer NOT NULL,
+    declared_content_type text NOT NULL,
+    created_by_id text NOT NULL,
+    status text NOT NULL DEFAULT 'pending',
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS attachment_uploads_cleanup_idx
+    ON attachment_uploads (status, expires_at)`,
+  `ALTER TABLE attachment_uploads ADD COLUMN IF NOT EXISTS final_object_path text`,
+  `UPDATE attachment_uploads
+      SET final_object_path = object_path
+    WHERE final_object_path IS NULL`,
+  `ALTER TABLE attachment_uploads ALTER COLUMN final_object_path SET NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS attachment_uploads_final_object_path_unique
+    ON attachment_uploads (final_object_path)`,
+  `ALTER TABLE attachments ADD COLUMN IF NOT EXISTS upload_session_id text`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS attachments_upload_session_id_unique
+    ON attachments (upload_session_id)`,
+  `DO $$ BEGIN
+    ALTER TABLE attachments
+      ADD CONSTRAINT attachments_upload_session_id_attachment_uploads_id_fk
+      FOREIGN KEY (upload_session_id) REFERENCES attachment_uploads(id) ON DELETE RESTRICT;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
+
   // Per-revision signoff exclusion: hides an entry on the signoff document only.
   `ALTER TABLE revisions ADD COLUMN IF NOT EXISTS excluded_from_signoff boolean NOT NULL DEFAULT false`,
 
@@ -355,7 +390,12 @@ const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
   ],
   attachments: [
     "id", "quote_id", "name", "object_path", "content_type", "size",
-    "uploaded_by_id", "uploaded_by_name", "created_at",
+    "upload_session_id", "uploaded_by_id", "uploaded_by_name", "created_at",
+  ],
+  attachment_uploads: [
+    "id", "quote_id", "object_path", "final_object_path", "original_name", "declared_size",
+    "declared_content_type", "created_by_id", "status", "expires_at",
+    "created_at", "updated_at",
   ],
   manufacturer_packets: [
     "id", "quote_id", "manufacturer", "product_type", "detected_manufacturer",
@@ -430,6 +470,7 @@ const REQUIRED_INDEXES: readonly RequiredIndex[] = [
   { table: "revision_drafts", columns: ["id"], unique: true },
   { table: "signoffs", columns: ["id"], unique: true },
   { table: "attachments", columns: ["id"], unique: true },
+  { table: "attachment_uploads", columns: ["id"], unique: true },
   { table: "manufacturer_packets", columns: ["id"], unique: true },
   { table: "manufacturer_redaction_templates", columns: ["id"], unique: true },
   { table: "manufacturer_template_samples", columns: ["id"], unique: true },
@@ -444,6 +485,9 @@ const REQUIRED_INDEXES: readonly RequiredIndex[] = [
   { table: "quotes", columns: ["share_token"], unique: true, name: "quotes_share_token_unique" },
   { table: "revision_drafts", columns: ["quote_id", "author_id"], unique: true },
   { table: "signoffs", columns: ["quote_id"], unique: true },
+  { table: "attachment_uploads", columns: ["object_path"], unique: true },
+  { table: "attachment_uploads", columns: ["final_object_path"], unique: true },
+  { table: "attachments", columns: ["upload_session_id"], unique: true },
   { table: "manufacturer_packets", columns: ["upload_object_path"], unique: true },
   { table: "manufacturer_packets", columns: ["source_object_path"], unique: true },
   { table: "manufacturer_packets", columns: ["sanitized_pdf_object_path"], unique: true },
@@ -573,6 +617,19 @@ const REQUIRED_COLUMN_CONTRACTS: readonly {
   { table: "unsigned_document_builds", column: "object_path", type: "text", nullable: false },
   { table: "unsigned_document_builds", column: "claim_token", type: "text", nullable: false },
   { table: "unsigned_document_builds", column: "lease_until", type: "timestamptz", nullable: false },
+  { table: "attachment_uploads", column: "id", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "quote_id", type: "int4", nullable: true },
+  { table: "attachment_uploads", column: "object_path", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "final_object_path", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "original_name", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "declared_size", type: "int4", nullable: false },
+  { table: "attachment_uploads", column: "declared_content_type", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "created_by_id", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "status", type: "text", nullable: false },
+  { table: "attachment_uploads", column: "expires_at", type: "timestamptz", nullable: false },
+  { table: "attachment_uploads", column: "created_at", type: "timestamptz", nullable: false },
+  { table: "attachment_uploads", column: "updated_at", type: "timestamptz", nullable: false },
+  { table: "attachments", column: "upload_session_id", type: "text", nullable: true },
 ];
 
 const REQUIRED_FOREIGN_KEYS: readonly {
@@ -582,6 +639,20 @@ const REQUIRED_FOREIGN_KEYS: readonly {
   foreignColumn: string;
   deleteRule: string;
 }[] = [
+  {
+    table: "attachment_uploads",
+    column: "quote_id",
+    foreignTable: "quotes",
+    foreignColumn: "id",
+    deleteRule: "SET NULL",
+  },
+  {
+    table: "attachments",
+    column: "upload_session_id",
+    foreignTable: "attachment_uploads",
+    foreignColumn: "id",
+    deleteRule: "RESTRICT",
+  },
   {
     table: "manufacturer_packets",
     column: "quote_id",

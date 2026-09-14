@@ -1,4 +1,7 @@
 import { Readable } from 'stream';
+import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
+import { attachmentUploadsTable, db, quotesTable } from '@workspace/db';
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
@@ -9,6 +12,11 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
+import {
+  ATTACHMENT_UPLOAD_TTL_MS,
+  sweepAttachmentUploads,
+  validateAttachmentUpload,
+} from '../lib/attachmentUploads';
 
 import { requireAuth, requireApproved, type AuthedRequest } from '../middlewares/requireAuth';
 
@@ -27,7 +35,7 @@ router.post(
   '/storage/uploads/request-url',
   requireAuth,
   requireApproved,
-  async (req: Request, res: Response) => {
+  async (req: AuthedRequest, res: Response) => {
     const parsed = RequestUploadUrlBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Missing or invalid required fields' });
@@ -35,17 +43,57 @@ router.post(
     }
 
     try {
-      const { name, size, contentType } = parsed.data;
+      const { quoteId, name, size, contentType } = parsed.data;
+      const validationError = validateAttachmentUpload(name, size, contentType);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
+        return;
+      }
 
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      const objectPath =
-        objectStorageService.normalizeObjectEntityPath(uploadURL);
+      const [quote] = await db
+        .select({ id: quotesTable.id, archivedAt: quotesTable.archivedAt })
+        .from(quotesTable)
+        .where(eq(quotesTable.id, quoteId));
+      if (!quote) {
+        res.status(404).json({ error: 'Quote not found' });
+        return;
+      }
+      if (quote.archivedAt) {
+        res.status(400).json({ error: 'Restore this quote before adding files.' });
+        return;
+      }
 
-      res.json(
+      const uploadId = randomUUID();
+      const objectPath = `/objects/quote-attachments/${quote.id}/${uploadId}`;
+      const finalObjectPath = `/objects/quote-attachments/${quote.id}/final/${uploadId}`;
+      const uploadURL =
+        await objectStorageService.getObjectEntityUploadURLForPath(objectPath);
+      const now = new Date();
+      await db.insert(attachmentUploadsTable).values({
+        id: uploadId,
+        quoteId: quote.id,
+        objectPath,
+        finalObjectPath,
+        originalName: name.trim(),
+        declaredSize: size,
+        declaredContentType: contentType,
+        createdById: req.userId!,
+        status: 'pending',
+        expiresAt: new Date(now.getTime() + ATTACHMENT_UPLOAD_TTL_MS),
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      void sweepAttachmentUploads().catch((error) => {
+        req.log.warn({ err: error }, 'Attachment upload cleanup sweep failed');
+      });
+
+      res.status(201).json(
         RequestUploadUrlResponse.parse({
+          uploadId,
           uploadURL,
           objectPath,
-          metadata: { name, size, contentType },
+          metadata: { quoteId, name, size, contentType },
         }),
       );
     } catch (error) {

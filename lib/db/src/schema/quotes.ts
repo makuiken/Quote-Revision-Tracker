@@ -194,6 +194,37 @@ export const signoffsTable = pgTable("signoffs", {
     .defaultNow(),
 });
 
+export const attachmentUploadsTable = pgTable(
+  "attachment_uploads",
+  {
+    id: text("id").primaryKey(),
+    quoteId: integer("quote_id").references(() => quotesTable.id, {
+      onDelete: "set null",
+    }),
+    objectPath: text("object_path").notNull().unique(),
+    finalObjectPath: text("final_object_path").notNull().unique(),
+    originalName: text("original_name").notNull(),
+    declaredSize: integer("declared_size").notNull(),
+    declaredContentType: text("declared_content_type").notNull(),
+    createdById: text("created_by_id").notNull(),
+    status: text("status")
+      .$type<"pending" | "source_cleanup_pending" | "attached" | "delete_pending">()
+      .notNull()
+      .default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("attachment_uploads_cleanup_idx").on(table.status, table.expiresAt),
+  ],
+);
+
 export const attachmentsTable = pgTable("attachments", {
   id: serial("id").primaryKey(),
   quoteId: integer("quote_id")
@@ -201,6 +232,9 @@ export const attachmentsTable = pgTable("attachments", {
     .references(() => quotesTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   objectPath: text("object_path").notNull(),
+  uploadSessionId: text("upload_session_id")
+    .unique()
+    .references(() => attachmentUploadsTable.id, { onDelete: "restrict" }),
   contentType: text("content_type"),
   size: integer("size"),
   uploadedById: text("uploaded_by_id").notNull(),

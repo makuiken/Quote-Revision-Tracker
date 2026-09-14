@@ -794,6 +794,150 @@ test.describe("manufacturer packet API contract", () => {
     );
     expect(clearManifestOnArchivedQuote.status()).toBe(400);
   });
+
+  test("binds attachment uploads to the quote, user, metadata, expiry, and one-time completion", async ({
+    page,
+  }) => {
+    const api = page.context().request;
+    const firstQuoteId = await createSyntheticQuote(api);
+    const secondQuoteId = await createSyntheticQuote(api);
+    const bytes = Buffer.from("%PDF-1.4\nsecure attachment test\n%%EOF");
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+    const requestUpload = async (
+      quoteId: number,
+      overrides: Partial<{ name: string; size: number; contentType: string }> = {},
+    ) => {
+      const response = await api.post(apiPath("/storage/uploads/request-url"), {
+        data: {
+          quoteId,
+          name: "secure-test.pdf",
+          size: bytes.byteLength,
+          contentType: "application/pdf",
+          ...overrides,
+        },
+      });
+      expect(response.status()).toBe(201);
+      return (await response.json()) as {
+        uploadId: string;
+        uploadURL: string;
+        objectPath: string;
+      };
+    };
+    const complete = (quoteId: number, uploadId: string) =>
+      api.post(apiPath(`/quotes/${quoteId}/attachments`), {
+        data: { uploadId },
+      });
+
+    try {
+      const missing = await requestUpload(firstQuoteId);
+      expect((await complete(firstQuoteId, missing.uploadId)).status()).toBe(409);
+
+      const crossQuote = await requestUpload(firstQuoteId);
+      expect((await complete(secondQuoteId, crossQuote.uploadId)).status()).toBe(409);
+
+      const wrongUser = await requestUpload(firstQuoteId);
+      await pool.query(
+        "UPDATE attachment_uploads SET created_by_id = 'different-user' WHERE id = $1",
+        [wrongUser.uploadId],
+      );
+      expect((await complete(firstQuoteId, wrongUser.uploadId)).status()).toBe(409);
+
+      const expired = await requestUpload(firstQuoteId);
+      await pool.query(
+        "UPDATE attachment_uploads SET expires_at = now() - interval '1 minute' WHERE id = $1",
+        [expired.uploadId],
+      );
+      expect((await complete(firstQuoteId, expired.uploadId)).status()).toBe(409);
+
+      const wrongSize = await requestUpload(firstQuoteId, {
+        size: bytes.byteLength + 1,
+      });
+      expect(
+        (
+          await api.put(wrongSize.uploadURL, {
+            data: bytes,
+            headers: { "Content-Type": "application/pdf" },
+          })
+        ).ok(),
+      ).toBe(true);
+      expect((await complete(firstQuoteId, wrongSize.uploadId)).status()).toBe(422);
+
+      const wrongType = await requestUpload(firstQuoteId, {
+        name: "secure-test.png",
+        contentType: "image/png",
+      });
+      expect(
+        (
+          await api.put(wrongType.uploadURL, {
+            data: bytes,
+            headers: { "Content-Type": "application/pdf" },
+          })
+        ).ok(),
+      ).toBe(true);
+      expect((await complete(firstQuoteId, wrongType.uploadId)).status()).toBe(422);
+
+      const valid = await requestUpload(firstQuoteId);
+      expect(
+        (
+          await api.put(valid.uploadURL, {
+            data: bytes,
+            headers: { "Content-Type": "application/pdf" },
+          })
+        ).ok(),
+      ).toBe(true);
+      const created = await complete(firstQuoteId, valid.uploadId);
+      expect(created.status()).toBe(201);
+      const attachment = (await created.json()) as { id: number; objectPath: string };
+      expect(attachment.objectPath).not.toBe(valid.objectPath);
+      expect(attachment.objectPath).toContain("/final/");
+      const replacement = Buffer.from("%PDF-1.4\nreplaced writable source\n%%EOF");
+      expect(
+        (
+          await api.put(valid.uploadURL, {
+            data: replacement,
+            headers: { "Content-Type": "application/pdf" },
+          })
+        ).ok(),
+      ).toBe(true);
+      const immutableDownload = await api.get(
+        apiPath(`/storage${attachment.objectPath}`),
+      );
+      expect(immutableDownload.status()).toBe(200);
+      expect(await immutableDownload.body()).toEqual(bytes);
+      expect((await complete(firstQuoteId, valid.uploadId)).status()).toBe(409);
+
+      const deleted = await api.delete(
+        apiPath(`/quotes/${firstQuoteId}/attachments/${attachment.id}`),
+      );
+      expect(deleted.status()).toBe(204);
+      await expect
+        .poll(async () => {
+          const result = await pool.query(
+            "SELECT status FROM attachment_uploads WHERE id = $1",
+            [valid.uploadId],
+          );
+          return result.rows[0]?.status;
+        })
+        .toBe("delete_pending");
+      await pool.query(
+        "UPDATE attachment_uploads SET expires_at = now() - interval '1 minute' WHERE id = $1",
+        [valid.uploadId],
+      );
+      await requestUpload(secondQuoteId);
+      await expect
+        .poll(async () => {
+          const result = await pool.query(
+            "SELECT count(*)::int AS count FROM attachment_uploads WHERE id = $1",
+            [valid.uploadId],
+          );
+          return result.rows[0].count;
+        })
+        .toBe(0);
+    } finally {
+      await pool.end();
+    }
+  });
 });
 
 async function authenticateApiContext(page: Page): Promise<void> {
