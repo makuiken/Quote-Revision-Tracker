@@ -18,6 +18,22 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Reports database, schema, and critical object storage readiness
+ * @summary Dependency readiness check
+ */
+export const ReadinessCheckResponse = zod.object({
+  "status": zod.enum(['ready', 'not_ready']),
+  "schemaRelease": zod.string(),
+  "checks": zod.object({
+  "api": zod.enum(['ok']),
+  "database": zod.enum(['ok', 'unavailable']),
+  "schema": zod.enum(['ok', 'incompatible']),
+  "objectStorage": zod.enum(['ok', 'unavailable'])
+})
+})
+
+
+/**
  * @summary Get the app's publicly reachable origin for building share links
  */
 export const GetShareInfoResponse = zod.object({

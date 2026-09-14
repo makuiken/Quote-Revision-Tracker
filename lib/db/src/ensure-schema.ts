@@ -683,10 +683,17 @@ const REQUIRED_FOREIGN_KEYS: readonly {
  * changes must be applied before publishing; an API instance must never race
  * other instances while attempting DDL or a data backfill.
  */
-export async function assertSchemaCompatible(): Promise<void> {
+export async function assertSchemaCompatible(statementTimeoutMs = 30_000): Promise<void> {
+  if (!Number.isSafeInteger(statementTimeoutMs) || statementTimeoutMs < 1_000) {
+    throw new Error("Schema compatibility timeout must be at least 1000ms.");
+  }
   const client = await pool.connect();
   const requiredTables = Object.keys(REQUIRED_COLUMNS);
   try {
+    await client.query("BEGIN READ ONLY");
+    await client.query("SELECT set_config('statement_timeout', $1, true)", [
+      `${statementTimeoutMs}ms`,
+    ]);
     const tables = await client.query<TableRow>(
       `SELECT table_name
          FROM information_schema.tables
@@ -849,6 +856,14 @@ export async function assertSchemaCompatible(): Promise<void> {
           `Missing ${details.join("; ")}.`,
       );
     }
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // The original compatibility error is more useful than rollback failure.
+    }
+    throw error;
   } finally {
     client.release();
   }

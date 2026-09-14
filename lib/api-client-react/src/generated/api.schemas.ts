@@ -530,6 +530,58 @@ export interface HealthStatus {
   status: string;
 }
 
+export type ReadinessStatusStatus = typeof ReadinessStatusStatus[keyof typeof ReadinessStatusStatus];
+
+
+export const ReadinessStatusStatus = {
+  ready: 'ready',
+  not_ready: 'not_ready',
+} as const;
+
+export type ReadinessStatusChecksApi = typeof ReadinessStatusChecksApi[keyof typeof ReadinessStatusChecksApi];
+
+
+export const ReadinessStatusChecksApi = {
+  ok: 'ok',
+} as const;
+
+export type ReadinessStatusChecksDatabase = typeof ReadinessStatusChecksDatabase[keyof typeof ReadinessStatusChecksDatabase];
+
+
+export const ReadinessStatusChecksDatabase = {
+  ok: 'ok',
+  unavailable: 'unavailable',
+} as const;
+
+export type ReadinessStatusChecksSchema = typeof ReadinessStatusChecksSchema[keyof typeof ReadinessStatusChecksSchema];
+
+
+export const ReadinessStatusChecksSchema = {
+  ok: 'ok',
+  incompatible: 'incompatible',
+} as const;
+
+export type ReadinessStatusChecksObjectStorage = typeof ReadinessStatusChecksObjectStorage[keyof typeof ReadinessStatusChecksObjectStorage];
+
+
+export const ReadinessStatusChecksObjectStorage = {
+  ok: 'ok',
+  unavailable: 'unavailable',
+} as const;
+
+export type ReadinessStatusChecks = {
+  api: ReadinessStatusChecksApi;
+  database: ReadinessStatusChecksDatabase;
+  schema: ReadinessStatusChecksSchema;
+  objectStorage: ReadinessStatusChecksObjectStorage;
+};
+
+export interface ReadinessStatus {
+  status: ReadinessStatusStatus;
+  schemaRelease: string;
+  checks: ReadinessStatusChecks;
+}
+
 export interface ShareLink {
   token: string;
 }

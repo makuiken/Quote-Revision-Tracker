@@ -42,6 +42,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /readyz:
+    get:
+      operationId: readinessCheck
+      tags: [health]
+      summary: Dependency readiness check
+      description: Reports database, schema, and critical object storage readiness
+      responses:
+        "200":
+          description: Ready to serve traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: One or more critical dependencies are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
   /share-info:
     get:
       operationId: getShareInfo
@@ -2405,6 +2424,24 @@ components:
           type: string
       required:
         - status
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        schemaRelease:
+          type: string
+        checks:
+          type: object
+          properties:
+            api: { type: string, enum: [ok] }
+            database: { type: string, enum: [ok, unavailable] }
+            schema: { type: string, enum: [ok, incompatible] }
+            objectStorage: { type: string, enum: [ok, unavailable] }
+          required: [api, database, schema, objectStorage]
+          additionalProperties: false
+      required: [status, schemaRelease, checks]
     ShareLink:
       type: object
       properties:

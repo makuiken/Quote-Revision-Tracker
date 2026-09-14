@@ -41,6 +41,26 @@ export class ObjectNotFoundError extends Error {
 export class ObjectStorageService {
   constructor() {}
 
+  async checkReady(): Promise<void> {
+    const path = `/objects/system/readiness/${randomUUID()}`;
+    let written = false;
+    try {
+      await this.saveObjectEntityImmutable(
+        path,
+        new TextEncoder().encode("ready"),
+        "text/plain",
+        3_000,
+      );
+      written = true;
+      const metadata = await this.getObjectEntityMetadata(path, 3_000);
+      if (metadata.size !== 5 || !metadata.generation) {
+        throw new Error("Object storage readiness verification failed.");
+      }
+    } finally {
+      if (written) await this.deleteObjectEntity(path, 3_000);
+    }
+  }
+
   getPublicObjectSearchPaths(): Array<string> {
     const pathsStr = process.env.PUBLIC_OBJECT_SEARCH_PATHS || '';
     const paths = Array.from(
@@ -183,13 +203,13 @@ export class ObjectStorageService {
     return bytes;
   }
 
-  async getObjectEntityMetadata(objectPath: string): Promise<{
+  async getObjectEntityMetadata(objectPath: string, timeout = 30_000): Promise<{
     size: number;
     generation: string | undefined;
     contentType: string | undefined;
   }> {
     const file = await this.getObjectEntityFile(objectPath);
-    const [metadata] = await file.getMetadata();
+    const [metadata] = await file.getMetadata({ timeout });
     const size = Number(metadata.size);
     if (!Number.isSafeInteger(size) || size < 0) {
       throw new Error("Object has an invalid size.");
@@ -250,11 +270,13 @@ export class ObjectStorageService {
     objectPath: string,
     bytes: Uint8Array,
     contentType: string,
+    timeout = 30_000,
   ): Promise<void> {
     const file = this.getObjectEntityFileReference(objectPath);
     await file.save(Buffer.from(bytes), {
       contentType,
       resumable: false,
+      timeout,
       preconditionOpts: { ifGenerationMatch: 0 },
     });
   }
@@ -265,8 +287,26 @@ export class ObjectStorageService {
    * cleanup of an immutable copy after a conflict/transaction failure; the
    * source object uploaded to a draft is never deleted as historical evidence.
    */
-  async deleteObjectEntity(objectPath: string): Promise<void> {
+  async deleteObjectEntity(objectPath: string, timeout = 30_000): Promise<void> {
     const file = this.getObjectEntityFileReference(objectPath);
+    if (timeout < 30_000) {
+      const { bucketName, objectName } = parseObjectPath(`/${file.bucket.name}/${file.name}`);
+      const signedUrl = await signObjectURL({
+        bucketName,
+        objectName,
+        method: 'DELETE',
+        ttlSec: 30,
+      });
+      const response = await fetch(signedUrl, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(timeout),
+      });
+      await response.body?.cancel();
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`Object deletion returned ${response.status}.`);
+      }
+      return;
+    }
     await file.delete({ ignoreNotFound: true });
   }
 

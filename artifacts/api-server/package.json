@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "build": "node ./build.mjs",
+    "release:verify": "node ./scripts/verify-release-gate.mjs",
+    "build": "pnpm run release:verify && node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:packets": "node ./scripts/test-packets.mjs"

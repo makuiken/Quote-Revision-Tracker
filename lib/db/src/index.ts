@@ -22,3 +22,4 @@ export const db = drizzle(pool, { schema });
 
 export * from "./schema";
 export { assertSchemaCompatible, ensureSchema } from "./ensure-schema";
+export { SCHEMA_RELEASE_ID } from "./schema-release";

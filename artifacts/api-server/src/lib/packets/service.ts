@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { ObjectStorageService } from "../objectStorage";
 import { logger } from "../logger";
+import { recordOperationalFailure } from "../operationalSignals";
 import { packetEngine } from "./engine";
 import {
   isAbandonedProcessingJob,
@@ -102,6 +103,7 @@ async function tryAcquireGlobalPacketWorkerSlot(): Promise<{
     client.release();
     return null;
   } catch (error) {
+    recordOperationalFailure("packet_processing");
     client.release(error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
@@ -640,6 +642,7 @@ function drainPacketQueue() {
       })
       .catch((error: unknown) => {
         activeLocalPacketJobs -= 1;
+        recordOperationalFailure("packet_recovery");
         logger.error({ err: error, packetId }, "Packet job claim failed");
         pendingPacketJobs.add(packetId);
         schedulePacketQueueRetry();
@@ -778,9 +781,10 @@ let recoveryTimer: NodeJS.Timeout | undefined;
 export function startPacketJobRecovery(): void {
   if (recoveryTimer) return;
   const recover = () =>
-    recoverPacketJobs().catch((error: unknown) =>
-      logger.error({ err: error }, "Packet job recovery scan failed"),
-    );
+    recoverPacketJobs().catch((error: unknown) => {
+      recordOperationalFailure("packet_recovery");
+      logger.error({ err: error }, "Packet job recovery scan failed");
+    });
   recover();
   recoveryTimer = setInterval(recover, 60_000);
   recoveryTimer.unref();

@@ -1,26 +1,25 @@
-import { assertSchemaCompatible, ensureSchema } from "@workspace/db";
-import app from "./app";
-import { logger } from "./lib/logger";
-import { startPacketJobRecovery } from "./lib/packets/service";
-import { startAttachmentUploadRecovery } from "./lib/attachmentUploads";
+import { loadRuntimeConfig } from "./lib/runtimeConfig";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
+const config = loadRuntimeConfig();
+const [
+  { assertSchemaCompatible, ensureSchema, SCHEMA_RELEASE_ID },
+  { default: app },
+  { logger },
+  { startPacketJobRecovery },
+  { startAttachmentUploadRecovery },
+  { startOperationalReporting },
+] = await Promise.all([
+  import("@workspace/db"),
+  import("./app"),
+  import("./lib/logger"),
+  import("./lib/packets/service"),
+  import("./lib/attachmentUploads"),
+  import("./lib/operationalSignals"),
+]);
 
 // Development may reconcile an old local database. Production is read-only:
 // schema changes must have been applied before publishing the API.
-const isDevelopment = process.env.NODE_ENV === "development";
+const isDevelopment = config.nodeEnv === "development";
 try {
   if (isDevelopment) {
     await ensureSchema();
@@ -38,12 +37,16 @@ try {
 }
 startPacketJobRecovery();
 startAttachmentUploadRecovery();
+startOperationalReporting();
 
-app.listen(port, (err) => {
+app.listen(config.port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
 
-  logger.info({ port }, "Server listening");
+  logger.info(
+    { port: config.port, nodeEnv: config.nodeEnv, schemaRelease: SCHEMA_RELEASE_ID },
+    "Server listening",
+  );
 });

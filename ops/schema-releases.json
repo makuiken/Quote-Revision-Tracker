@@ -1,0 +1,10 @@
+{
+  "releases": [
+    {
+      "id": "2026-09-14-d0445a6a3631",
+      "summary": "Baseline production compatibility contract for quote, approval, packet, and attachment data.",
+      "contractHash": "d0445a6a36316e107f69bb3eb90fa1db176276d0f314184948dae81c70433a7a",
+      "codeReference": "schema-contract:d0445a6a36316e107f69bb3eb90fa1db176276d0f314184948dae81c70433a7a"
+    }
+  ]
+}
