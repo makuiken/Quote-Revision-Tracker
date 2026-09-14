@@ -1011,19 +1011,71 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
     trimDescription: "trim",
     millworkDescription: "millwork",
   };
+  const SPEC_LABELS: Record<string, string> = {
+    window: "Windows",
+    door: "Doors",
+    interiorDoor: "Interior doors",
+    exteriorDoor: "Exterior doors",
+    trimDescription: "Trim description",
+    millworkDescription: "Millwork description",
+  };
+  const FIELD_LABELS: Record<string, string> = {
+    windowJambDepth: "Jamb depth",
+    jambDepth: "Jamb depth",
+    brand: "Brand",
+    series: "Series",
+    material: "Material",
+    color: "Color",
+    style: "Style",
+    glass: "Glass",
+    hardware: "Hardware",
+  };
+
+  const normalizeDiffValue = (value: unknown): unknown => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string") return value.trim() === "" ? null : value.trim();
+    if (Array.isArray(value)) {
+      const normalized = value.map(normalizeDiffValue).filter((item) => item !== null);
+      return normalized.length ? normalized : null;
+    }
+    return value;
+  };
 
   const fmtValue = (value: unknown): string => {
-    if (value === null || value === undefined || value === "") return "(blank)";
-    if (Array.isArray(value)) return value.length ? value.join(", ") : "(blank)";
-    const s = typeof value === "string" ? value : JSON.stringify(value);
+    const normalized = normalizeDiffValue(value);
+    if (normalized === null) return "not specified";
+    if (Array.isArray(normalized)) {
+      return normalized
+        .map((item) => SPEC_LABELS[String(item)] ?? String(item))
+        .join(", ");
+    }
+    const s = typeof normalized === "string" ? normalized : JSON.stringify(normalized);
     return s.length > 120 ? `${s.slice(0, 117)}...` : s;
+  };
+
+  const humanizeField = (value: string): string => {
+    if (FIELD_LABELS[value]) return FIELD_LABELS[value]!;
+    const spaced = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+  };
+
+  const describeChange = (label: string, before: unknown, after: unknown): string => {
+    const normalizedBefore = normalizeDiffValue(before);
+    const normalizedAfter = normalizeDiffValue(after);
+    if (normalizedBefore === null) return `${label} added: ${fmtValue(after)}.`;
+    if (normalizedAfter === null) return `${label} removed (previously ${fmtValue(before)}).`;
+    return `${label} changed from ${fmtValue(before)} to ${fmtValue(after)}.`;
   };
 
   const track = (label: string, key: keyof QuoteRow, value: unknown) => {
     if (value === undefined) return;
     (updates as Record<string, unknown>)[key] = value;
-    if (JSON.stringify(value) !== JSON.stringify(diffBase?.[key] ?? null))
-      changed.push(`${label}: ${fmtValue(diffBase?.[key])} → ${fmtValue(value)}`);
+    if (
+      JSON.stringify(normalizeDiffValue(value)) !==
+      JSON.stringify(normalizeDiffValue(diffBase?.[key]))
+    ) {
+      changed.push(describeChange(humanizeField(label), diffBase?.[key], value));
+    }
   };
 
   // Specs are nested (category → fields), so diff them field by field for a
@@ -1041,8 +1093,13 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
         (prevValue !== undefined && prevValue !== null && typeof prevValue !== "object") ||
         (nextValue !== undefined && nextValue !== null && typeof nextValue !== "object");
       if (isScalar) {
-        if (JSON.stringify(prevValue ?? null) !== JSON.stringify(nextValue ?? null)) {
-          changed.push(`${category}: ${fmtValue(prevValue)} → ${fmtValue(nextValue)}`);
+        if (
+          JSON.stringify(normalizeDiffValue(prevValue)) !==
+          JSON.stringify(normalizeDiffValue(nextValue))
+        ) {
+          changed.push(
+            describeChange(SPEC_LABELS[category] ?? humanizeField(category), prevValue, nextValue),
+          );
           const tag = SPEC_KEY_TO_CATEGORY[category];
           if (tag) changedSpecCategories.add(tag);
         }
@@ -1053,8 +1110,12 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
       for (const field of new Set([...Object.keys(prevFields), ...Object.keys(nextFields)])) {
         const a = (prevFields as Record<string, unknown>)[field];
         const b = (nextFields as Record<string, unknown>)[field];
-        if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) {
-          changed.push(`${category} ${field}: ${fmtValue(a)} → ${fmtValue(b)}`);
+        if (
+          JSON.stringify(normalizeDiffValue(a)) !==
+          JSON.stringify(normalizeDiffValue(b))
+        ) {
+          const sectionLabel = SPEC_LABELS[category] ?? humanizeField(category);
+          changed.push(describeChange(`${sectionLabel} — ${humanizeField(field)}`, a, b));
           const tag = SPEC_KEY_TO_CATEGORY[category];
           if (tag) changedSpecCategories.add(tag);
         }
@@ -1145,7 +1206,7 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
         quoteId: updated.id,
         authorId: req.userId!,
         authorName: profile.name,
-        note: `Edited quote details:\n${changed.join("\n")}`,
+        note: `Quote details updated:\n${changed.join("\n")}`,
         // A combined note containing shared/header/category changes applies
         // to every scope, even when it also describes type-specific specs.
         categories: effectiveAutoRevisionCategories,

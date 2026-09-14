@@ -417,7 +417,7 @@ test.describe.serial("scoped approval API contract", () => {
     ]);
     const sharedEditRevision = detail.revisions.find(
       (revision) =>
-        revision.note.startsWith("Edited quote details:") &&
+        revision.note.startsWith("Quote details updated:") &&
         revision.categories === null,
     );
     if (!sharedEditRevision) {
