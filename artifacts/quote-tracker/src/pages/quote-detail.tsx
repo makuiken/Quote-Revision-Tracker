@@ -258,7 +258,12 @@ export default function QuoteDetailPage() {
     query: { enabled: !!quoteId, queryKey: getGetQuoteQueryKey(quoteId) } 
   });
   const { data: scopedApprovalData } = useListScopedApprovals(quoteId, {
-    query: { enabled: !!quoteId, queryKey: getListScopedApprovalsQueryKey(quoteId) },
+    query: {
+      enabled: !!quoteId,
+      queryKey: getListScopedApprovalsQueryKey(quoteId),
+      refetchOnMount: "always",
+      refetchOnWindowFocus: "always",
+    },
   });
   const updateQuote = useUpdateQuote();
   const { optionsFor } = useFieldOptions();
@@ -504,6 +509,7 @@ export default function QuoteDetailPage() {
     setRevisionPage(1);
     toast({ title: "Update added", description: "The revision log has been updated." });
     queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+    queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
     queryClient.invalidateQueries({ queryKey: getListQuotesQueryKey() });
     queryClient.invalidateQueries({ queryKey: getGetRevisionDraftQueryKey(quoteId) });
   };
@@ -582,6 +588,7 @@ export default function QuoteDetailPage() {
       onSuccess: () => {
         toast({ title: "Quote Updated", description: "Changes saved successfully." });
         queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+        queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
         queryClient.invalidateQueries({ queryKey: getListQuotesQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListRevisionsQueryKey(quoteId) });
         setIsEditing(false);

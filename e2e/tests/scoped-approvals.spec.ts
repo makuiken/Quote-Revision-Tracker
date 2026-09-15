@@ -413,6 +413,32 @@ test.describe.serial("scoped approval API contract", () => {
     ]);
   });
 
+  test("refreshes the visible approval status immediately after publishing a relevant revision", async ({
+    page,
+  }) => {
+    const api = page.context().request;
+    const quoteId = await createScopedQuote(api);
+    const windows = await createScopedApproval(api, quoteId, ["windows"]);
+    await signCurrentScopedApproval(api, windows.token);
+
+    await page.goto(`/quotes/${quoteId}`);
+    const approvalStatus = page
+      .getByRole("heading", { name: "Approval Status", exact: true })
+      .locator("..")
+      .locator("..");
+    await expect(approvalStatus).toContainText("Windows");
+    await expect(approvalStatus).toContainText("Signed");
+
+    await page.locator("#note").fill("Relevant Windows revision from the quote page");
+    await page.getByRole("button", { name: "Windows", exact: true }).click();
+    await page.getByRole("button", { name: "Publish Update", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Remove Signature & Publish", exact: true })
+      .click();
+
+    await expect(approvalStatus).toContainText("Needs re-signing");
+  });
+
   test("PATCH distinguishes targeted specs, simultaneous shared edits, and no-op edits", async ({
     page,
   }) => {
