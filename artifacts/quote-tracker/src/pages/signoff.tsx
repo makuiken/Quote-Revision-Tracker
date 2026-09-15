@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
 import { categoryLabel } from "@/lib/revision-categories";
+import { useScopedApprovalDocument } from "@/lib/scoped-approval-document";
 
 function scopedLinkAccessStatus(approval: ScopedApproval): "active" | "expired" | "revoked" {
   if (approval.revokedAt) return "revoked";
@@ -141,6 +142,10 @@ export default function SignoffPage() {
   const [prepared, setPrepared] = useState<ScopedApproval | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [isOpeningLegacyDocument, setIsOpeningLegacyDocument] = useState(false);
+  const {
+    openDocument: openScopedApprovalDocument,
+    isOpening: isOpeningScopedApprovalDocument,
+  } = useScopedApprovalDocument();
   const initializedQuoteRef = useRef<number | null>(null);
 
   const [legacyLink, setLegacyLink] = useState<ShareLink | null>(null);
@@ -214,14 +219,14 @@ export default function SignoffPage() {
   }, [detail, quoteId]);
 
   const allRequests = approvalResponse?.approvals ?? [];
-  const openRequests = allRequests.filter(approval => approval.status === "open");
+  const openRequests = allRequests.filter(approval => approval.status === "open" && scopedLinkAccessStatus(approval) === "active");
 
   useEffect(() => {
     if (!prepared || !approvalResponse) return;
     const currentRequest = approvalResponse.approvals.find(
       (approval) => approval.id === prepared.id,
     );
-    if (!currentRequest || currentRequest.status !== "open") {
+    if (!currentRequest || currentRequest.status !== "open" || scopedLinkAccessStatus(currentRequest) !== "active") {
       setPrepared(null);
       setShareOpen(false);
     }
@@ -425,7 +430,7 @@ export default function SignoffPage() {
                     <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                     <div className="text-sm text-amber-900">
                       <strong className="block mb-1">An approval link already exists for these products</strong>
-                      You can preview or share the existing link below. If you want to change which products are included, change your selection or cancel the old request first.
+                      Use the waiting approvals below to preview or resend the same request. The app prevents duplicate requests for these products.
                     </div>
                   </div>
                 )}
@@ -480,7 +485,32 @@ export default function SignoffPage() {
               </Card>
             )}
 
+            {openRequests.length > 0 && !prepared && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Waiting for customer</CardTitle>
+                  <CardDescription>No link maintenance needed. Review or resend an existing request.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {openRequests.map(approval => (
+                    <div key={approval.id} className="rounded-md border p-4 space-y-3">
+                      <p className="font-medium">{approval.productTypes.map(categoryLabel).join(", ")}</p>
+                      <Button variant="outline" onClick={() => reuseOpenRequest(approval)}>Review and share</Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            <p className="text-sm text-muted-foreground">
+              Approvals are only complete after the customer reviews the document and submits a valid signature.
+              Changes to approved content require a fresh approval; the original signed evidence is kept.
+            </p>
+
             {allRequests.length > 0 && (
+              <details className="rounded-lg border bg-card p-4">
+                <summary className="cursor-pointer font-medium">Approval history and advanced controls</summary>
+                <p className="my-3 text-sm text-muted-foreground">For exceptional cases only. You do not need to rotate or expire links as part of a normal sale.</p>
               <Card className="border-amber-200 shadow-sm overflow-hidden">
                 <CardHeader className="bg-amber-50/50 border-b border-amber-100">
                   <CardTitle className="text-amber-900 text-lg">Approval Link History</CardTitle>
@@ -540,15 +570,21 @@ export default function SignoffPage() {
                             }}>
                               Remove expiry
                             </Button>
-                            <Button asChild variant="outline" size="sm" className="bg-muted text-foreground">
-                              {approval.approvalId ? (
-                                <a href={`/api/quotes/${quoteId}/scoped-approvals/${approval.approvalId}/document`} target="_blank" rel="noreferrer">
+                            {approval.approvalId ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="bg-muted text-foreground"
+                                disabled={isOpeningScopedApprovalDocument}
+                                onClick={() => openScopedApprovalDocument(quoteId, approval.approvalId!)}
+                              >
                                   <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open signed evidence
-                                </a>
-                              ) : (
+                              </Button>
+                            ) : (
+                              <Button asChild variant="outline" size="sm" className="bg-muted text-foreground">
                                 <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> Open preview</Link>
-                              )}
-                            </Button>
+                              </Button>
+                            )}
                             <Button variant="outline" size="sm" className="text-amber-800 border-amber-300" onClick={() => {
                               if (approval.id && window.confirm("Expire this customer link now? Public access will stop immediately.")) {
                                 updateScopedExpiry.mutate({ id: quoteId, requestId: approval.id, data: { expiresAt: new Date().toISOString() } });
@@ -573,15 +609,21 @@ export default function SignoffPage() {
                           </>
                         ) : (
                           <>
-                            <Button asChild variant="outline" size="sm" className="bg-muted text-foreground col-span-2">
-                              {approval.approvalId ? (
-                                <a href={`/api/quotes/${quoteId}/scoped-approvals/${approval.approvalId}/document`} target="_blank" rel="noreferrer">
+                            {approval.approvalId ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="bg-muted text-foreground col-span-2"
+                                disabled={isOpeningScopedApprovalDocument}
+                                onClick={() => openScopedApprovalDocument(quoteId, approval.approvalId!)}
+                              >
                                   <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open retained signed evidence
-                                </a>
-                              ) : (
+                              </Button>
+                            ) : (
+                              <Button asChild variant="outline" size="sm" className="bg-muted text-foreground col-span-2">
                                 <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> View status</Link>
-                              )}
-                            </Button>
+                              </Button>
+                            )}
                             {!approval.approvalId && !approval.revokedAt && approval.expiresAt && new Date(approval.expiresAt).getTime() <= Date.now() && approval.id && (
                               <>
                                 <Button variant="outline" size="sm" onClick={() => {
@@ -623,8 +665,12 @@ export default function SignoffPage() {
                   ))}
                 </CardContent>
               </Card>
+              </details>
             )}
 
+            <details className="rounded-lg border bg-card p-4">
+              <summary className="cursor-pointer text-sm font-medium">Older whole-quote links</summary>
+              <p className="my-3 text-sm text-muted-foreground">Compatibility tools for previously shared links. Use the product approval workflow above for new requests.</p>
             <Card className="border-border shadow-sm overflow-hidden">
               <CardHeader className="bg-muted/50 border-b pb-4">
                 <CardTitle className="font-serif text-lg font-bold text-foreground">Legacy Whole-Quote Approval Link</CardTitle>
@@ -699,6 +745,7 @@ export default function SignoffPage() {
                 )}
               </CardContent>
             </Card>
+            </details>
           </div>
 
           <div className="space-y-6">

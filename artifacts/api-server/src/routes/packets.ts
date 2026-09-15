@@ -8,6 +8,8 @@ import {
   manufacturerPacketsTable,
   manufacturerRedactionTemplatesTable,
   revisionsTable,
+  scopedApprovalCoverageTable,
+  scopedApprovalRequestsTable,
   signoffsTable,
   scopedApprovalsTable,
 } from "@workspace/db";
@@ -21,6 +23,9 @@ import {
   GetManufacturerPacketParams,
   GetManufacturerPacketResponse,
   GetSignedSignoffDocumentParams,
+  GetScopedApprovalSignoffSnapshotParams,
+  GetScopedApprovalSignoffSnapshotResponse,
+  GetScopedApprovalPacketPageParams,
   GetUnsignedSignoffDocumentParams,
   ListManufacturerRedactionTemplateOptionsResponse,
   ListManufacturerPacketsParams,
@@ -1128,6 +1133,190 @@ router.get("/quotes/:id/scoped-approvals/:approvalId/document", async (req, res)
   } catch (error) {
     req.log.error({ err: error, approvalId }, "Unable to stream immutable scoped approval");
     res.status(404).json({ error: "Scoped approval document is not available." });
+  }
+});
+
+/**
+ * Staff evidence view. The quote and revision fields below are read only from
+ * the approval's stored snapshot. In particular, do not replace this with a
+ * current quote lookup: the current quote may have been edited or the
+ * approval's public link may have been revoked since it was signed.
+ */
+router.get("/quotes/:id/scoped-approvals/:approvalId/snapshot", async (req, res): Promise<void> => {
+  const params = parseParams(GetScopedApprovalSignoffSnapshotParams, req.params, res);
+  if (!params) return;
+
+  const [approvalRecord] = await db
+    .select()
+    .from(scopedApprovalsTable)
+    .where(
+      and(
+        eq(scopedApprovalsTable.id, params.approvalId),
+        eq(scopedApprovalsTable.quoteId, params.id),
+      ),
+    );
+  if (!approvalRecord) {
+    res.status(404).json({ error: "Scoped approval not found." });
+    return;
+  }
+
+  const [request] = await db
+    .select()
+    .from(scopedApprovalRequestsTable)
+    .where(eq(scopedApprovalRequestsTable.id, approvalRecord.requestId));
+  if (!request) {
+    res.status(409).json({ error: "The immutable approval request snapshot is unavailable." });
+    return;
+  }
+
+  const snapshot = approvalRecord.snapshot as {
+    quote?: unknown;
+    revisions?: unknown;
+    productTypes?: unknown;
+    notIncludedProductTypes?: unknown;
+    preparedAt?: unknown;
+    manifest?: unknown;
+  };
+  if (
+    !snapshot ||
+    !snapshot.quote ||
+    !Array.isArray(snapshot.revisions) ||
+    !Array.isArray(snapshot.productTypes) ||
+    !Array.isArray(snapshot.notIncludedProductTypes) ||
+    typeof snapshot.preparedAt !== "string" ||
+    !Array.isArray(snapshot.manifest)
+  ) {
+    // Never silently substitute current mutable quote content for malformed
+    // historical evidence.
+    res.status(409).json({ error: "The immutable approval snapshot is unavailable." });
+    return;
+  }
+
+  const coverage = await db
+    .select()
+    .from(scopedApprovalCoverageTable)
+    .where(
+      and(
+        eq(scopedApprovalCoverageTable.quoteId, params.id),
+        eq(scopedApprovalCoverageTable.approvalId, approvalRecord.id),
+      ),
+    );
+  const invalidationReason =
+    coverage.find((row) => row.invalidationReason)?.invalidationReason ?? null;
+  const current =
+    approvalRecord.productTypes.length > 0 &&
+    approvalRecord.productTypes.every((productType) =>
+      coverage.some(
+        (row) =>
+          row.productType === productType &&
+          row.status === "signed" &&
+          row.approvalId === approvalRecord.id,
+      ),
+    );
+  const now = new Date();
+  const linkStatus = request.revokedAt
+    ? "revoked"
+    : request.expiresAt && request.expiresAt <= now
+      ? "expired"
+      : "active";
+
+  const packetPages = snapshot.manifest.flatMap((rawEntry, index) => {
+    if (!rawEntry || typeof rawEntry !== "object") return [];
+    const entry = rawEntry as {
+      packetId?: unknown;
+      productType?: unknown;
+      pageOrder?: unknown;
+    };
+    if (
+      typeof entry.packetId !== "number" ||
+      typeof entry.productType !== "string" ||
+      typeof entry.pageOrder !== "number"
+    ) {
+      return [];
+    }
+    return [{
+      pageNumber: index + 1,
+      packetId: entry.packetId,
+      productType: entry.productType,
+      // Stored snapshots normalize page order to the scoped sequence.
+      pageOrder: entry.pageOrder + 1,
+    }];
+  });
+
+  const response = {
+    approvalId: approvalRecord.id,
+    quote: snapshot.quote,
+    revisions: snapshot.revisions,
+    signoff: {
+      id: approvalRecord.id,
+      quoteId: approvalRecord.quoteId,
+      customerName: approvalRecord.customerName,
+      stakeholderRole: approvalRecord.stakeholderRole,
+      signatureType: approvalRecord.signatureType,
+      signatureData: approvalRecord.signatureData,
+      signedAt: approvalRecord.signedAt,
+    },
+    productTypes: snapshot.productTypes,
+    notIncludedProductTypes: snapshot.notIncludedProductTypes,
+    preparedAt: snapshot.preparedAt,
+    documentVersion: approvalRecord.documentVersion,
+    status: current ? "signed" : "needs_resigning",
+    requestStatus: request.status,
+    linkStatus,
+    invalidationReason,
+    packetPages,
+  };
+  res.json(GetScopedApprovalSignoffSnapshotResponse.parse(response));
+});
+
+/**
+ * Streams a packet page selected by the immutable approval snapshot. This
+ * endpoint intentionally does not consult the current packet row or public
+ * token, so staff can inspect evidence after packet reprocessing or link
+ * revocation.
+ */
+router.get("/quotes/:id/scoped-approvals/:approvalId/packet/pages/:pageNumber", async (req, res): Promise<void> => {
+  const params = parseParams(GetScopedApprovalPacketPageParams, req.params, res);
+  if (!params) return;
+  const [approvalRecord] = await db
+    .select()
+    .from(scopedApprovalsTable)
+    .where(
+      and(
+        eq(scopedApprovalsTable.id, params.approvalId),
+        eq(scopedApprovalsTable.quoteId, params.id),
+      ),
+    );
+  if (!approvalRecord) {
+    res.status(404).json({ error: "Scoped approval not found." });
+    return;
+  }
+  const snapshot = approvalRecord.snapshot as {
+    manifest?: unknown;
+  };
+  if (!snapshot || !Array.isArray(snapshot.manifest)) {
+    res.status(409).json({ error: "The immutable approval snapshot is unavailable." });
+    return;
+  }
+  const rawEntry = snapshot.manifest[params.pageNumber - 1];
+  if (!rawEntry || typeof rawEntry !== "object") {
+    res.status(404).json({ error: "Signed packet page is not available." });
+    return;
+  }
+  const entry = rawEntry as { pageNumber?: unknown; pagePath?: unknown };
+  const pageNumber = typeof entry.pageNumber === "number" ? entry.pageNumber : 0;
+  const pagePath = Array.isArray(entry.pagePath) && typeof entry.pagePath[pageNumber - 1] === "string"
+    ? entry.pagePath[pageNumber - 1]
+    : null;
+  if (!pagePath) {
+    res.status(404).json({ error: "Signed packet page is not available." });
+    return;
+  }
+  try {
+    await streamPrivateObject(pagePath, res);
+  } catch (error) {
+    req.log.error({ err: error, approvalId: params.approvalId, pageNumber: params.pageNumber }, "Unable to stream immutable scoped packet page");
+    res.status(404).json({ error: "Signed packet page is not available." });
   }
 });
 

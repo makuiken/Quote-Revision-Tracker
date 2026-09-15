@@ -796,7 +796,7 @@ test.describe("manufacturer packet API contract", () => {
     const api = page.context().request;
     const firstQuoteId = await createSyntheticQuote(api);
     const secondQuoteId = await createSyntheticQuote(api);
-    const bytes = Buffer.from("%PDF-1.4\nsecure attachment test\n%%EOF");
+    const bytes = await createSyntheticPdf(["Secure attachment test"]);
     const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
     const requestUpload = async (
@@ -871,6 +871,14 @@ test.describe("manufacturer packet API contract", () => {
         ).ok(),
       ).toBe(true);
       expect((await complete(firstQuoteId, wrongType.uploadId)).status()).toBe(422);
+
+      const malformedBytes = Buffer.from("%PDF-1.4\nnot an actual PDF document\n%%EOF");
+      const malformed = await requestUpload(firstQuoteId, { size: malformedBytes.byteLength });
+      expect((await api.put(malformed.uploadURL, {
+        data: malformedBytes,
+        headers: { "Content-Type": "application/pdf" },
+      })).ok()).toBe(true);
+      expect((await complete(firstQuoteId, malformed.uploadId)).status()).toBe(422);
 
       const valid = await requestUpload(firstQuoteId);
       expect(

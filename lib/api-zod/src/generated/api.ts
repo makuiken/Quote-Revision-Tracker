@@ -3832,6 +3832,147 @@ export const GetScopedApprovalDocumentResponse = zod.unknown()
 
 
 /**
+ * Returns the stored approval snapshot, signature, packet manifest, and separate current evidence/link status. It never reconstructs the document from the mutable quote.
+ * @summary View an immutable signed scoped approval snapshot for staff
+ */
+
+
+
+export const GetScopedApprovalSignoffSnapshotParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "approvalId": zod.coerce.number().int().min(1)
+})
+
+
+
+
+
+
+
+export const GetScopedApprovalSignoffSnapshotResponse = zod.object({
+  "approvalId": zod.int().min(1),
+  "quote": zod.object({
+  "id": zod.int(),
+  "quoteNumber": zod.string(),
+  "customerName": zod.string(),
+  "projectName": zod.string(),
+  "jobAddress": zod.string(),
+  "displayName": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "specs": zod.object({
+  "window": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "series": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorColor": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "dividedLites": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "screenColor": zod.string().nullish()
+}),zod.null()]).optional(),
+  "door": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
+}),zod.null()]).optional(),
+  "interiorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
+}),zod.null()]).optional(),
+  "exteriorDoor": zod.union([zod.object({
+  "brand": zod.string().nullish(),
+  "seriesStyle": zod.string().nullish(),
+  "materialSpecies": zod.string().nullish(),
+  "exteriorColor": zod.string().nullish(),
+  "interiorFinish": zod.string().nullish(),
+  "jambDepth": zod.string().nullish(),
+  "hardwareFinish": zod.string().nullish(),
+  "glassLiteOptions": zod.string().nullish(),
+  "lockPrep": zod.string().nullish()
+}),zod.null()]).optional(),
+  "trimDescription": zod.string().nullish(),
+  "millworkDescription": zod.string().nullish()
+}),
+  "notes": zod.string().nullish()
+}).describe('Strict public projection for a locked scoped request.'),
+  "revisions": zod.array(zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "authorName": zod.string(),
+  "note": zod.string(),
+  "categories": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).nullish().describe('Optional category tags (subset of the quote\'s categories); empty\/absent means the revision applies to the whole quote'),
+  "excludedFromSignoff": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})),
+  "signoff": zod.object({
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "customerName": zod.string(),
+  "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
+}),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "preparedAt": zod.coerce.date(),
+  "documentVersion": zod.string(),
+  "status": zod.enum(['signed', 'needs_resigning']),
+  "requestStatus": zod.enum(['open', 'signed', 'stale', 'revoked']),
+  "linkStatus": zod.enum(['active', 'expired', 'revoked']),
+  "invalidationReason": zod.string().nullable(),
+  "packetPages": zod.array(zod.object({
+  "pageNumber": zod.int().min(1),
+  "packetId": zod.int().min(1),
+  "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
+  "pageOrder": zod.int().min(1)
+}))
+}).describe('Immutable structured evidence captured when a scoped approval was signed. Status fields describe current coverage and link access separately from this original content.')
+
+
+/**
+ * Streams the packet page selected by the stored approval snapshot, independent of current quote packet state or public link access.
+ * @summary Stream an immutable signed scoped approval packet page for staff
+ */
+
+
+
+
+export const GetScopedApprovalPacketPageParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "approvalId": zod.coerce.number().int().min(1),
+  "pageNumber": zod.coerce.number().int().min(1)
+})
+
+export const GetScopedApprovalPacketPageResponse = zod.unknown()
+
+
+/**
  * @summary Download the current unsigned combined PDF
  */
 export const GetUnsignedSignoffDocumentParams = zod.object({

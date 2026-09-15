@@ -1,8 +1,20 @@
 import { and, asc, eq, lt, ne, or } from "drizzle-orm";
 import { attachmentUploadsTable, db } from "@workspace/db";
 import { ObjectStorageService } from "./objectStorage";
+import {
+  MAX_ATTACHMENT_BYTES,
+  attachmentFilenameMatchesContentType,
+  normalizeAttachmentContentType,
+} from "./attachmentValidation";
 
-export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+export {
+  MAX_ATTACHMENT_BYTES,
+  attachmentFilenameMatchesContentType,
+  attachmentContentDisposition,
+  normalizeAttachmentContentType,
+  validateAttachmentBytes,
+} from "./attachmentValidation";
+
 export const ATTACHMENT_UPLOAD_TTL_MS = 15 * 60 * 1000;
 const CLEANUP_BATCH_SIZE = 25;
 
@@ -30,10 +42,6 @@ const ALLOWED_CONTENT_TYPES = new Set([
 ]);
 const OCTET_STREAM_EXTENSIONS = new Set(["dwg", "dxf"]);
 
-export function normalizeAttachmentContentType(value: string): string {
-  return value.split(";", 1)[0]!.trim().toLowerCase();
-}
-
 export function validateAttachmentUpload(
   name: string,
   size: number,
@@ -58,6 +66,9 @@ export function validateAttachmentUpload(
     )
   ) {
     return "This file type is not allowed.";
+  }
+  if (!attachmentFilenameMatchesContentType(cleanName, normalizedType)) {
+    return "File name extension does not match the declared content type.";
   }
   return null;
 }
@@ -118,10 +129,8 @@ export async function cleanupAttachmentUpload(uploadId: string): Promise<boolean
     .where(
       and(
         eq(attachmentUploadsTable.id, upload.id),
-        and(
-          ne(attachmentUploadsTable.status, "attached"),
-          ne(attachmentUploadsTable.status, "source_cleanup_pending"),
-        ),
+        ne(attachmentUploadsTable.status, "attached"),
+        ne(attachmentUploadsTable.status, "source_cleanup_pending"),
       ),
     );
   return true;

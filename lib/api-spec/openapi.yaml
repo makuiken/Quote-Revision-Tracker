@@ -1981,6 +1981,52 @@ paths:
           content:
             application/pdf:
               schema: { type: string, format: binary }
+  /quotes/{id}/scoped-approvals/{approvalId}/snapshot:
+    get:
+      operationId: getScopedApprovalSignoffSnapshot
+      tags: [signoff]
+      summary: View an immutable signed scoped approval snapshot for staff
+      description: Returns the stored approval snapshot, signature, packet manifest, and separate current evidence/link status. It never reconstructs the document from the mutable quote.
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/ApprovalId"
+      responses:
+        "200":
+          description: Immutable signed scoped approval snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopedApprovalSignoffSnapshot" }
+        "404":
+          description: Scoped approval not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Immutable approval snapshot is unavailable or malformed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /quotes/{id}/scoped-approvals/{approvalId}/packet/pages/{pageNumber}:
+    get:
+      operationId: getScopedApprovalPacketPage
+      tags: [signoff]
+      summary: Stream an immutable signed scoped approval packet page for staff
+      description: Streams the packet page selected by the stored approval snapshot, independent of current quote packet state or public link access.
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/PacketPageNumber"
+      responses:
+        "200":
+          description: Immutable sanitized packet PNG page
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404":
+          description: Scoped approval or packet page not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /quotes/{id}/signoff/document/unsigned:
     get:
       operationId: getUnsignedSignoffDocument
@@ -2097,6 +2143,11 @@ components:
       schema: { type: integer }
     PacketPageNumber:
       name: pageNumber
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ApprovalId:
+      name: approvalId
       in: path
       required: true
       schema: { type: integer, minimum: 1 }
@@ -3052,6 +3103,42 @@ components:
         receipt:
           anyOf: [{ $ref: "#/components/schemas/SignoffReceipt" }, { type: "null" }]
       required: [quote, revisions, productTypes, notIncludedProductTypes, preparedAt, documentVersion, status, receipt]
+    ScopedApprovalPacketPage:
+      type: object
+      properties:
+        pageNumber: { type: integer, minimum: 1 }
+        packetId: { type: integer, minimum: 1 }
+        productType:
+          type: string
+          enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork]
+        pageOrder: { type: integer, minimum: 1 }
+      required: [pageNumber, packetId, productType, pageOrder]
+    ScopedApprovalSignoffSnapshot:
+      description: Immutable structured evidence captured when a scoped approval was signed. Status fields describe current coverage and link access separately from this original content.
+      type: object
+      properties:
+        approvalId: { type: integer, minimum: 1 }
+        quote: { $ref: "#/components/schemas/ScopedPublicQuote" }
+        revisions:
+          type: array
+          items: { $ref: "#/components/schemas/Revision" }
+        signoff: { $ref: "#/components/schemas/Signoff" }
+        productTypes:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        notIncludedProductTypes:
+          type: array
+          items: { type: string, enum: [doors, interiorDoors, exteriorDoors, windows, trim, millwork] }
+        preparedAt: { type: string, format: date-time }
+        documentVersion: { type: string }
+        status: { type: string, enum: [signed, needs_resigning] }
+        requestStatus: { type: string, enum: [open, signed, stale, revoked] }
+        linkStatus: { type: string, enum: [active, expired, revoked] }
+        invalidationReason: { type: ["string", "null"] }
+        packetPages:
+          type: array
+          items: { $ref: "#/components/schemas/ScopedApprovalPacketPage" }
+      required: [approvalId, quote, revisions, signoff, productTypes, notIncludedProductTypes, preparedAt, documentVersion, status, requestStatus, linkStatus, invalidationReason, packetPages]
     ScopedPublicQuote:
       description: Strict public projection for a locked scoped request.
       type: object

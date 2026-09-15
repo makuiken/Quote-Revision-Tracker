@@ -1304,6 +1304,100 @@ export interface ScopedSignoffDetail {
   receipt: SignoffReceipt | null;
 }
 
+export type ScopedApprovalPacketPageProductType = typeof ScopedApprovalPacketPageProductType[keyof typeof ScopedApprovalPacketPageProductType];
+
+
+export const ScopedApprovalPacketPageProductType = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export interface ScopedApprovalPacketPage {
+  /** @minimum 1 */
+  pageNumber: number;
+  /** @minimum 1 */
+  packetId: number;
+  productType: ScopedApprovalPacketPageProductType;
+  /** @minimum 1 */
+  pageOrder: number;
+}
+
+export type ScopedApprovalSignoffSnapshotProductTypesItem = typeof ScopedApprovalSignoffSnapshotProductTypesItem[keyof typeof ScopedApprovalSignoffSnapshotProductTypesItem];
+
+
+export const ScopedApprovalSignoffSnapshotProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ScopedApprovalSignoffSnapshotNotIncludedProductTypesItem = typeof ScopedApprovalSignoffSnapshotNotIncludedProductTypesItem[keyof typeof ScopedApprovalSignoffSnapshotNotIncludedProductTypesItem];
+
+
+export const ScopedApprovalSignoffSnapshotNotIncludedProductTypesItem = {
+  doors: 'doors',
+  interiorDoors: 'interiorDoors',
+  exteriorDoors: 'exteriorDoors',
+  windows: 'windows',
+  trim: 'trim',
+  millwork: 'millwork',
+} as const;
+
+export type ScopedApprovalSignoffSnapshotStatus = typeof ScopedApprovalSignoffSnapshotStatus[keyof typeof ScopedApprovalSignoffSnapshotStatus];
+
+
+export const ScopedApprovalSignoffSnapshotStatus = {
+  signed: 'signed',
+  needs_resigning: 'needs_resigning',
+} as const;
+
+export type ScopedApprovalSignoffSnapshotRequestStatus = typeof ScopedApprovalSignoffSnapshotRequestStatus[keyof typeof ScopedApprovalSignoffSnapshotRequestStatus];
+
+
+export const ScopedApprovalSignoffSnapshotRequestStatus = {
+  open: 'open',
+  signed: 'signed',
+  stale: 'stale',
+  revoked: 'revoked',
+} as const;
+
+export type ScopedApprovalSignoffSnapshotLinkStatus = typeof ScopedApprovalSignoffSnapshotLinkStatus[keyof typeof ScopedApprovalSignoffSnapshotLinkStatus];
+
+
+export const ScopedApprovalSignoffSnapshotLinkStatus = {
+  active: 'active',
+  expired: 'expired',
+  revoked: 'revoked',
+} as const;
+
+/**
+ * Immutable structured evidence captured when a scoped approval was signed. Status fields describe current coverage and link access separately from this original content.
+ */
+export interface ScopedApprovalSignoffSnapshot {
+  /** @minimum 1 */
+  approvalId: number;
+  quote: ScopedPublicQuote;
+  revisions: Revision[];
+  signoff: Signoff;
+  productTypes: ScopedApprovalSignoffSnapshotProductTypesItem[];
+  notIncludedProductTypes: ScopedApprovalSignoffSnapshotNotIncludedProductTypesItem[];
+  preparedAt: string;
+  documentVersion: string;
+  status: ScopedApprovalSignoffSnapshotStatus;
+  requestStatus: ScopedApprovalSignoffSnapshotRequestStatus;
+  linkStatus: ScopedApprovalSignoffSnapshotLinkStatus;
+  /** @nullable */
+  invalidationReason: string | null;
+  packetPages: ScopedApprovalPacketPage[];
+}
+
 export interface DashboardSummary {
   totalQuotes: number;
   totalRevisions: number;

@@ -67,6 +67,7 @@ import type {
   RevisionInput,
   ScopedApproval,
   ScopedApprovalInput,
+  ScopedApprovalSignoffSnapshot,
   ScopedApprovalsResponse,
   ScopedSignoffDetail,
   ShareInfo,
@@ -6556,6 +6557,177 @@ export function useGetScopedApprovalDocument<TData = Awaited<ReturnType<typeof g
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetScopedApprovalDocumentQueryOptions(id,approvalId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetScopedApprovalSignoffSnapshotUrl = (id: number,
+    approvalId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/scoped-approvals/${approvalId}/snapshot`
+}
+
+/**
+ * Returns the stored approval snapshot, signature, packet manifest, and separate current evidence/link status. It never reconstructs the document from the mutable quote.
+ * @summary View an immutable signed scoped approval snapshot for staff
+ */
+export const getScopedApprovalSignoffSnapshot = async (id: number,
+    approvalId: number, options?: Parameters<typeof customFetch>[1]): Promise<ScopedApprovalSignoffSnapshot> => {
+
+  return customFetch<ScopedApprovalSignoffSnapshot>(getGetScopedApprovalSignoffSnapshotUrl(id,approvalId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetScopedApprovalSignoffSnapshotQueryKey = (id: number,
+    approvalId: number,) => {
+    return [
+    `/api/quotes/${id}/scoped-approvals/${approvalId}/snapshot`
+    ] as const;
+    }
+
+
+export const getGetScopedApprovalSignoffSnapshotQueryOptions = <TData = Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>, TError = ErrorType<ErrorResponse>>(id: number,
+    approvalId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetScopedApprovalSignoffSnapshotQueryKey(id,approvalId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>> = ({ signal }) => getScopedApprovalSignoffSnapshot(id,approvalId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && approvalId !== null && approvalId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetScopedApprovalSignoffSnapshotQueryResult = NonNullable<Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>>
+export type GetScopedApprovalSignoffSnapshotQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary View an immutable signed scoped approval snapshot for staff
+ */
+
+export function useGetScopedApprovalSignoffSnapshot<TData = Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>, TError = ErrorType<ErrorResponse>>(
+ id: number,
+    approvalId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getScopedApprovalSignoffSnapshot>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetScopedApprovalSignoffSnapshotQueryOptions(id,approvalId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetScopedApprovalPacketPageUrl = (id: number,
+    approvalId: number,
+    pageNumber: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/scoped-approvals/${approvalId}/packet/pages/${pageNumber}`
+}
+
+/**
+ * Streams the packet page selected by the stored approval snapshot, independent of current quote packet state or public link access.
+ * @summary Stream an immutable signed scoped approval packet page for staff
+ */
+export const getScopedApprovalPacketPage = async (id: number,
+    approvalId: number,
+    pageNumber: number, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetScopedApprovalPacketPageUrl(id,approvalId,pageNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetScopedApprovalPacketPageQueryKey = (id: number,
+    approvalId: number,
+    pageNumber: number,) => {
+    return [
+    `/api/quotes/${id}/scoped-approvals/${approvalId}/packet/pages/${pageNumber}`
+    ] as const;
+    }
+
+
+export const getGetScopedApprovalPacketPageQueryOptions = <TData = Awaited<ReturnType<typeof getScopedApprovalPacketPage>>, TError = ErrorType<ErrorResponse>>(id: number,
+    approvalId: number,
+    pageNumber: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getScopedApprovalPacketPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetScopedApprovalPacketPageQueryKey(id,approvalId,pageNumber);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getScopedApprovalPacketPage>>> = ({ signal }) => getScopedApprovalPacketPage(id,approvalId,pageNumber, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && approvalId !== null && approvalId !== undefined && pageNumber !== null && pageNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getScopedApprovalPacketPage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetScopedApprovalPacketPageQueryResult = NonNullable<Awaited<ReturnType<typeof getScopedApprovalPacketPage>>>
+export type GetScopedApprovalPacketPageQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Stream an immutable signed scoped approval packet page for staff
+ */
+
+export function useGetScopedApprovalPacketPage<TData = Awaited<ReturnType<typeof getScopedApprovalPacketPage>>, TError = ErrorType<ErrorResponse>>(
+ id: number,
+    approvalId: number,
+    pageNumber: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getScopedApprovalPacketPage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetScopedApprovalPacketPageQueryOptions(id,approvalId,pageNumber,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

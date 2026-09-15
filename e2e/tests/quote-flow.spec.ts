@@ -351,7 +351,7 @@ test.describe.serial("quote-to-signoff flow", () => {
     await editQuoteNotes(page, "Edited after typed signature");
     await prepareExactPreview(page);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
+    await expect(page.getByRole("radio", { name: /type signature/i })).toBeVisible();
   });
 
   test("save a drawn signature", async ({ page }) => {
@@ -367,7 +367,7 @@ test.describe.serial("quote-to-signoff flow", () => {
     await prepareExactPreview(page);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
     await expect(
-      page.getByRole("button", { name: /draw signature/i }),
+      page.getByRole("radio", { name: /draw signature/i }),
     ).toBeVisible();
   });
 
@@ -380,7 +380,7 @@ test.describe.serial("quote-to-signoff flow", () => {
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
 
     // Typed signing validates both identity fields.
-    await page.getByRole("button", { name: /type signature/i }).click();
+    await page.getByRole("radio", { name: /type signature/i }).click();
     await page.getByRole("button", { name: /confirm signature/i }).click();
     await expect(page.getByText(/please enter your full name/i)).toBeVisible();
     await expect(page.getByText(/please select your role/i)).toBeVisible();
@@ -451,7 +451,7 @@ test.describe.serial("quote-to-signoff flow", () => {
 
     await prepareExactPreview(page);
     await expect(page.getByText(/electronically signed/i)).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
+    await expect(page.getByRole("radio", { name: /type signature/i })).toBeVisible();
   });
 
   test("excluding a revision is controlled from the scoped approval picker", async ({ page }) => {
@@ -481,7 +481,7 @@ test.describe.serial("quote-to-signoff flow", () => {
 
   test("signing with a stale document version is rejected", async ({ page }) => {
     await prepareExactPreview(page);
-    await expect(page.getByRole("button", { name: /type signature/i })).toBeVisible();
+    await expect(page.getByRole("radio", { name: /type signature/i })).toBeVisible();
     const scopedToken = scopedPreviewUrl.split("/").pop();
     const status = await page.evaluate(async (token) => {
       const res = await fetch(`/api/public/scoped-signoff/${token}`, {
@@ -589,7 +589,7 @@ async function prepareExactPreview(page: Page): Promise<void> {
     page.getByRole("heading", { name: "Customer Approval Setup", exact: true }),
   ).toBeVisible();
   const reuse = page.getByRole("button", {
-    name: "Reuse this exact request",
+    name: "Review and share",
     exact: true,
   });
   const preview = page.getByRole("button", {
@@ -633,7 +633,7 @@ async function submitTypedSignature(
 ): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
     await fillSignerIdentity(page, name, role);
-    await page.getByRole("button", { name: /type signature/i }).click();
+    await page.getByRole("radio", { name: /type signature/i }).click();
     const response = page.waitForResponse(
       (candidate) =>
         candidate.request().method() === "PUT" &&
@@ -658,7 +658,7 @@ async function submitDrawnSignature(
 ): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
     await fillSignerIdentity(page, name, role);
-    await page.getByRole("button", { name: /draw signature/i }).click();
+    await page.getByRole("radio", { name: /draw signature/i }).click();
     const canvas = page.locator("canvas");
     await expect(canvas).toBeVisible();
     const box = await canvas.boundingBox();

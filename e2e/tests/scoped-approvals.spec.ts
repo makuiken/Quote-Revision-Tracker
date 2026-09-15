@@ -236,7 +236,7 @@ test.describe.serial("scoped approval API contract", () => {
     expect((await api.get(apiPath(`/public/scoped-signoff/${scopedReplacement.token}`))).status()).toBe(200);
 
     const legacy = await api.post(apiPath(`/quotes/${quoteId}/share-link`));
-    expect(legacy.status()).toBe(201);
+    expect(legacy.status()).toBe(200);
     const legacyLink = (await legacy.json()) as { token: string };
     const expireLegacy = await api.patch(apiPath(`/quotes/${quoteId}/share-link`), {
       data: { expiresAt: expiredAt },
@@ -925,6 +925,167 @@ test.describe.serial("scoped approval API contract", () => {
     expect((await listScopedApprovals(api, legacyQuoteId)).approvals).toEqual([]);
   });
 
+  test("opens protected scoped evidence with a bearer-authenticated blob popup", async ({
+    page,
+  }) => {
+    const api = page.context().request;
+    const quoteId = await createScopedQuote(api);
+    const scoped = await createScopedApproval(api, quoteId, ["windows"]);
+    await signCurrentScopedApproval(api, scoped.token);
+    const signed = await approvalForToken(api, quoteId, scoped.token);
+    const approvalId = signedSnapshotId(signed);
+    const signedDocument = await api.get(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${approvalId}/document`),
+    );
+    expect(signedDocument.status()).toBe(200);
+    const pdfBytes = await signedDocument.body();
+
+    let authorizationHeader: string | undefined;
+    await page.route(
+      `**/api/quotes/${quoteId}/scoped-approvals/${approvalId}/document`,
+      async (route) => {
+        authorizationHeader = route.request().headers().authorization;
+        // The intercepted response is fulfilled directly; the UI must not
+        // depend on forwarding a session cookie to this protected route.
+        await route.fulfill({
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+          body: pdfBytes,
+        });
+      },
+    );
+
+    await page.goto(`/quotes/${quoteId}/signoff`);
+    await page.getByText("Approval history and advanced controls", { exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Approval Link History", exact: true }),
+    ).toBeVisible();
+
+    const [documentPage] = await Promise.all([
+      page.waitForEvent("popup"),
+      page.getByRole("button", { name: "Open signed evidence", exact: true }).click(),
+    ]);
+    await expect.poll(() => authorizationHeader).toMatch(/^Bearer\s+\S+$/);
+    await expect.poll(() => documentPage.url()).toMatch(/^blob:/);
+    await documentPage.close();
+  });
+
+  test("renders the immutable staff snapshot after live edits and link revocation", async ({
+    page,
+    request,
+  }) => {
+    const api = page.context().request;
+    const quoteId = await createScopedQuote(api);
+    await createRevision(api, quoteId, "Revision captured in the original approval", ["windows"]);
+    const scoped = await createScopedApproval(api, quoteId, ["windows"]);
+    await signCurrentScopedApproval(api, scoped.token);
+    const signed = await approvalForToken(api, quoteId, scoped.token);
+    const approvalId = signedSnapshotId(signed);
+
+    const firstSnapshotResponse = await api.get(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${approvalId}/snapshot`),
+    );
+    expect(firstSnapshotResponse.status()).toBe(200);
+    const firstSnapshot = (await firstSnapshotResponse.json()) as {
+      quote: { projectName: string };
+      revisions: Array<{ note: string }>;
+      status: string;
+      linkStatus: string;
+      packetPages: unknown[];
+    };
+    const originalProjectName = firstSnapshot.quote.projectName;
+    expect(firstSnapshot.revisions.some((revision) => revision.note === "Revision captured in the original approval")).toBe(true);
+    expect(firstSnapshot.status).toBe("signed");
+    expect(firstSnapshot.linkStatus).toBe("active");
+    expect((await request.get(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${approvalId}/snapshot`),
+    )).status()).toBe(401);
+
+    // Both a mutable quote edit and a revoked public request must leave the
+    // stored fields available to staff, while current status is shown apart
+    // from that original content.
+    const liveEdit = await api.patch(apiPath(`/quotes/${quoteId}`), {
+      data: { projectName: "Live quote name after signing" },
+    });
+    expect(liveEdit.status()).toBe(200);
+    expect((await api.delete(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${scoped.id}`),
+    )).status()).toBe(204);
+
+    const retainedSnapshotResponse = await api.get(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${approvalId}/snapshot`),
+    );
+    expect(retainedSnapshotResponse.status()).toBe(200);
+    const retainedSnapshot = (await retainedSnapshotResponse.json()) as {
+      quote: { projectName: string };
+      revisions: Array<{ note: string }>;
+      status: string;
+      linkStatus: string;
+      invalidationReason: string | null;
+      packetPages: unknown[];
+    };
+    expect(retainedSnapshot.quote.projectName).toBe(originalProjectName);
+    expect(retainedSnapshot.quote.projectName).not.toBe("Live quote name after signing");
+    expect(retainedSnapshot.revisions).toEqual(firstSnapshot.revisions);
+    expect(retainedSnapshot.status).toBe("needs_resigning");
+    expect(retainedSnapshot.invalidationReason).toEqual(expect.any(String));
+    expect(retainedSnapshot.linkStatus).toBe("revoked");
+
+    // Exercise the HTML route with a captured packet page. Delaying this
+    // bearer-authenticated blob response makes the print gate observable:
+    // it must remain disabled until the image's load event fires.
+    const printableSnapshot = {
+      ...retainedSnapshot,
+      ...firstSnapshot,
+      quote: firstSnapshot.quote,
+      revisions: firstSnapshot.revisions,
+      status: retainedSnapshot.status,
+      linkStatus: retainedSnapshot.linkStatus,
+      invalidationReason: retainedSnapshot.invalidationReason,
+      packetPages: [{
+        pageNumber: 1,
+        packetId: 900001,
+        productType: "windows",
+        pageOrder: 1,
+      }],
+    };
+    let releasePacketImage!: () => void;
+    const packetImageReleased = new Promise<void>((resolve) => {
+      releasePacketImage = resolve;
+    });
+    await page.route(
+      `**/api/quotes/${quoteId}/scoped-approvals/${approvalId}/snapshot`,
+      async (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(printableSnapshot),
+      }),
+    );
+    await page.route(
+      `**/api/quotes/${quoteId}/scoped-approvals/${approvalId}/packet/pages/1`,
+      async (route) => {
+        await packetImageReleased;
+        await route.fulfill({
+          status: 200,
+          contentType: "image/png",
+          body: Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+            "base64",
+          ),
+        });
+      },
+    );
+    await page.goto(`/quotes/${quoteId}/signoff/${approvalId}`);
+    await expect(page.getByRole("heading", { name: "View or print signoff", exact: true })).toBeVisible();
+    await expect(page.getByText("Live quote name after signing", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(new RegExp(originalProjectName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))).toBeVisible();
+    await expect(page.getByText("Link access: revoked", { exact: true })).toBeVisible();
+    const printButton = page.getByRole("button", { name: "Print / Save PDF", exact: true });
+    await expect(printButton).toBeDisabled();
+    releasePacketImage();
+    await expect(printButton).toBeEnabled();
+  });
+
   test("legacy DELETE withdraws current status but retains immutable evidence and dashboard filters", async ({
     page,
   }) => {
@@ -1114,6 +1275,7 @@ test.describe.serial("scoped approval API contract", () => {
     // The request is server-backed, so a reload can recover its immutable
     // scope rather than manufacturing a second, overlapping token.
     await page.reload();
+    await page.getByText("Approval history and advanced controls", { exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Approval Link History", exact: true }),
     ).toBeVisible();
@@ -1174,12 +1336,13 @@ test.describe.serial("scoped approval API contract", () => {
     await createScopedApproval(api, quoteId, ["windows"]);
 
     await page.goto(`/quotes/${quoteId}/signoff`);
+    await page.getByText("Approval history and advanced controls", { exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Approval Link History", exact: true }),
     ).toBeVisible();
     // Default selection includes all product types. Leave only Interior Doors
     // selected; it does not overlap the existing Windows request.
-    await page.getByText("Windows", { exact: true }).click();
+    await page.getByRole("checkbox", { name: /^Windows Status:/ }).click();
     await page.getByText("Exterior Doors", { exact: true }).click();
     const preview = page.getByRole("button", {
       name: "Prepare Preview for Interior Doors",

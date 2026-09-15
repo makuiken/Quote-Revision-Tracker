@@ -55,3 +55,9 @@ Public-link access state is separate from signed-evidence state. Staff may revok
 **Why:** A customer URL may need to stop working after signature while the business must still retain and access exactly what was signed.
 
 **How to apply:** Enforce expiry/revocation on every public endpoint, preserve signed rows and immutable bytes, and route staff evidence access through authenticated approval identifiers rather than public tokens.
+
+Keep routine sales approval work separate from exceptional link administration.
+
+**Why:** The user explicitly rejected requiring salespeople to manage approval-link histories, rotation, expiry, and revocation. Protection against stale links and incomplete approvals should be enforced by the application, not a staff checklist.
+
+**How to apply:** Prioritize preparing, reviewing, and sharing a valid request; keep historical evidence accessible and lifecycle controls secondary. Never substitute hidden controls or staff diligence for server-side validation.

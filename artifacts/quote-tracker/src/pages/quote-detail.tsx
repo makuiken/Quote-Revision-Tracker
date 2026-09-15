@@ -1158,16 +1158,15 @@ export default function QuoteDetailPage() {
                       <div className="pt-4 space-y-3 border-t border-border">
                         <h4 className="font-bold text-xs uppercase tracking-widest text-muted-foreground">Signed Evidence</h4>
                         {signedSnapshots.map((approval) => {
-                          const isCurrent = coverage.some((item) => item.approvalId === approval.approvalId && item.status === "signed");
+                          const isCurrent = approval.productTypes.length > 0 && approval.productTypes.every(type =>
+                            coverage.some(item => item.productType === type && item.approvalId === approval.approvalId && item.status === "signed"));
                           const needsResigning = coverage.some((item) => item.approvalId === approval.approvalId && item.status === "needs_resigning");
-                          const isOutdated = !isCurrent && !needsResigning;
+                          const isOutdated = !isCurrent;
 
                           return (
                             <div key={approval.approvalId} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/40">
-                              <a
-                                href={`/api/quotes/${quoteId}/scoped-approvals/${approval.approvalId}/document`}
-                                target="_blank"
-                                rel="noreferrer"
+                              <Link
+                                href={`/quotes/${quoteId}/signoff/${approval.approvalId}`}
                                 className="group flex items-center gap-3"
                               >
                                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${isOutdated ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'}`}>
@@ -1182,13 +1181,13 @@ export default function QuoteDetailPage() {
                                   </span>
                                 </span>
                                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                              </a>
+                              </Link>
                               {(needsResigning || isOutdated) && (
                                 <div className="mt-1 flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
                                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                                   <div>
                                     <span className="block font-bold">
-                                      {isOutdated ? "Outdated approval" : "Updates need re-signing"}
+                                      {needsResigning ? "Updates need re-signing" : "Historical — not fully current"}
                                     </span>
                                     {approval.invalidationReason && (
                                       <span className="block mt-0.5 text-amber-800">{approval.invalidationReason}</span>

@@ -128,7 +128,9 @@ import { legacyApprovalMetadata } from "../lib/legacyApproval";
 import {
   cleanupAttachmentUpload,
   markAttachmentUploadForCleanup,
+  MAX_ATTACHMENT_BYTES,
   normalizeAttachmentContentType,
+  validateAttachmentBytes,
 } from "../lib/attachmentUploads";
 
 const router: IRouter = Router();
@@ -1885,6 +1887,76 @@ router.post(
       res.status(409).json({
         error: "The uploaded file changed during verification. Upload it again.",
       });
+      return;
+    }
+
+    let immutableMetadata: Awaited<
+      ReturnType<ObjectStorageService["getObjectEntityMetadata"]>
+    >;
+    let immutableBytes: Buffer;
+    try {
+      immutableMetadata = await packetStorage.getObjectEntityMetadata(
+        pendingUpload.finalObjectPath,
+      );
+      immutableBytes = await packetStorage.downloadObjectBytesBounded(
+        pendingUpload.finalObjectPath,
+        MAX_ATTACHMENT_BYTES,
+      );
+    } catch (error) {
+      req.log.warn(
+        { err: error, uploadId: pendingUpload.id },
+        "Immutable attachment validation read failed",
+      );
+      res.status(409).json({
+        error: "The uploaded file could not be verified. Upload it again.",
+      });
+      return;
+    }
+
+    const immutableContentType = normalizeAttachmentContentType(
+      immutableMetadata.contentType ?? "application/octet-stream",
+    );
+    if (
+      !immutableMetadata.generation ||
+      immutableMetadata.size !== pendingUpload.declaredSize ||
+      immutableBytes.length !== immutableMetadata.size ||
+      immutableContentType !== declaredContentType
+    ) {
+      const claimedForCleanup = await markAttachmentUploadForCleanup(
+        pendingUpload.id,
+      );
+      if (claimedForCleanup) {
+        void cleanupAttachmentUpload(pendingUpload.id).catch((error) => {
+          req.log.warn(
+            { err: error, uploadId: pendingUpload.id },
+            "Rejected attachment cleanup failed",
+          );
+        });
+      }
+      res.status(422).json({
+        error: "The uploaded file does not match its approved size or type.",
+      });
+      return;
+    }
+
+    const contentValidationError = await validateAttachmentBytes(
+      pendingUpload.originalName,
+      declaredContentType,
+      immutableBytes,
+    );
+    if (contentValidationError) {
+      const claimedForCleanup = await markAttachmentUploadForCleanup(
+        pendingUpload.id,
+      );
+      if (claimedForCleanup) {
+        void cleanupAttachmentUpload(pendingUpload.id).catch((error) => {
+          req.log.warn(
+            { err: error, uploadId: pendingUpload.id },
+            "Rejected malformed attachment cleanup failed",
+          );
+        });
+      }
+      res.status(422).json({ error: contentValidationError });
       return;
     }
 

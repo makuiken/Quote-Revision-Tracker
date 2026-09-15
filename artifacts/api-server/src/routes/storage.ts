@@ -14,6 +14,7 @@ import {
 } from '../lib/objectStorage';
 import {
   ATTACHMENT_UPLOAD_TTL_MS,
+  attachmentContentDisposition,
   sweepAttachmentUploads,
   validateAttachmentUpload,
 } from '../lib/attachmentUploads';
@@ -175,6 +176,13 @@ router.get('/storage/objects/*path', requireAuth, requireApproved, async (req: A
 
     res.status(response.status);
     response.headers.forEach((value, key) => res.setHeader(key, value));
+    if (wildcardPath.startsWith('quote-attachments/')) {
+      // Attachments are never rendered as active content. Keep the original
+      // browser-provided filename out of this header; callers already pass
+      // the display name through the download attribute.
+      res.setHeader('Content-Disposition', attachmentContentDisposition('download'));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
 
     if (response.body) {
       const nodeStream = Readable.fromWeb(
