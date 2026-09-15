@@ -20,6 +20,12 @@ Never reconstruct a legacy signed document from current mutable quote content.
 
 **How to apply:** Show legacy evidence separately using an existing immutable PDF when available, explicitly report when it is unavailable, and request a new scoped approval rather than overwriting the original.
 
+Legacy signatures without PDF references must remain viewable as standalone signature records, not disappear behind an unavailable-PDF warning.
+
+**Why:** Earlier signing stored original typed/drawn signatures without immutable PDFs. Hiding those surviving signatures caused a production access regression and made preserved evidence appear deleted.
+
+**How to apply:** Preserve authenticated access to the stored signature, signer, and date; label the record separately from a signed quote document. Audit legacy-data compatibility before changing evidence displays or recommending publication.
+
 Pin displayed preparation dates for the lifetime of a request, including sign-time recomputation.
 
 **Why:** Including a newly generated clock value in a content hash makes every valid submission stale; omitting a displayed date lets print content drift outside the reviewed fingerprint.

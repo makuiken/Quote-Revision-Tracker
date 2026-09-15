@@ -2092,6 +2092,32 @@ export const ClearSignoffResponse = zod.void()
 
 
 /**
+ * Authenticated approved staff only. Returns the original stored signer and signature fields without any current quote specifications or revisions. This record is read-only legacy evidence and is never reconstructed from mutable quote content.
+ * @summary Read the stored legacy signature record for a quote
+ */
+export const GetLegacySignatureParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetLegacySignatureResponse = zod.object({
+  "recordType": zod.enum(['legacy_signature_record']),
+  "id": zod.int(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signerName": zod.string(),
+  "signerRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
+  "signatureType": zod.enum(['typed', 'drawn']),
+  "signatureData": zod.string(),
+  "signatureDataValid": zod.boolean().describe('Server-side validation result for drawn PNG data.'),
+  "signedAt": zod.coerce.date(),
+  "validity": zod.enum(['signed', 'needs_resigning']),
+  "invalidationReason": zod.string().nullable(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable().describe('Authenticated API route for the preserved original PDF, never a raw storage object path.')
+}).describe('Original stored legacy signature evidence. This response intentionally contains no current quote specifications, revisions, or reconstructed signed content.\n')
+
+
+/**
  * @summary List immutable scoped approval requests and current per-type coverage
  */
 export const ListScopedApprovalsParams = zod.object({

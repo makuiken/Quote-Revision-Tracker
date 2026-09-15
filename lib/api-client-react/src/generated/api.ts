@@ -39,6 +39,7 @@ import type {
   GetPublicScopedManufacturerPacketPageParams,
   GetRecentActivityParams,
   HealthStatus,
+  LegacySignatureRecord,
   LinkExpiryInput,
   ListQuotesParams,
   ManufacturerPacket,
@@ -3313,6 +3314,84 @@ export const useClearSignoff = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getClearSignoffMutationOptions(options));
     }
+
+export const getGetLegacySignatureUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/legacy-signature`
+}
+
+/**
+ * Authenticated approved staff only. Returns the original stored signer and signature fields without any current quote specifications or revisions. This record is read-only legacy evidence and is never reconstructed from mutable quote content.
+ * @summary Read the stored legacy signature record for a quote
+ */
+export const getLegacySignature = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<LegacySignatureRecord> => {
+
+  return customFetch<LegacySignatureRecord>(getGetLegacySignatureUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLegacySignatureQueryKey = (id: number,) => {
+    return [
+    `/api/quotes/${id}/legacy-signature`
+    ] as const;
+    }
+
+
+export const getGetLegacySignatureQueryOptions = <TData = Awaited<ReturnType<typeof getLegacySignature>>, TError = ErrorType<ErrorResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLegacySignature>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLegacySignatureQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLegacySignature>>> = ({ signal }) => getLegacySignature(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLegacySignature>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLegacySignatureQueryResult = NonNullable<Awaited<ReturnType<typeof getLegacySignature>>>
+export type GetLegacySignatureQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Read the stored legacy signature record for a quote
+ */
+
+export function useGetLegacySignature<TData = Awaited<ReturnType<typeof getLegacySignature>>, TError = ErrorType<ErrorResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLegacySignature>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLegacySignatureQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListScopedApprovalsUrl = (id: number,) => {
 

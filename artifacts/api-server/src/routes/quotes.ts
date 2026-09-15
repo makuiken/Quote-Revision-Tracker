@@ -80,6 +80,8 @@ import {
   RotateShareLinkParams,
   RotateShareLinkResponse,
   GetSignoffParams,
+  GetLegacySignatureParams,
+  GetLegacySignatureResponse,
   SaveSignoffParams,
   SaveSignoffBody,
   SaveSignoffResponse,
@@ -2296,6 +2298,61 @@ router.get("/quotes/:id/signoff", async (req, res): Promise<void> => {
     .where(eq(signoffsTable.quoteId, params.data.id));
 
   res.json(signoff ?? null);
+});
+
+/**
+ * Legacy signature evidence is intentionally a separate, authenticated
+ * read-only resource. It contains only fields stored on the signoff row and
+ * the original quote identifiers; it never loads or serializes mutable quote
+ * specifications, revisions, or a reconstructed PDF.
+ */
+router.get("/quotes/:id/legacy-signature", async (req, res): Promise<void> => {
+  const params = GetLegacySignatureParams.safeParse(req.params);
+  if (!params.success || params.data.id < 1) {
+    res.status(400).json({ error: "Invalid quote id." });
+    return;
+  }
+
+  const [quote] = await db
+    .select({ id: quotesTable.id, quoteNumber: quotesTable.quoteNumber })
+    .from(quotesTable)
+    .where(eq(quotesTable.id, params.data.id));
+  if (!quote) {
+    res.status(404).json({ error: "Quote not found." });
+    return;
+  }
+
+  const [signoff] = await db
+    .select()
+    .from(signoffsTable)
+    .where(eq(signoffsTable.quoteId, quote.id));
+  if (!signoff) {
+    res.status(404).json({ error: "Legacy signature record not found." });
+    return;
+  }
+
+  res.json(
+    GetLegacySignatureResponse.parse({
+      recordType: "legacy_signature_record",
+      id: signoff.id,
+      quoteId: signoff.quoteId,
+      quoteNumber: quote.quoteNumber,
+      signerName: signoff.customerName,
+      signerRole: signoff.stakeholderRole,
+      signatureType: signoff.signatureType,
+      signatureData: signoff.signatureData,
+      signatureDataValid:
+        signoff.signatureType === "typed" ||
+        hasMeaningfulSignatureInk(signoff.signatureData),
+      signedAt: signoff.signedAt,
+      validity: signoff.legacyStatus,
+      invalidationReason: signoff.legacyInvalidationReason,
+      signedDocumentAvailable: Boolean(signoff.signedDocumentObjectPath),
+      signedDocumentPath: signoff.signedDocumentObjectPath
+        ? `/api/quotes/${quote.id}/signoff/document`
+        : null,
+    }),
+  );
 });
 
 // ---------- Scoped product-type approvals ----------

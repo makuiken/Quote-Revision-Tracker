@@ -1111,6 +1111,65 @@ export interface RevisionExclusionInput {
   excludedFromSignoff: boolean;
 }
 
+export type LegacySignatureRecordRecordType = typeof LegacySignatureRecordRecordType[keyof typeof LegacySignatureRecordRecordType];
+
+
+export const LegacySignatureRecordRecordType = {
+  legacy_signature_record: 'legacy_signature_record',
+} as const;
+
+export type LegacySignatureRecordSignerRole = typeof LegacySignatureRecordSignerRole[keyof typeof LegacySignatureRecordSignerRole];
+
+
+export const LegacySignatureRecordSignerRole = {
+  Homeowner: 'Homeowner',
+  Contractor: 'Contractor',
+  'Architect/Designer': 'Architect/Designer',
+  Other: 'Other',
+} as const;
+
+export type LegacySignatureRecordSignatureType = typeof LegacySignatureRecordSignatureType[keyof typeof LegacySignatureRecordSignatureType];
+
+
+export const LegacySignatureRecordSignatureType = {
+  typed: 'typed',
+  drawn: 'drawn',
+} as const;
+
+export type LegacySignatureRecordValidity = typeof LegacySignatureRecordValidity[keyof typeof LegacySignatureRecordValidity];
+
+
+export const LegacySignatureRecordValidity = {
+  signed: 'signed',
+  needs_resigning: 'needs_resigning',
+} as const;
+
+/**
+ * Original stored legacy signature evidence. This response intentionally contains no current quote specifications, revisions, or reconstructed signed content.
+ */
+export interface LegacySignatureRecord {
+  recordType: LegacySignatureRecordRecordType;
+  id: number;
+  quoteId: number;
+  quoteNumber: string;
+  signerName: string;
+  signerRole: LegacySignatureRecordSignerRole;
+  signatureType: LegacySignatureRecordSignatureType;
+  signatureData: string;
+  /** Server-side validation result for drawn PNG data. */
+  signatureDataValid: boolean;
+  signedAt: string;
+  validity: LegacySignatureRecordValidity;
+  /** @nullable */
+  invalidationReason: string | null;
+  signedDocumentAvailable: boolean;
+  /**
+     * Authenticated API route for the preserved original PDF, never a raw storage object path.
+     * @nullable
+     */
+  signedDocumentPath: string | null;
+}
+
 export type SignoffInputStakeholderRole = typeof SignoffInputStakeholderRole[keyof typeof SignoffInputStakeholderRole];
 
 

@@ -17,6 +17,7 @@ import QuoteDetailPage from "@/pages/quote-detail";
 import PrintLogPage from "@/pages/print-log";
 import SignoffPage from "@/pages/signoff";
 import SignoffSnapshotPage from "@/pages/signoff-snapshot";
+import LegacySignaturePage from "@/pages/legacy-signature";
 import PublicSignoffPage from "@/pages/signoff-public";
 import ScopedPublicSignoffPage from "@/pages/scoped-signoff-public";
 import ManufacturerPacketsPage from "@/pages/manufacturer-packets";
@@ -202,6 +203,7 @@ function ClerkProviderWithRoutes() {
               <Route path="/quotes" component={DashboardPage} />
               <Route path="/quotes/new" component={NewQuotePage} />
               <Route path="/quotes/:id/signoff/:approvalId" component={SignoffSnapshotPage} />
+              <Route path="/quotes/:id/legacy-signature" component={LegacySignaturePage} />
               <Route path="/quotes/:id" component={QuoteDetailPage} />
               <Route path="/quotes/:id/print-log" component={PrintLogPage} />
               <Route path="/quotes/:id/packets" component={ManufacturerPacketsPage} />

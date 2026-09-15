@@ -1122,6 +1122,37 @@ paths:
       responses:
         "204":
           description: Cleared
+  /quotes/{id}/legacy-signature:
+    get:
+      operationId: getLegacySignature
+      tags: [signoff]
+      summary: Read the stored legacy signature record for a quote
+      description: >
+        Authenticated approved staff only. Returns the original stored signer
+        and signature fields without any current quote specifications or
+        revisions. This record is read-only legacy evidence and is never
+        reconstructed from mutable quote content.
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "200":
+          description: Stored legacy signature record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacySignatureRecord"
+        "400":
+          description: Invalid quote id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Quote or legacy signature record not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /quotes/{id}/scoped-approvals:
     get:
       operationId: listScopedApprovals
@@ -3001,6 +3032,52 @@ components:
         documentAvailable: { type: boolean }
         invalidationReason: { type: ["string", "null"] }
       required: [status, validity, signedAt, documentAvailable]
+    LegacySignatureRecord:
+      description: >
+        Original stored legacy signature evidence. This response intentionally
+        contains no current quote specifications, revisions, or reconstructed
+        signed content.
+      type: object
+      properties:
+        recordType: { type: string, enum: [legacy_signature_record] }
+        id: { type: integer }
+        quoteId: { type: integer }
+        quoteNumber: { type: string }
+        signerName: { type: string }
+        signerRole:
+          type: string
+          enum: [Homeowner, Contractor, Architect/Designer, Other]
+        signatureType:
+          type: string
+          enum: [typed, drawn]
+        signatureData: { type: string }
+        signatureDataValid:
+          type: boolean
+          description: Server-side validation result for drawn PNG data.
+        signedAt: { type: string, format: date-time }
+        validity:
+          type: string
+          enum: [signed, needs_resigning]
+        invalidationReason: { type: ["string", "null"] }
+        signedDocumentAvailable: { type: boolean }
+        signedDocumentPath:
+          type: ["string", "null"]
+          description: Authenticated API route for the preserved original PDF, never a raw storage object path.
+      required:
+        - recordType
+        - id
+        - quoteId
+        - quoteNumber
+        - signerName
+        - signerRole
+        - signatureType
+        - signatureData
+        - signatureDataValid
+        - signedAt
+        - validity
+        - invalidationReason
+        - signedDocumentAvailable
+        - signedDocumentPath
     SignoffInput:
       type: object
       properties:

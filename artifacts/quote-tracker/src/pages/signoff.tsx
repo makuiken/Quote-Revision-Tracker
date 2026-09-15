@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
-import { Check, Copy, Download, ExternalLink, Mail, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle, RotateCcw, Clock, XCircle } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, FileText, Mail, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle, RotateCcw, Clock, XCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetQuoteQueryKey,
@@ -358,13 +358,22 @@ export default function SignoffPage() {
             <h1 className="font-serif text-3xl font-extrabold text-foreground tracking-tight">Customer Approval Setup</h1>
             <p className="text-sm text-muted-foreground font-medium mt-1">Configure which product types and revisions the customer will see.</p>
           </div>
-          {detail.legacyApproval?.documentAvailable ? (
-            <Button type="button" variant="outline" className="bg-card text-foreground" onClick={openLegacyDocument} disabled={isOpeningLegacyDocument}>
-              <Download className="mr-2 h-4 w-4" /> {isOpeningLegacyDocument ? "Opening PDF…" : "Download original signed PDF"}
-            </Button>
-          ) : detail.legacyApproval ? (
-            <p className="text-right text-xs text-amber-700 max-w-xs font-medium">The legacy signature is recorded, but its original PDF is unavailable.</p>
-          ) : null}
+          {detail.legacyApproval && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button asChild type="button" variant="outline" className="bg-card text-foreground">
+                <Link href={`/quotes/${quoteId}/legacy-signature`}>
+                  <FileText className="mr-2 h-4 w-4" /> View legacy signature
+                </Link>
+              </Button>
+              {detail.legacyApproval.documentAvailable ? (
+                <Button type="button" variant="outline" className="bg-card text-foreground" onClick={openLegacyDocument} disabled={isOpeningLegacyDocument}>
+                  <Download className="mr-2 h-4 w-4" /> {isOpeningLegacyDocument ? "Opening PDF…" : "Download original signed PDF"}
+                </Button>
+              ) : (
+                <p className="max-w-xs text-right text-xs font-medium text-amber-700">The legacy signature is recorded, but its original PDF is unavailable.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">

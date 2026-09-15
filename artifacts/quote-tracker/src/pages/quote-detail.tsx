@@ -699,6 +699,13 @@ export default function QuoteDetailPage() {
                 <FileImage className="w-4 h-4 mr-2 text-muted-foreground" /> Manufacturer Quote(s)
               </Link>
             </Button>
+            {legacyApproval && (
+              <Button asChild variant="outline" className="bg-card hover:bg-muted" disabled={isEditing}>
+                <Link href={`/quotes/${quote.id}/legacy-signature`}>
+                  <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> View legacy signature
+                </Link>
+              </Button>
+            )}
             {quote.archived && !quote.signed && !partiallyApproved ? (
               <Button disabled title="Archived quotes can't be signed. Restore the quote first.">
                 <PenTool className="w-4 h-4 mr-2" /> Prepare Approval
