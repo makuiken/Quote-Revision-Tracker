@@ -19,6 +19,12 @@ const RECONCILIATION_STATEMENTS: string[] = [
   // quotes.share_token was added after the initial schema; older databases lack it.
   `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS quotes_share_token_unique ON quotes (share_token)`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token_created_at timestamptz`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token_expires_at timestamptz`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token_revoked_at timestamptz`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token_revoked_by_id text`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token_revocation_reason text`,
+  `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token_rotated_from text`,
   // Archive support: quotes can be archived (kept, not deleted) with a reason.
   `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS archived_at timestamptz`,
   `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS archive_reason text`,
@@ -310,8 +316,20 @@ const RECONCILIATION_STATEMENTS: string[] = [
     status text NOT NULL DEFAULT 'open',
     created_by_id text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz,
+    revoked_at timestamptz,
+    revoked_by_id text,
+    revocation_reason text,
+    replaced_from_request_id integer,
+    replacement_request_id integer,
     signed_at timestamptz
   )`,
+  `ALTER TABLE scoped_approval_requests ADD COLUMN IF NOT EXISTS expires_at timestamptz`,
+  `ALTER TABLE scoped_approval_requests ADD COLUMN IF NOT EXISTS revoked_at timestamptz`,
+  `ALTER TABLE scoped_approval_requests ADD COLUMN IF NOT EXISTS revoked_by_id text`,
+  `ALTER TABLE scoped_approval_requests ADD COLUMN IF NOT EXISTS revocation_reason text`,
+  `ALTER TABLE scoped_approval_requests ADD COLUMN IF NOT EXISTS replaced_from_request_id integer`,
+  `ALTER TABLE scoped_approval_requests ADD COLUMN IF NOT EXISTS replacement_request_id integer`,
   `CREATE INDEX IF NOT EXISTS scoped_approval_requests_quote_created_idx
     ON scoped_approval_requests (quote_id, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS scoped_approvals (
@@ -344,6 +362,19 @@ const RECONCILIATION_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS scoped_approval_coverage_quote_status_idx
     ON scoped_approval_coverage (quote_id, status)`,
+  `CREATE TABLE IF NOT EXISTS share_link_audit (
+     id serial PRIMARY KEY,
+     quote_id integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+     token text NOT NULL,
+     action text NOT NULL,
+     replacement_token text,
+     expires_at timestamptz,
+     actor_id text,
+     reason text,
+     created_at timestamptz NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS share_link_audit_quote_created_idx
+     ON share_link_audit (quote_id, created_at DESC)`,
   // Cross-replica coordination for immutable unsigned document cache misses.
   // Leases make crashed builders recoverable without holding a quote lock.
   `CREATE TABLE IF NOT EXISTS unsigned_document_builds (
@@ -373,7 +404,9 @@ const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
     "id", "quote_number", "customer_name", "project_name", "job_address",
     "categories", "specs", "notes", "share_token", "created_by_id",
     "created_by_name", "archived_at", "archive_reason", "archived_by_id",
-    "archived_by_name", "created_at", "updated_at",
+    "archived_by_name", "share_token_created_at", "share_token_expires_at",
+    "share_token_revoked_at", "share_token_revoked_by_id",
+    "share_token_revocation_reason", "share_token_rotated_from", "created_at", "updated_at",
   ],
   revisions: [
     "id", "quote_id", "author_id", "author_name", "note", "categories",
@@ -429,6 +462,8 @@ const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
   scoped_approval_requests: [
     "id", "quote_id", "token", "product_types", "snapshot", "document_version",
     "status", "created_by_id", "created_at", "signed_at",
+    "expires_at", "revoked_at", "revoked_by_id", "revocation_reason",
+    "replaced_from_request_id", "replacement_request_id",
   ],
   scoped_approvals: [
     "id", "request_id", "quote_id", "product_types", "snapshot", "document_version",
@@ -449,6 +484,10 @@ const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
   unsigned_document_builds: [
     "id", "quote_id", "document_version", "object_path", "claim_token",
     "lease_until", "created_at", "updated_at",
+  ],
+  share_link_audit: [
+    "id", "quote_id", "token", "action", "replacement_token", "expires_at",
+    "actor_id", "reason", "created_at",
   ],
 };
 
@@ -481,6 +520,7 @@ const REQUIRED_INDEXES: readonly RequiredIndex[] = [
   { table: "manufacturer_packet_manifest", columns: ["id"], unique: true },
   { table: "field_options", columns: ["id"], unique: true },
   { table: "unsigned_document_builds", columns: ["id"], unique: true },
+  { table: "share_link_audit", columns: ["id"], unique: true },
   { table: "users", columns: ["clerk_user_id"], unique: true },
   { table: "quotes", columns: ["share_token"], unique: true, name: "quotes_share_token_unique" },
   { table: "revision_drafts", columns: ["quote_id", "author_id"], unique: true },
@@ -538,6 +578,12 @@ const REQUIRED_INDEXES: readonly RequiredIndex[] = [
     columns: ["lease_until"],
     unique: false,
     name: "unsigned_document_builds_lease_idx",
+  },
+  {
+    table: "share_link_audit",
+    columns: ["quote_id", "created_at"],
+    unique: false,
+    name: "share_link_audit_quote_created_idx",
   },
 ];
 
@@ -602,6 +648,9 @@ const REQUIRED_COLUMN_CONTRACTS: readonly {
 }[] = [
   { table: "quotes", column: "id", type: "int4", nullable: false },
   { table: "quotes", column: "archived_at", type: "timestamptz", nullable: true },
+  { table: "quotes", column: "share_token_created_at", type: "timestamptz", nullable: true },
+  { table: "quotes", column: "share_token_expires_at", type: "timestamptz", nullable: true },
+  { table: "quotes", column: "share_token_revoked_at", type: "timestamptz", nullable: true },
   { table: "manufacturer_packets", column: "quote_id", type: "int4", nullable: false },
   { table: "manufacturer_packets", column: "status", type: "text", nullable: false },
   { table: "manufacturer_packets", column: "attempt_count", type: "int4", nullable: false },
@@ -610,6 +659,8 @@ const REQUIRED_COLUMN_CONTRACTS: readonly {
   { table: "manufacturer_packets", column: "sanitized_page_object_paths", type: "jsonb", nullable: true },
   { table: "scoped_approval_requests", column: "snapshot", type: "jsonb", nullable: false },
   { table: "scoped_approval_requests", column: "document_version", type: "text", nullable: false },
+  { table: "scoped_approval_requests", column: "expires_at", type: "timestamptz", nullable: true },
+  { table: "scoped_approval_requests", column: "revoked_at", type: "timestamptz", nullable: true },
   { table: "scoped_approvals", column: "signed_document_object_path", type: "text", nullable: false },
   { table: "scoped_approvals", column: "signed_document_sha256", type: "text", nullable: false },
   { table: "unsigned_document_builds", column: "quote_id", type: "int4", nullable: false },

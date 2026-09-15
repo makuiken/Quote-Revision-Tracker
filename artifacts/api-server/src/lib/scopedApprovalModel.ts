@@ -12,9 +12,44 @@ export function hashLockedScopedContent(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-/** Revoked scoped tokens must not disclose any locked detail or documents. */
-export function canAccessScopedPublicToken(status: string): boolean {
-  return status !== "revoked";
+/** Revoked/expired scoped links must not disclose any locked detail/documents,
+ * including after the request has been signed. */
+export function canAccessScopedPublicToken(
+  status: string,
+  expiresAt: Date | string | null = null,
+  now = new Date(),
+  revokedAt: Date | string | null = null,
+): boolean {
+  return status !== "revoked" &&
+    !revokedAt &&
+    (!expiresAt || new Date(expiresAt).getTime() > now.getTime());
+}
+
+export type ApprovalReceiptInput = {
+  signerName: string;
+  signerRole: string;
+  signedAt: Date;
+  quoteId: number;
+  quoteNumber: string;
+  signedDocumentPath: string | null;
+  approvalScope: string[];
+  current: boolean;
+  reason?: string | null;
+};
+
+export function buildApprovalReceipt(input: ApprovalReceiptInput) {
+  return {
+    signerName: input.signerName,
+    signerRole: input.signerRole,
+    signedAt: input.signedAt,
+    quoteId: input.quoteId,
+    quoteNumber: input.quoteNumber,
+    signedDocumentAvailable: Boolean(input.signedDocumentPath),
+    signedDocumentPath: input.signedDocumentPath,
+    approvalScope: input.approvalScope,
+    status: input.current ? "current" as const : "outdated" as const,
+    reason: input.reason ?? null,
+  };
 }
 
 /**

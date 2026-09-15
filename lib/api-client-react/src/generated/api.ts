@@ -39,6 +39,7 @@ import type {
   GetPublicScopedManufacturerPacketPageParams,
   GetRecentActivityParams,
   HealthStatus,
+  LinkExpiryInput,
   ListQuotesParams,
   ManufacturerPacket,
   ManufacturerPacketManifest,
@@ -3461,6 +3462,80 @@ export const useCreateScopedApproval = <TError = ErrorType<ErrorResponse>,
       return useMutation(getCreateScopedApprovalMutationOptions(options));
     }
 
+export const getUpdateScopedApprovalLinkUrl = (id: number,
+    requestId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/scoped-approvals/${requestId}`
+}
+
+/**
+ * @summary Update the expiry of an open or signed scoped approval link
+ */
+export const updateScopedApprovalLink = async (id: number,
+    requestId: number,
+    linkExpiryInput: LinkExpiryInput, options?: Parameters<typeof customFetch>[1]): Promise<ScopedApproval> => {
+
+  return customFetch<ScopedApproval>(getUpdateScopedApprovalLinkUrl(id,requestId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(linkExpiryInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateScopedApprovalLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScopedApprovalLink>>, TError,{id: number;requestId: number;data: BodyType<LinkExpiryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateScopedApprovalLink>>, TError,{id: number;requestId: number;data: BodyType<LinkExpiryInput>}, TContext> => {
+
+const mutationKey = ['updateScopedApprovalLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateScopedApprovalLink>>, {id: number;requestId: number;data: BodyType<LinkExpiryInput>}> = (props) => {
+          const {id,requestId,data} = props ?? {};
+
+          return  updateScopedApprovalLink(id,requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateScopedApprovalLinkMutationResult = NonNullable<Awaited<ReturnType<typeof updateScopedApprovalLink>>>
+    export type UpdateScopedApprovalLinkMutationBody = BodyType<LinkExpiryInput>
+    export type UpdateScopedApprovalLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the expiry of an open or signed scoped approval link
+ */
+export const useUpdateScopedApprovalLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScopedApprovalLink>>, TError,{id: number;requestId: number;data: BodyType<LinkExpiryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateScopedApprovalLink>>,
+        TError,
+        {id: number;requestId: number;data: BodyType<LinkExpiryInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateScopedApprovalLinkMutationOptions(options));
+    }
+
 export const getCancelScopedApprovalUrl = (id: number,
     requestId: number,) => {
 
@@ -3471,7 +3546,7 @@ export const getCancelScopedApprovalUrl = (id: number,
 }
 
 /**
- * @summary Cancel an open scoped approval request without deleting audit history
+ * @summary Revoke an open or signed scoped approval link without deleting audit history or signed evidence
  */
 export const cancelScopedApproval = async (id: number,
     requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -3521,7 +3596,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CancelScopedApprovalMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Cancel an open scoped approval request without deleting audit history
+ * @summary Revoke an open or signed scoped approval link without deleting audit history or signed evidence
  */
 export const useCancelScopedApproval = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelScopedApproval>>, TError,{id: number;requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -3532,6 +3607,79 @@ export const useCancelScopedApproval = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCancelScopedApprovalMutationOptions(options));
+    }
+
+export const getRotateScopedApprovalLinkUrl = (id: number,
+    requestId: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/scoped-approvals/${requestId}/rotate`
+}
+
+/**
+ * @summary Revoke and replace an open scoped approval link without changing its locked snapshot
+ */
+export const rotateScopedApprovalLink = async (id: number,
+    requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<ScopedApproval> => {
+
+  return customFetch<ScopedApproval>(getRotateScopedApprovalLinkUrl(id,requestId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRotateScopedApprovalLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateScopedApprovalLink>>, TError,{id: number;requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rotateScopedApprovalLink>>, TError,{id: number;requestId: number}, TContext> => {
+
+const mutationKey = ['rotateScopedApprovalLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateScopedApprovalLink>>, {id: number;requestId: number}> = (props) => {
+          const {id,requestId} = props ?? {};
+
+          return  rotateScopedApprovalLink(id,requestId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RotateScopedApprovalLinkMutationResult = NonNullable<Awaited<ReturnType<typeof rotateScopedApprovalLink>>>
+
+    export type RotateScopedApprovalLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Revoke and replace an open scoped approval link without changing its locked snapshot
+ */
+export const useRotateScopedApprovalLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateScopedApprovalLink>>, TError,{id: number;requestId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rotateScopedApprovalLink>>,
+        TError,
+        {id: number;requestId: number},
+        TContext
+      > => {
+      return useMutation(getRotateScopedApprovalLinkMutationOptions(options));
     }
 
 export const getGetPublicScopedSignoffUrl = (token: string,) => {
@@ -3752,6 +3900,220 @@ export const useCreateShareLink = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getCreateShareLinkMutationOptions(options));
+    }
+
+export const getUpdateShareLinkUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/share-link`
+}
+
+/**
+ * @summary Update the expiry of the legacy public share link
+ */
+export const updateShareLink = async (id: number,
+    linkExpiryInput: LinkExpiryInput, options?: Parameters<typeof customFetch>[1]): Promise<ShareLink> => {
+
+  return customFetch<ShareLink>(getUpdateShareLinkUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(linkExpiryInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateShareLinkMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateShareLink>>, TError,{id: number;data: BodyType<LinkExpiryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateShareLink>>, TError,{id: number;data: BodyType<LinkExpiryInput>}, TContext> => {
+
+const mutationKey = ['updateShareLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateShareLink>>, {id: number;data: BodyType<LinkExpiryInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateShareLink(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateShareLinkMutationResult = NonNullable<Awaited<ReturnType<typeof updateShareLink>>>
+    export type UpdateShareLinkMutationBody = BodyType<LinkExpiryInput>
+    export type UpdateShareLinkMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update the expiry of the legacy public share link
+ */
+export const useUpdateShareLink = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateShareLink>>, TError,{id: number;data: BodyType<LinkExpiryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateShareLink>>,
+        TError,
+        {id: number;data: BodyType<LinkExpiryInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateShareLinkMutationOptions(options));
+    }
+
+export const getRevokeShareLinkUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/share-link`
+}
+
+/**
+ * @summary Revoke the legacy public share link without deleting signed evidence
+ */
+export const revokeShareLink = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRevokeShareLinkUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeShareLinkMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeShareLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeShareLink>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['revokeShareLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeShareLink>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeShareLink(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeShareLinkMutationResult = NonNullable<Awaited<ReturnType<typeof revokeShareLink>>>
+
+    export type RevokeShareLinkMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Revoke the legacy public share link without deleting signed evidence
+ */
+export const useRevokeShareLink = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeShareLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokeShareLink>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRevokeShareLinkMutationOptions(options));
+    }
+
+export const getRotateShareLinkUrl = (id: number,) => {
+
+
+
+
+  return `/api/quotes/${id}/share-link/rotate`
+}
+
+/**
+ * @summary Rotate the legacy public share link and preserve its audit record
+ */
+export const rotateShareLink = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<ShareLink> => {
+
+  return customFetch<ShareLink>(getRotateShareLinkUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRotateShareLinkMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateShareLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rotateShareLink>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['rotateShareLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateShareLink>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  rotateShareLink(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RotateShareLinkMutationResult = NonNullable<Awaited<ReturnType<typeof rotateShareLink>>>
+
+    export type RotateShareLinkMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Rotate the legacy public share link and preserve its audit record
+ */
+export const useRotateShareLink = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateShareLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rotateShareLink>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRotateShareLinkMutationOptions(options));
     }
 
 export const getGetPublicSignoffUrl = (token: string,) => {

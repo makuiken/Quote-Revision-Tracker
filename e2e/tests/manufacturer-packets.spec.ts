@@ -627,11 +627,7 @@ test.describe("manufacturer packet API contract", () => {
     // surface. Its old packet-discovery loading gate therefore no longer
     // controls whether the signature form appears.
     await page.goto(`/sign/${token}`);
-    await expect(
-      page.getByText(
-        "Cannot sign: This current document is read-only because a historical legacy signature exists. It cannot replace that approval.",
-      ),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Approval Outdated" })).toBeVisible();
     await expect(page.getByLabel("Your full legal name")).toHaveCount(0);
 
     // A legacy whole-quote signature remains historical evidence after the
@@ -652,11 +648,9 @@ test.describe("manufacturer packet API contract", () => {
     });
 
     await page.goto(`/sign/${token}`);
-    await expect(page.getByText("Manufacturer Specifications")).toBeVisible();
-    await expect(page.locator('img[alt^="Packet Page"]').first()).toBeVisible();
     await expect(
       page.getByRole("link", {
-        name: "Open original signed PDF evidence",
+        name: "Open Signed Document",
         exact: true,
       }),
     ).toBeVisible();
@@ -702,12 +696,13 @@ test.describe("manufacturer packet API contract", () => {
     expect(staleAfterUnpublication.status()).toBe(409);
 
     // With a valid parent detail but no published packet, the public page
-    // remains a usable unsigned signing form rather than a fatal 404 state.
+    // keeps the historical receipt available rather than becoming a fatal
+    // 404 or reconstructing an unsigned document as evidence.
     await page.goto(`/sign/${token}`);
-    await expect(page.getByText("Signoff Document")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Approval Outdated" })).toBeVisible();
     await expect(
       page.getByRole("link", {
-        name: "Open original signed PDF evidence",
+        name: "Open Signed Document",
         exact: true,
       }),
     ).toBeVisible();

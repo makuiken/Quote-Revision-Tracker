@@ -98,3 +98,33 @@
     @apply font-serif;
   }
 }
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.5in;
+  }
+
+  html,
+  body {
+    background: white !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  img,
+  canvas,
+  svg {
+    max-width: 100% !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid-page;
+  }
+
+  .break-inside-avoid {
+    break-inside: avoid-page;
+  }
+}

@@ -49,3 +49,9 @@ Use browser printing of the signoff HTML for the customer-facing Print / Save PD
 **Why:** The user explicitly requires the same formatting as the visible signoff document and rejected the separately typeset PDF even after a redesign.
 
 **How to apply:** Keep the print action on internal and public signoff views; retain server-generated snapshots for record integrity without replacing the print workflow.
+
+Public-link access state is separate from signed-evidence state. Staff may revoke or expire a signed link without changing the request's signed status or deleting its approval record and PDF.
+
+**Why:** A customer URL may need to stop working after signature while the business must still retain and access exactly what was signed.
+
+**How to apply:** Enforce expiry/revocation on every public endpoint, preserve signed rows and immutable bytes, and route staff evidence access through authenticated approval identifiers rather than public tokens.

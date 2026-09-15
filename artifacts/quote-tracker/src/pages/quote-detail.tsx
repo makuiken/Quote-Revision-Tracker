@@ -481,7 +481,7 @@ export default function QuoteDetailPage() {
   const hasCurrentApproval = quote.signed || fullyApproved || partiallyApproved;
   const signedSnapshots = (scopedApprovalData?.approvals ?? []).filter(
     (approval): approval is ScopedApproval & { approvalId: number } =>
-      approval.status === "signed" && approval.approvalId !== null && approval.approvalId !== undefined,
+      approval.approvalId !== null && approval.approvalId !== undefined,
   );
   const selectedCategories = form.watch("categories") || [];
 
@@ -1154,39 +1154,53 @@ export default function QuoteDetailPage() {
                     </div>
                   )}
                   <div className="pt-2 space-y-2">
-                    {signedSnapshots
-                      .filter((approval) => coverage.some((item) => item.approvalId === approval.approvalId))
-                      .map((approval) => {
-                        const needsResigning = coverage.some(
-                          (item) => item.approvalId === approval.approvalId && item.status === "needs_resigning",
-                        );
+                    {signedSnapshots.length > 0 && (
+                      <div className="pt-4 space-y-3 border-t border-border">
+                        <h4 className="font-bold text-xs uppercase tracking-widest text-muted-foreground">Signed Evidence</h4>
+                        {signedSnapshots.map((approval) => {
+                          const isCurrent = coverage.some((item) => item.approvalId === approval.approvalId && item.status === "signed");
+                          const needsResigning = coverage.some((item) => item.approvalId === approval.approvalId && item.status === "needs_resigning");
+                          const isOutdated = !isCurrent && !needsResigning;
 
-                        return (
-                          <Link
-                            key={approval.approvalId}
-                            href={`/scoped-sign/${approval.token}`}
-                            className="group flex items-center gap-3 rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/40"
-                          >
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                              <Printer className="h-4 w-4" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-semibold text-foreground">
-                                View or print signoff
-                              </span>
-                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                                {approval.productTypes.map(productTypeLabel).join(" · ")}
-                              </span>
-                              {needsResigning && (
-                                <span className="mt-1 block text-xs font-medium text-amber-700">
-                                  Original signed copy · Updates need re-signing
+                          return (
+                            <div key={approval.approvalId} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-muted/40">
+                              <a
+                                href={`/api/quotes/${quoteId}/scoped-approvals/${approval.approvalId}/document`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="group flex items-center gap-3"
+                              >
+                                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${isOutdated ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'}`}>
+                                  <Printer className="h-4 w-4" />
                                 </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-semibold text-foreground">
+                                    {isOutdated ? "Historical signoff" : "View or print signoff"}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                    {approval.productTypes.map(productTypeLabel).join(" · ")}
+                                  </span>
+                                </span>
+                                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+                              </a>
+                              {(needsResigning || isOutdated) && (
+                                <div className="mt-1 flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+                                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="block font-bold">
+                                      {isOutdated ? "Outdated approval" : "Updates need re-signing"}
+                                    </span>
+                                    {approval.invalidationReason && (
+                                      <span className="block mt-0.5 text-amber-800">{approval.invalidationReason}</span>
+                                    )}
+                                  </div>
+                                </div>
                               )}
-                            </span>
-                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                          </Link>
-                        );
-                      })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {(scopedApprovalData?.approvals ?? [])
                       .filter((approval) => approval.status === "open")
                       .map((approval) => (

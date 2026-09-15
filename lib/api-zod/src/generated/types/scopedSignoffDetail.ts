@@ -11,6 +11,7 @@ import type { ScopedSignoffDetailNotIncludedProductTypesItem } from './scopedSig
 import type { ScopedSignoffDetailProductTypesItem } from './scopedSignoffDetailProductTypesItem';
 import type { ScopedSignoffDetailStatus } from './scopedSignoffDetailStatus';
 import type { Signoff } from './signoff';
+import type { SignoffReceipt } from './signoffReceipt';
 
 export interface ScopedSignoffDetail {
   quote: ScopedPublicQuote;
@@ -23,4 +24,5 @@ export interface ScopedSignoffDetail {
   preparedAt: Date;
   documentVersion: string;
   status: ScopedSignoffDetailStatus;
+  receipt: SignoffReceipt | null;
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { format } from "date-fns";
 import { CheckCircle, RefreshCcw } from "lucide-react";
 import type { Quote, Revision, Signoff } from "@workspace/api-client-react";
@@ -19,8 +19,10 @@ type SignoffDocumentQuote = Pick<
   "quoteNumber" | "displayName" | "jobAddress" | "categories" | "specs"
 >;
 
-export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => void, onClear: () => void }) {
+export function SignaturePad({ onSave, onClear, isSubmitting }: { onSave: (data: string) => void, onClear: () => void, isSubmitting?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const instructionsId = useId();
+  const errorId = useId();
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasInk, setHasInk] = useState(false);
   const [showError, setShowError] = useState(false);
@@ -109,9 +111,15 @@ export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => vo
 
   return (
     <div className="space-y-4">
+      <p id={instructionsId} className="text-sm text-gray-700">
+        Draw inside the box with a mouse, pen, or touch. If drawing is not accessible to you, choose <strong>Type Signature</strong>.
+      </p>
       <div className="border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 overflow-hidden relative">
         <canvas
           ref={canvasRef}
+          aria-label="Draw your signature"
+          aria-describedby={`${instructionsId}${showError ? ` ${errorId}` : ""}`}
+          aria-invalid={showError}
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}
@@ -126,16 +134,16 @@ export function SignaturePad({ onSave, onClear }: { onSave: (data: string) => vo
         </div>
       </div>
       {showError && (
-        <p className="text-sm text-red-600 font-medium" role="alert">
+        <p id={errorId} className="text-sm text-red-600 font-medium" role="alert">
           Please draw your signature before confirming.
         </p>
       )}
       <div className="flex gap-4">
-        <Button type="button" variant="outline" onClick={handleClear} className="w-full">
+        <Button type="button" variant="outline" onClick={handleClear} disabled={isSubmitting} className="w-full">
           <RefreshCcw className="w-4 h-4 mr-2" /> Clear
         </Button>
-        <Button type="button" onClick={handleSave} className="w-full bg-black text-white hover:bg-gray-800">
-          Confirm Signature
+        <Button type="button" onClick={handleSave} disabled={isSubmitting} className="w-full bg-black text-white hover:bg-gray-800">
+          {isSubmitting ? "Recording signature…" : "Confirm Signature"}
         </Button>
       </div>
     </div>
@@ -171,6 +179,7 @@ export function SignoffDocument({
   packetSection,
   hasManifest,
   disabledReason,
+  isSubmitting,
   productTypes,
   notIncludedProductTypes,
   isSigned,
@@ -190,6 +199,7 @@ export function SignoffDocument({
   hasManifest?: boolean;
   packetSection?: React.ReactNode;
   disabledReason?: string;
+  isSubmitting?: boolean;
   /** Omitted only for legacy whole-quote documents. Scoped data is server-filtered. */
   productTypes?: string[];
   notIncludedProductTypes?: string[];
@@ -206,13 +216,15 @@ export function SignoffDocument({
   >("");
   const [nameError, setNameError] = useState(false);
   const [roleError, setRoleError] = useState(false);
+  const nameErrorId = useId();
+  const roleErrorId = useId();
   const scopedTypes = productTypes?.length ? new Set(productTypes) : null;
   const includedRevisions = revisions.filter((revision) =>
     !revision.excludedFromSignoff &&
     (!scopedTypes || !revision.categories?.length || revision.categories.some((type) => scopedTypes.has(type))),
   );
   const signed = isSigned ?? false;
-  const documentDate = preparedAt ? new Date(preparedAt) : new Date();
+  const documentDate = preparedAt ? new Date(preparedAt) : null;
 
   const validateIdentity = () => {
     const validName = Boolean(signerName.trim());
@@ -252,7 +264,15 @@ export function SignoffDocument({
         <img src={`${basePath}/logo.png`} alt="Kuiken Brothers" className="h-20" style={{ filter: 'grayscale(100%)' }} />
         <div className="text-right">
           <h1 className="text-2xl font-serif font-bold text-black uppercase tracking-widest">Signoff Document</h1>
-          <p className="text-sm font-bold text-gray-600 mt-1">{preparedAt ? "Prepared" : "Generated"}: {format(documentDate, "MMM d, yyyy")}</p>
+          {documentDate ? (
+            <p className="text-sm font-bold text-gray-600 mt-1">
+              Prepared: {format(documentDate, "MMM d, yyyy")}
+            </p>
+          ) : (
+            <p className="text-sm font-bold text-gray-600 mt-1 print:hidden">
+              Current review copy
+            </p>
+          )}
         </div>
       </div>
 
@@ -454,10 +474,12 @@ export function SignoffDocument({
                     }}
                     placeholder="e.g. John Doe"
                     autoComplete="name"
+                     aria-invalid={nameError}
+                     aria-describedby={nameError ? nameErrorId : undefined}
                     className="bg-white border-2 border-gray-300"
                   />
                   {nameError && (
-                    <p className="text-sm text-red-600 font-medium" role="alert">
+                     <p id={nameErrorId} className="text-sm text-red-600 font-medium" role="alert">
                       Please enter your full name.
                     </p>
                   )}
@@ -473,7 +495,12 @@ export function SignoffDocument({
                       setRoleError(false);
                     }}
                   >
-                    <SelectTrigger id="stakeholderRole" data-testid="stakeholder-role">
+                    <SelectTrigger
+                      id="stakeholderRole"
+                      data-testid="stakeholder-role"
+                      aria-invalid={roleError}
+                      aria-describedby={roleError ? roleErrorId : undefined}
+                    >
                       <SelectValue placeholder="Select your role" />
                     </SelectTrigger>
                     <SelectContent>
@@ -484,15 +511,22 @@ export function SignoffDocument({
                     </SelectContent>
                   </Select>
                   {roleError && (
-                    <p className="text-sm text-red-600 font-medium" role="alert">
+                     <p id={roleErrorId} className="text-sm text-red-600 font-medium" role="alert">
                       Please select your role.
                     </p>
                   )}
                 </div>
               </div>
 
-              <div className="flex gap-4 mb-6">
+              <div
+                className="flex gap-4 mb-6"
+                role="radiogroup"
+                aria-label="Signature method"
+              >
                 <Button
+                  type="button"
+                  role="radio"
+                  aria-checked={signMethod === "draw"}
                   variant={signMethod === "draw" ? "default" : "outline"}
                   onClick={() => setSignMethod("draw")}
                   className={signMethod === "draw" ? "bg-black text-white" : ""}
@@ -500,6 +534,9 @@ export function SignoffDocument({
                   Draw Signature
                 </Button>
                 <Button
+                  type="button"
+                  role="radio"
+                  aria-checked={signMethod === "type"}
                   variant={signMethod === "type" ? "default" : "outline"}
                   onClick={() => setSignMethod("type")}
                   className={signMethod === "type" ? "bg-black text-white" : ""}
@@ -509,7 +546,7 @@ export function SignoffDocument({
               </div>
 
               {signMethod === "draw" ? (
-                <SignaturePad onSave={handleSaveDrawn} onClear={() => {}} />
+                <SignaturePad onSave={handleSaveDrawn} onClear={() => {}} isSubmitting={isSubmitting} />
               ) : (
                 <div className="space-y-4">
                   <div className="border border-gray-300 rounded-lg bg-white p-5 text-center">
@@ -520,8 +557,13 @@ export function SignoffDocument({
                       {signerName.trim() || "Your name will appear here"}
                     </p>
                   </div>
-                  <Button onClick={handleSaveTyped} className="w-full bg-black text-white hover:bg-gray-800">
-                    Confirm Signature
+                  <Button
+                    type="button"
+                    onClick={handleSaveTyped}
+                    disabled={isSubmitting}
+                    className="w-full bg-black text-white hover:bg-gray-800"
+                  >
+                    {isSubmitting ? "Recording signature…" : "Confirm Signature"}
                   </Button>
                 </div>
               )}

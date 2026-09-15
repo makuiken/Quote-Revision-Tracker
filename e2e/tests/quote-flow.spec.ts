@@ -342,7 +342,7 @@ test.describe.serial("quote-to-signoff flow", () => {
   test("save a typed signature", async ({ page }) => {
     await prepareExactPreview(page);
     await submitTypedSignature(page, customerName, "Homeowner");
-    await expect(page.getByText(/electronically signed/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Approval Recorded" })).toBeVisible();
     await expect(page.getByText(customerName).first()).toBeVisible();
     await expect(page.getByText(/homeowner/i)).toBeVisible();
   });
@@ -357,8 +357,8 @@ test.describe.serial("quote-to-signoff flow", () => {
   test("save a drawn signature", async ({ page }) => {
     await prepareExactPreview(page);
     await submitDrawnSignature(page, customerName, "Contractor");
-    await expect(page.getByText(/electronically signed/i)).toBeVisible();
-    await expect(page.getByAltText("Customer Signature")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Approval Recorded" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Signed Document" })).toBeVisible();
     await expect(page.getByText(/contractor/i)).toBeVisible();
   });
 
@@ -610,7 +610,7 @@ async function prepareExactPreview(page: Page): Promise<void> {
   await expect(
     page.getByRole("heading", { name: "Preview Ready" }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Open preview", exact: true }).last().click();
+  await page.getByRole("link", { name: "Open preview", exact: true }).first().click();
   await expect(page).toHaveURL(/\/scoped-sign\/[^/]+$/);
   scopedPreviewUrl = new URL(page.url()).pathname;
 }
@@ -619,7 +619,7 @@ async function prepareExactPreview(page: Page): Promise<void> {
 async function signTyped(page: Page): Promise<void> {
   await prepareExactPreview(page);
   await submitTypedSignature(page, customerName, "Homeowner");
-  await expect(page.getByText(/electronically signed/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Approval Recorded" })).toBeVisible();
 }
 
 /**

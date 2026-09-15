@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canAccessScopedPublicToken,
+  buildApprovalReceipt,
   hashLockedScopedContent,
   normalizeProductScope,
   publicScopedRevisions,
@@ -41,6 +42,27 @@ test("revoked scoped tokens cannot access any public scoped route", () => {
   assert.equal(canAccessScopedPublicToken("open"), true);
   assert.equal(canAccessScopedPublicToken("stale"), true);
   assert.equal(canAccessScopedPublicToken("revoked"), false);
+  assert.equal(canAccessScopedPublicToken("open", new Date("2026-01-01"), new Date("2026-01-02")), false);
+  assert.equal(canAccessScopedPublicToken("open", new Date("2026-01-03"), new Date("2026-01-02")), true);
+  assert.equal(canAccessScopedPublicToken("signed", null, new Date("2026-01-02"), new Date("2026-01-01")), false);
+});
+
+test("approval receipts retain stable signer, scope, document, and outdated reason", () => {
+  const receipt = buildApprovalReceipt({
+    signerName: "Alex Customer",
+    signerRole: "Homeowner",
+    signedAt: new Date("2026-01-01T12:00:00.000Z"),
+    quoteId: 42,
+    quoteNumber: "1234567",
+    signedDocumentPath: "/public/scoped-signoff/token/document",
+    approvalScope: ["windows"],
+    current: false,
+    reason: "Window packet changed",
+  });
+  assert.equal(receipt.signedDocumentAvailable, true);
+  assert.equal(receipt.status, "outdated");
+  assert.equal(receipt.reason, "Window packet changed");
+  assert.deepEqual(receipt.approvalScope, ["windows"]);
 });
 
 test("excluded revisions never enter scoped public snapshots", () => {

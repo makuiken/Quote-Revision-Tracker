@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Printer, ArrowLeft, Copy, Check, Mail } from "lucide-react";
 import { useParams, Link } from "wouter";
 import { useAuth } from "@clerk/react";
@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
 import { SignoffDocument } from "@/components/signoff-document";
+import { SignoffReceiptView } from "@/components/signoff-receipt";
 import { copyTextToClipboard } from "@/lib/copy-text";
 import { categoryLabel } from "@/lib/revision-categories";
 
@@ -37,7 +38,7 @@ function ScopedPacketPage({
   onLoad: () => void;
   onError: () => void;
 }) {
-  const { data: blob, isLoading, isError } = useGetPublicScopedManufacturerPacketPage(token, pageNumber, {
+  const { data: blob, isLoading, isError, refetch } = useGetPublicScopedManufacturerPacketPage(token, pageNumber, {
     documentVersion,
   }, {
     query: {
@@ -46,10 +47,14 @@ function ScopedPacketPage({
     },
   });
   const [url, setUrl] = useState<string | null>(null);
+  const onErrorRef = useRef(onError);
 
   useEffect(() => {
-    if (isError) onError();
-  }, [isError, onError]);
+    onErrorRef.current = onError;
+  }, [onError]);
+  useEffect(() => {
+    if (isError) onErrorRef.current();
+  }, [isError]);
   useEffect(() => {
     if (!blob) return;
     const nextUrl = URL.createObjectURL(blob);
@@ -57,7 +62,16 @@ function ScopedPacketPage({
     return () => URL.revokeObjectURL(nextUrl);
   }, [blob]);
 
-  if (isError) return <div className="h-64 rounded border border-red-200 bg-red-50 flex items-center justify-center text-red-600">Unable to load this approved manufacturer page.</div>;
+  if (isError) {
+    return (
+      <div className="min-h-64 rounded border border-red-200 bg-red-50 flex flex-col gap-3 items-center justify-center text-red-800 p-6" role="alert">
+        <p className="font-medium">Approved manufacturer page {pageNumber} could not be loaded.</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+          Retry this page
+        </Button>
+      </div>
+    );
+  }
   if (isLoading || !url) return <div className="h-64 rounded border border-gray-200 bg-gray-100 animate-pulse" />;
   return <img src={url} alt={`Approved manufacturer page ${pageNumber}`} className="block h-auto w-full" onLoad={onLoad} onError={onError} />;
 }
@@ -66,37 +80,114 @@ function ScopedPacketViewer({
   token,
   documentVersion,
   onStateChange,
+  fallbackOpened,
+  setFallbackOpened,
 }: {
   token: string;
   documentVersion: string;
   onStateChange: (state: { hasManifest: boolean; isReady: boolean; error?: string }) => void;
+  fallbackOpened: boolean;
+  setFallbackOpened: (opened: boolean) => void;
 }) {
-  const { data: packet, isLoading, isError } = useGetPublicScopedManufacturerPacket(token, {
+  const { data: packet, isLoading, isError, error, refetch } = useGetPublicScopedManufacturerPacket(token, {
     query: {
       retry: false,
       queryKey: getGetPublicScopedManufacturerPacketQueryKey(token),
     },
   });
   const [loaded, setLoaded] = useState<Set<number>>(new Set());
-  const [imageError, setImageError] = useState(false);
+  const [failedPages, setFailedPages] = useState<Set<number>>(new Set());
+  const [fallbackError, setFallbackError] = useState<string | null>(null);
+  const [isOpeningFallback, setIsOpeningFallback] = useState(false);
   const pageCount = packet?.pageCount ?? 0;
+  const noPacket = isError && (error as { status?: number } | null)?.status === 404;
 
   useEffect(() => {
     setLoaded(new Set());
-    setImageError(false);
-  }, [documentVersion, pageCount]);
-  useEffect(() => {
-    if (isLoading) onStateChange({ hasManifest: false, isReady: false });
-    else if (isError || imageError) onStateChange({ hasManifest: pageCount > 0, isReady: false, error: "One or more approved manufacturer pages could not be loaded. Refresh the page before signing." });
-    else if (pageCount) onStateChange({ hasManifest: true, isReady: loaded.size === pageCount });
-    else onStateChange({ hasManifest: false, isReady: true });
-  }, [imageError, isError, isLoading, loaded.size, onStateChange, pageCount]);
+    setFailedPages(new Set());
+    setFallbackOpened(false);
+    setFallbackError(null);
+  }, [documentVersion, pageCount, setFallbackOpened]);
 
-  if (!packet || pageCount === 0) return null;
+  const openVerifiedFallback = async () => {
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      setFallbackError("The PDF could not open because the browser blocked the new window. Allow pop-ups and try again.");
+      return;
+    }
+    popup.opener = null;
+    setIsOpeningFallback(true);
+    setFallbackError(null);
+    try {
+      const response = await fetch(`/api/public/scoped-signoff/${token}/document`);
+      if (!response.ok || response.headers.get("content-type")?.includes("application/pdf") !== true) {
+        throw new Error("The exact PDF is unavailable right now.");
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      popup.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      setFallbackOpened(true);
+    } catch (error) {
+      popup.close();
+      setFallbackError(error instanceof Error ? error.message : "The exact PDF could not be opened.");
+      setFallbackOpened(false);
+    } finally {
+      setIsOpeningFallback(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoading) {
+      onStateChange({ hasManifest: false, isReady: false });
+    } else if (noPacket) {
+      onStateChange({ hasManifest: false, isReady: true });
+    } else if (isError || failedPages.size > 0) {
+      if (fallbackOpened) {
+        onStateChange({ hasManifest: true, isReady: true });
+      } else {
+        onStateChange({ hasManifest: true, isReady: false, error: "One or more packet images failed to load." });
+      }
+    } else if (pageCount > 0) {
+      onStateChange({ hasManifest: true, isReady: loaded.size === pageCount });
+    } else {
+      onStateChange({ hasManifest: false, isReady: true });
+    }
+  }, [isLoading, isError, noPacket, failedPages.size, pageCount, loaded.size, onStateChange, fallbackOpened]);
+
+  if (noPacket || (!isError && pageCount === 0)) return null;
   return (
     <section className="mb-12">
       <h2 className="mb-2 border-b-2 border-black pb-2 text-xl font-bold uppercase tracking-widest">Approved manufacturer specifications</h2>
       <p className="mb-6 text-sm text-gray-600">Only the manufacturer pages assigned to the approval scope are included below.</p>
+
+      {(isError || failedPages.size > 0) && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded text-sm space-y-3" role="alert" aria-live="polite">
+          <p className="font-bold">Image preview unavailable</p>
+          <p>We couldn't load the manufacturer specification images right now. You can retry loading them, or view the exact approval document directly.</p>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLoaded(new Set());
+                refetch();
+              }}
+            >
+              Retry Images
+            </Button>
+            <Button type="button" variant="default" size="sm" onClick={openVerifiedFallback} disabled={isOpeningFallback}>
+              {isOpeningFallback ? "Opening PDF…" : "Open PDF Document"}
+            </Button>
+          </div>
+          {fallbackError && <p className="pt-2 font-medium text-red-700" role="alert">{fallbackError}</p>}
+          {fallbackOpened && (
+            <p className="text-green-700 font-medium pt-2">
+              Document opened. You may proceed with signing once you have reviewed the PDF.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="space-y-8">
         {Array.from({ length: pageCount }, (_, index) => (
           <div key={index + 1} className="overflow-hidden rounded border border-gray-300 bg-white shadow-sm">
@@ -104,8 +195,15 @@ function ScopedPacketViewer({
               token={token}
               pageNumber={index + 1}
               documentVersion={documentVersion}
-              onLoad={() => setLoaded((current) => new Set(current).add(index + 1))}
-              onError={() => setImageError(true)}
+              onLoad={() => {
+                setLoaded((current) => new Set(current).add(index + 1));
+                setFailedPages((current) => {
+                  const next = new Set(current);
+                  next.delete(index + 1);
+                  return next;
+                });
+              }}
+              onError={() => setFailedPages((current) => new Set(current).add(index + 1))}
             />
           </div>
         ))}
@@ -121,6 +219,7 @@ export default function ScopedPublicSignoffPage() {
   const [shareEmail, setShareEmail] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
   const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
+  const [fallbackOpened, setFallbackOpened] = useState(false);
   const onManifestStateChange = React.useCallback((next: { hasManifest: boolean; isReady: boolean; error?: string }) => {
     setManifestState((current) => current.hasManifest === next.hasManifest && current.isReady === next.isReady && current.error === next.error ? current : next);
   }, []);
@@ -181,7 +280,8 @@ export default function ScopedPublicSignoffPage() {
 
   const signed = detail.status === "signed";
   const signoff = detail.signoff ?? null;
-  if (signed !== Boolean(signoff)) {
+  const receipt = detail.receipt ?? null;
+  if (signed && !receipt) {
     return <div className="flex min-h-[100dvh] items-center justify-center bg-gray-100 p-8"><div className="max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center shadow-lg"><h1 className="mb-2 font-serif text-xl font-bold">Approval Record Unavailable</h1><p className="text-gray-600">This approval link returned an inconsistent signing record. Please contact your Kuiken Brothers representative.</p></div></div>;
   }
   const disabledReason = detail.status === "needs_resigning"
@@ -215,33 +315,38 @@ export default function ScopedPublicSignoffPage() {
                 Share Link
               </Button>
             )}
-            <Button onClick={() => window.print()} disabled={Boolean(disabledReason)} className="bg-black text-white hover:bg-gray-800" title="Print this exact approval document or choose Save as PDF.">
+            <Button onClick={() => window.print()} disabled={!receipt && Boolean(disabledReason)} className="bg-black text-white hover:bg-gray-800" title="Print this exact approval document or choose Save as PDF.">
               <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
             </Button>
           </div>
         </div>
-        <SignoffDocument
-          quote={detail.quote}
-          revisions={detail.revisions}
-          signoff={signoff}
-          isSigned={signed}
-          productTypes={detail.productTypes}
-          notIncludedProductTypes={detail.notIncludedProductTypes}
-          preparedAt={detail.preparedAt}
-          hasManifest={manifestState.hasManifest}
-          disabledReason={disabledReason}
-          packetSection={<ScopedPacketViewer token={token!} documentVersion={detail.documentVersion} onStateChange={onManifestStateChange} />}
-          onSubmit={(customerName, stakeholderRole, signatureType, signatureData) => sign.mutate({
-            token: token!,
-            data: {
-              customerName,
-              stakeholderRole,
-              signatureType,
-              signatureData,
-              documentVersion: detail.documentVersion,
-            },
-          })}
-        />
+        {receipt ? (
+          <SignoffReceiptView receipt={receipt} />
+        ) : (
+          <SignoffDocument
+            quote={detail.quote}
+            revisions={detail.revisions}
+            signoff={null}
+            isSigned={false}
+            productTypes={detail.productTypes}
+            notIncludedProductTypes={detail.notIncludedProductTypes}
+            preparedAt={detail.preparedAt}
+            hasManifest={manifestState.hasManifest}
+            disabledReason={disabledReason}
+            isSubmitting={sign.isPending}
+            packetSection={<ScopedPacketViewer token={token!} documentVersion={detail.documentVersion} onStateChange={onManifestStateChange} fallbackOpened={fallbackOpened} setFallbackOpened={setFallbackOpened} />}
+            onSubmit={(customerName, stakeholderRole, signatureType, signatureData) => sign.mutate({
+              token: token!,
+              data: {
+                customerName,
+                stakeholderRole,
+                signatureType,
+                signatureData,
+                documentVersion: detail.documentVersion,
+              },
+            })}
+          />
+        )}
         <Dialog open={shareOpen} onOpenChange={setShareOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>

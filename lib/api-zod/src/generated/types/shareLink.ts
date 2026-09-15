@@ -5,7 +5,17 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ShareLinkStatus } from './shareLinkStatus';
 
 export interface ShareLink {
   token: string;
+  status: ShareLinkStatus;
+  createdAt: Date;
+  /** @nullable */
+  expiresAt: Date | null;
+  /** @nullable */
+  revokedAt: Date | null;
+  /** @nullable */
+  rotatedFrom: string | null;
+  publicPath: string;
 }

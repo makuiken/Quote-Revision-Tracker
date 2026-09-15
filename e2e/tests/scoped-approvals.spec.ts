@@ -36,6 +36,7 @@ type ScopedApproval = {
   documentVersion: string;
   publicPath: string;
   status: ApprovalStatus;
+  revokedAt: string | null;
 };
 
 type ScopedApprovalList = {
@@ -193,6 +194,62 @@ test.describe.serial("scoped approval API contract", () => {
     expect(internalSnapshot.status()).toBe(200);
     expect(publicSnapshot.status()).toBe(200);
     expect(await internalSnapshot.body()).toEqual(await publicSnapshot.body());
+
+    // Revoking a signed customer URL closes every public route without
+    // changing the signed evidence state or removing the staff PDF.
+    const revokeSigned = await api.delete(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${signedRemaining.id}`),
+    );
+    expect(revokeSigned.status()).toBe(204);
+    expect((await api.get(apiPath(`/public/scoped-signoff/${remaining.token}`))).status()).toBe(404);
+    expect((await api.get(apiPath(`/public/scoped-signoff/${remaining.token}/document`))).status()).toBe(404);
+    const retainedHistory = await approvalForToken(api, quoteId, remaining.token);
+    expect(retainedHistory.status).toBe("signed");
+    expect(retainedHistory.revokedAt).not.toBeNull();
+    const retainedInternalSnapshot = await api.get(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${signedRemainingId}/document`),
+    );
+    expect(retainedInternalSnapshot.status()).toBe(200);
+    expect(await retainedInternalSnapshot.body()).toEqual(await internalSnapshot.body());
+  });
+
+  test("expires and rotates scoped and legacy links without reviving old URLs", async ({ page }) => {
+    const api = page.context().request;
+    const quoteId = await createScopedQuote(api);
+    const expiredAt = new Date(Date.now() - 1_000).toISOString();
+
+    const scoped = await createScopedApproval(api, quoteId, ["windows"]);
+    const expireScoped = await api.patch(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${scoped.id}`),
+      { data: { expiresAt: expiredAt } },
+    );
+    expect(expireScoped.status()).toBe(200);
+    expect((await api.get(apiPath(`/public/scoped-signoff/${scoped.token}`))).status()).toBe(404);
+
+    const rotateScoped = await api.post(
+      apiPath(`/quotes/${quoteId}/scoped-approvals/${scoped.id}/rotate`),
+    );
+    expect(rotateScoped.status()).toBe(201);
+    const scopedReplacement = (await rotateScoped.json()) as ScopedApproval;
+    expect(scopedReplacement.token).not.toBe(scoped.token);
+    expect((await api.get(apiPath(`/public/scoped-signoff/${scoped.token}`))).status()).toBe(404);
+    expect((await api.get(apiPath(`/public/scoped-signoff/${scopedReplacement.token}`))).status()).toBe(200);
+
+    const legacy = await api.post(apiPath(`/quotes/${quoteId}/share-link`));
+    expect(legacy.status()).toBe(201);
+    const legacyLink = (await legacy.json()) as { token: string };
+    const expireLegacy = await api.patch(apiPath(`/quotes/${quoteId}/share-link`), {
+      data: { expiresAt: expiredAt },
+    });
+    expect(expireLegacy.status()).toBe(200);
+    expect((await api.get(apiPath(`/public/signoff/${legacyLink.token}`))).status()).toBe(404);
+
+    const rotateLegacy = await api.post(apiPath(`/quotes/${quoteId}/share-link/rotate`));
+    expect(rotateLegacy.status()).toBe(201);
+    const legacyReplacement = (await rotateLegacy.json()) as { token: string };
+    expect(legacyReplacement.token).not.toBe(legacyLink.token);
+    expect((await api.get(apiPath(`/public/signoff/${legacyLink.token}`))).status()).toBe(404);
+    expect((await api.get(apiPath(`/public/signoff/${legacyReplacement.token}`))).status()).toBe(200);
   });
 
   test("does not expose a legacy share token or raw snapshot fields through a scoped detail", async ({
@@ -328,7 +385,7 @@ test.describe.serial("scoped approval API contract", () => {
     // signed PDF must be served from the captured immutable snapshot rather
     // than regenerated from the revised quote.
     const invalidatedDoors = await approvalForToken(api, quoteId, doors.token);
-    expect(invalidatedDoors.status).toBe("signed");
+    expect(invalidatedDoors.status).toBe("needs_resigning");
     expect(invalidatedDoors.productTypes).toEqual([
       "interiorDoors",
       "exteriorDoors",
@@ -1058,10 +1115,10 @@ test.describe.serial("scoped approval API contract", () => {
     // scope rather than manufacturing a second, overlapping token.
     await page.reload();
     await expect(
-      page.getByRole("heading", { name: "Existing approval links", exact: true }),
+      page.getByRole("heading", { name: "Approval Link History", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("Included: Windows", { exact: true }),
+      page.getByRole("heading", { name: "Scope: Windows", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Reuse this exact request" }).click();
     await expect(
@@ -1070,13 +1127,14 @@ test.describe.serial("scoped approval API contract", () => {
 
     // Cancellation invokes the revoke endpoint, removes the recovered open
     // request from the picker, and permits a new exact scope to be prepared.
-    await page.getByRole("button", { name: "Cancel request" }).click();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Revoke customer link" }).click();
     await expect(
-      page.getByText("Approval request cancelled", { exact: true }),
+      page.getByText("Customer link revoked", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Existing approval links", exact: true }),
-    ).toHaveCount(0);
+      page.getByText("Link access: revoked", { exact: true }),
+    ).toBeVisible();
     const revokedEndpoints = await Promise.all([
       api.get(apiPath(`/public/scoped-signoff/${token}`)),
       api.get(apiPath(`/public/scoped-signoff/${token}/packet`)),
@@ -1117,7 +1175,7 @@ test.describe.serial("scoped approval API contract", () => {
 
     await page.goto(`/quotes/${quoteId}/signoff`);
     await expect(
-      page.getByRole("heading", { name: "Existing approval links", exact: true }),
+      page.getByRole("heading", { name: "Approval Link History", exact: true }),
     ).toBeVisible();
     // Default selection includes all product types. Leave only Interior Doors
     // selected; it does not overlap the existing Windows request.

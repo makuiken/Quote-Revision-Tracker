@@ -94,6 +94,14 @@ export const quotesTable = pgTable("quotes", {
   specs: jsonb("specs").$type<QuoteSpecs>().notNull().default({}),
   notes: text("notes"),
   shareToken: text("share_token").unique(),
+  // Mutable access-control metadata for the legacy public link. The signed
+  // quote/evidence is never changed when a link is rotated or revoked.
+  shareTokenCreatedAt: timestamp("share_token_created_at", { withTimezone: true }),
+  shareTokenExpiresAt: timestamp("share_token_expires_at", { withTimezone: true }),
+  shareTokenRevokedAt: timestamp("share_token_revoked_at", { withTimezone: true }),
+  shareTokenRevokedById: text("share_token_revoked_by_id"),
+  shareTokenRevocationReason: text("share_token_revocation_reason"),
+  shareTokenRotatedFrom: text("share_token_rotated_from"),
   createdById: text("created_by_id").notNull(),
   createdByName: text("created_by_name").notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -428,6 +436,12 @@ export const scopedApprovalRequestsTable = pgTable("scoped_approval_requests", {
   status: text("status").$type<"open" | "signed" | "stale" | "revoked">().notNull().default("open"),
   createdById: text("created_by_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedById: text("revoked_by_id"),
+  revocationReason: text("revocation_reason"),
+  replacedFromRequestId: integer("replaced_from_request_id"),
+  replacementRequestId: integer("replacement_request_id"),
   signedAt: timestamp("signed_at", { withTimezone: true }),
 });
 
@@ -475,6 +489,24 @@ export const scopedApprovalCoverageTable = pgTable(
   },
   (table) => [unique("scoped_approval_coverage_quote_type_unique").on(table.quoteId, table.productType)],
 );
+
+// Append-only audit trail for legacy link lifecycle operations. Scoped request
+// rows carry their own replacement chain; this table preserves legacy tokens
+// after rotation, where the current quote row must contain only the newest
+// usable token.
+export const shareLinkAuditTable = pgTable("share_link_audit", {
+  id: serial("id").primaryKey(),
+  quoteId: integer("quote_id")
+    .notNull()
+    .references(() => quotesTable.id, { onDelete: "cascade" }),
+  token: text("token").notNull(),
+  action: text("action").$type<"created" | "revoked" | "rotated" | "expired">().notNull(),
+  replacementToken: text("replacement_token"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  actorId: text("actor_id"),
+  reason: text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // Database-backed claim/lease for unsigned signoff document builds. The
 // document itself remains an immutable object; this table only coordinates
@@ -592,6 +624,7 @@ export type ManufacturerPacket = typeof manufacturerPacketsTable.$inferSelect;
 export type ScopedApprovalRequest = typeof scopedApprovalRequestsTable.$inferSelect;
 export type ScopedApproval = typeof scopedApprovalsTable.$inferSelect;
 export type ScopedApprovalCoverage = typeof scopedApprovalCoverageTable.$inferSelect;
+export type ShareLinkAudit = typeof shareLinkAuditTable.$inferSelect;
 export type AppUser = typeof usersTable.$inferSelect;
 export type FieldOptions = typeof fieldOptionsTable.$inferSelect;
 export type ManufacturerRedactionTemplate =

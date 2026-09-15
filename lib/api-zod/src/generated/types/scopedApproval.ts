@@ -22,4 +22,20 @@ export interface ScopedApproval {
   status: ScopedApprovalStatus;
   /** @nullable */
   signedAt?: Date | null;
+  createdAt: Date;
+  createdById: string;
+  /** @nullable */
+  expiresAt: Date | null;
+  /** @nullable */
+  revokedAt: Date | null;
+  /** @nullable */
+  revokedById: string | null;
+  /** @nullable */
+  revocationReason: string | null;
+  /** @nullable */
+  replacedFromRequestId: number | null;
+  /** @nullable */
+  replacementRequestId: number | null;
+  /** @nullable */
+  invalidationReason: string | null;
 }

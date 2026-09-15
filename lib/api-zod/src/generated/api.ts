@@ -1485,7 +1485,19 @@ export const GetQuoteResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 }),zod.null()]).optional(),
   "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing'),
   "approvalCoverage": zod.array(zod.object({
@@ -1500,7 +1512,19 @@ export const GetQuoteResponse = zod.object({
   "signedAt": zod.coerce.date(),
   "documentAvailable": zod.boolean(),
   "invalidationReason": zod.string().nullish()
-}).describe('Legacy whole-quote evidence is never rendered against mutable HTML.'),zod.null()]).optional()
+}).describe('Legacy whole-quote evidence is never rendered against mutable HTML.'),zod.null()]).optional(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()])
 })
 
 
@@ -1998,7 +2022,19 @@ export const GetSignoffResponse = zod.union([zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 }),zod.null()])
 
 
@@ -2029,7 +2065,19 @@ export const SaveSignoffResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 })
 
 
@@ -2061,7 +2109,16 @@ export const ListScopedApprovalsResponse = zod.object({
   "documentVersion": zod.string(),
   "publicPath": zod.string().optional(),
   "status": zod.enum(['open', 'signed', 'needs_resigning']),
-  "signedAt": zod.coerce.date().nullish()
+  "signedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "createdById": zod.string(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "revokedById": zod.string().nullable(),
+  "revocationReason": zod.string().nullable(),
+  "replacedFromRequestId": zod.int().nullable(),
+  "replacementRequestId": zod.int().nullable(),
+  "invalidationReason": zod.string().nullable()
 })),
   "coverage": zod.array(zod.object({
   "productType": zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork']),
@@ -2096,12 +2153,56 @@ export const CreateScopedApprovalResponse = zod.object({
   "documentVersion": zod.string(),
   "publicPath": zod.string().optional(),
   "status": zod.enum(['open', 'signed', 'needs_resigning']),
-  "signedAt": zod.coerce.date().nullish()
+  "signedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "createdById": zod.string(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "revokedById": zod.string().nullable(),
+  "revocationReason": zod.string().nullable(),
+  "replacedFromRequestId": zod.int().nullable(),
+  "replacementRequestId": zod.int().nullable(),
+  "invalidationReason": zod.string().nullable()
 })
 
 
 /**
- * @summary Cancel an open scoped approval request without deleting audit history
+ * @summary Update the expiry of an open or signed scoped approval link
+ */
+export const UpdateScopedApprovalLinkParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "requestId": zod.coerce.number().int()
+})
+
+export const UpdateScopedApprovalLinkBody = zod.object({
+  "expiresAt": zod.coerce.date().nullable().describe('Absolute expiry. Null removes an expiry from an otherwise active link.')
+})
+
+export const UpdateScopedApprovalLinkResponse = zod.object({
+  "id": zod.int().optional(),
+  "approvalId": zod.int().nullish(),
+  "token": zod.string(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "preparedAt": zod.coerce.date().optional(),
+  "documentVersion": zod.string(),
+  "publicPath": zod.string().optional(),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "signedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "createdById": zod.string(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "revokedById": zod.string().nullable(),
+  "revocationReason": zod.string().nullable(),
+  "replacedFromRequestId": zod.int().nullable(),
+  "replacementRequestId": zod.int().nullable(),
+  "invalidationReason": zod.string().nullable()
+})
+
+
+/**
+ * @summary Revoke an open or signed scoped approval link without deleting audit history or signed evidence
  */
 export const CancelScopedApprovalParams = zod.object({
   "id": zod.coerce.number().int(),
@@ -2109,6 +2210,37 @@ export const CancelScopedApprovalParams = zod.object({
 })
 
 export const CancelScopedApprovalResponse = zod.void()
+
+
+/**
+ * @summary Revoke and replace an open scoped approval link without changing its locked snapshot
+ */
+export const RotateScopedApprovalLinkParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "requestId": zod.coerce.number().int()
+})
+
+export const RotateScopedApprovalLinkResponse = zod.object({
+  "id": zod.int().optional(),
+  "approvalId": zod.int().nullish(),
+  "token": zod.string(),
+  "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
+  "preparedAt": zod.coerce.date().optional(),
+  "documentVersion": zod.string(),
+  "publicPath": zod.string().optional(),
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "signedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "createdById": zod.string(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "revokedById": zod.string().nullable(),
+  "revocationReason": zod.string().nullable(),
+  "replacedFromRequestId": zod.int().nullable(),
+  "replacementRequestId": zod.int().nullable(),
+  "invalidationReason": zod.string().nullable()
+})
 
 
 /**
@@ -2192,7 +2324,19 @@ export const GetPublicScopedSignoffResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 }),zod.null()]).optional(),
   "approval": zod.union([zod.object({
   "id": zod.int(),
@@ -2201,13 +2345,37 @@ export const GetPublicScopedSignoffResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 }),zod.null()]).optional(),
   "productTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "notIncludedProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])),
   "preparedAt": zod.coerce.date().describe('Locked preparation time of this scoped approval snapshot.'),
   "documentVersion": zod.string(),
-  "status": zod.enum(['open', 'signed', 'needs_resigning'])
+  "status": zod.enum(['open', 'signed', 'needs_resigning']),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()])
 })
 
 
@@ -2238,7 +2406,19 @@ export const SavePublicScopedSignoffResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 })
 
 
@@ -2250,7 +2430,63 @@ export const CreateShareLinkParams = zod.object({
 })
 
 export const CreateShareLinkResponse = zod.object({
-  "token": zod.string()
+  "token": zod.string(),
+  "status": zod.enum(['active', 'expired', 'revoked']),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "rotatedFrom": zod.string().nullable(),
+  "publicPath": zod.string()
+})
+
+
+/**
+ * @summary Update the expiry of the legacy public share link
+ */
+export const UpdateShareLinkParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const UpdateShareLinkBody = zod.object({
+  "expiresAt": zod.coerce.date().nullable().describe('Absolute expiry. Null removes an expiry from an otherwise active link.')
+})
+
+export const UpdateShareLinkResponse = zod.object({
+  "token": zod.string(),
+  "status": zod.enum(['active', 'expired', 'revoked']),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "rotatedFrom": zod.string().nullable(),
+  "publicPath": zod.string()
+})
+
+
+/**
+ * @summary Revoke the legacy public share link without deleting signed evidence
+ */
+export const RevokeShareLinkParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RevokeShareLinkResponse = zod.void()
+
+
+/**
+ * @summary Rotate the legacy public share link and preserve its audit record
+ */
+export const RotateShareLinkParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RotateShareLinkResponse = zod.object({
+  "token": zod.string(),
+  "status": zod.enum(['active', 'expired', 'revoked']),
+  "createdAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "revokedAt": zod.coerce.date().nullable(),
+  "rotatedFrom": zod.string().nullable(),
+  "publicPath": zod.string()
 })
 
 
@@ -2353,7 +2589,19 @@ export const GetPublicSignoffResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 }),zod.null()]).optional(),
   "documentVersion": zod.string().describe('Opaque version of the signoff document content; must be echoed back when signing'),
   "approvalCoverage": zod.array(zod.object({
@@ -2368,7 +2616,19 @@ export const GetPublicSignoffResponse = zod.object({
   "signedAt": zod.coerce.date(),
   "documentAvailable": zod.boolean(),
   "invalidationReason": zod.string().nullish()
-}).describe('Legacy whole-quote evidence is never rendered against mutable HTML.'),zod.null()]).optional()
+}).describe('Legacy whole-quote evidence is never rendered against mutable HTML.'),zod.null()]).optional(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()])
 })
 
 
@@ -2399,7 +2659,19 @@ export const SavePublicSignoffResponse = zod.object({
   "stakeholderRole": zod.enum(['Homeowner', 'Contractor', 'Architect/Designer', 'Other']),
   "signatureType": zod.enum(['typed', 'drawn']),
   "signatureData": zod.string(),
-  "signedAt": zod.coerce.date()
+  "signedAt": zod.coerce.date(),
+  "receipt": zod.union([zod.object({
+  "signerName": zod.string(),
+  "signerRole": zod.string(),
+  "signedAt": zod.coerce.date(),
+  "quoteId": zod.int(),
+  "quoteNumber": zod.string(),
+  "signedDocumentAvailable": zod.boolean(),
+  "signedDocumentPath": zod.string().nullable(),
+  "approvalScope": zod.array(zod.string()),
+  "status": zod.enum(['current', 'outdated']),
+  "reason": zod.string().nullable()
+}),zod.null()]).optional()
 })
 
 

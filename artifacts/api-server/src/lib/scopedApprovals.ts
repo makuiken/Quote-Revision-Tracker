@@ -259,6 +259,7 @@ export async function approvalCoverage(tx: Pick<typeof db, "select">, quote: Quo
       status: row?.status ?? "open",
       approvalId: row?.approvalId ?? null,
       invalidationReason: row?.invalidationReason ?? null,
+      invalidatedAt: row?.invalidatedAt ?? null,
     };
   });
 }

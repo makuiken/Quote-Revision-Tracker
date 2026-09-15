@@ -1163,10 +1163,36 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
   /quotes/{id}/scoped-approvals/{requestId}:
+    patch:
+      operationId: updateScopedApprovalLink
+      tags: [signoff]
+      summary: Update the expiry of an open or signed scoped approval link
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LinkExpiryInput" }
+      responses:
+        "200":
+          description: Updated scoped approval link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopedApproval" }
+        "409":
+          description: Link is revoked or is not an open/signed request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
     delete:
       operationId: cancelScopedApproval
       tags: [signoff]
-      summary: Cancel an open scoped approval request without deleting audit history
+      summary: Revoke an open or signed scoped approval link without deleting audit history or signed evidence
       parameters:
         - $ref: "#/components/parameters/QuoteId"
         - name: requestId
@@ -1175,14 +1201,36 @@ paths:
           schema: { type: integer }
       responses:
         "204":
-          description: Open request revoked
+          description: Link revoked; signed requests retain signed status and immutable evidence
         "404":
           description: Quote or request not found
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
-          description: Request is already signed, stale, or revoked
+          description: Request is stale or already revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /quotes/{id}/scoped-approvals/{requestId}/rotate:
+    post:
+      operationId: rotateScopedApprovalLink
+      tags: [signoff]
+      summary: Revoke and replace an open scoped approval link without changing its locked snapshot
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "201":
+          description: Replacement scoped approval link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopedApproval" }
+        "409":
+          description: Link is no longer open
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -1245,6 +1293,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateShareLink
+      tags: [signoff]
+      summary: Update the expiry of the legacy public share link
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LinkExpiryInput" }
+      responses:
+        "200":
+          description: Updated legacy share link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLink" }
+    delete:
+      operationId: revokeShareLink
+      tags: [signoff]
+      summary: Revoke the legacy public share link without deleting signed evidence
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "204": { description: Legacy share link revoked }
+  /quotes/{id}/share-link/rotate:
+    post:
+      operationId: rotateShareLink
+      tags: [signoff]
+      summary: Rotate the legacy public share link and preserve its audit record
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+      responses:
+        "201":
+          description: Replacement legacy share link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareLink" }
   /public/signoff/{token}:
     get:
       operationId: getPublicSignoff
@@ -2445,10 +2531,48 @@ components:
     ShareLink:
       type: object
       properties:
-        token:
-          type: string
+        token: { type: string }
+        status: { type: string, enum: [active, expired, revoked] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        revokedAt: { type: ["string", "null"], format: date-time }
+        rotatedFrom: { type: ["string", "null"] }
+        publicPath: { type: string }
+      required: [token, status, createdAt, expiresAt, revokedAt, rotatedFrom, publicPath]
+    LinkExpiryInput:
+      type: object
+      properties:
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Absolute expiry. Null removes an expiry from an otherwise active link.
+      required: [expiresAt]
+    SignoffReceipt:
+      type: object
+      properties:
+        signerName: { type: string }
+        signerRole: { type: string }
+        signedAt: { type: string, format: date-time }
+        quoteId: { type: integer }
+        quoteNumber: { type: string }
+        signedDocumentAvailable: { type: boolean }
+        signedDocumentPath: { type: ["string", "null"] }
+        approvalScope:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [current, outdated] }
+        reason: { type: ["string", "null"] }
       required:
-        - token
+        - signerName
+        - signerRole
+        - signedAt
+        - quoteId
+        - quoteNumber
+        - signedDocumentAvailable
+        - signedDocumentPath
+        - approvalScope
+        - status
+        - reason
     ShareInfo:
       type: object
       properties:
@@ -2691,7 +2815,9 @@ components:
           items: { $ref: "#/components/schemas/ApprovalCoverage" }
         legacyApproval:
           anyOf: [{ $ref: "#/components/schemas/LegacyApproval" }, { type: "null" }]
-      required: [quote, revisions, documentVersion]
+        receipt:
+          anyOf: [{ $ref: "#/components/schemas/SignoffReceipt" }, { type: "null" }]
+      required: [quote, revisions, documentVersion, receipt]
     ArchiveQuoteInput:
       type: object
       properties:
@@ -2811,6 +2937,8 @@ components:
           enum: [typed, drawn]
         signatureData: { type: string }
         signedAt: { type: string, format: date-time }
+        receipt:
+          anyOf: [{ $ref: "#/components/schemas/SignoffReceipt" }, { type: "null" }]
       required: [id, quoteId, customerName, stakeholderRole, signatureType, signatureData, signedAt]
     LegacyApproval:
       description: Legacy whole-quote evidence is never rendered against mutable HTML.
@@ -2878,7 +3006,16 @@ components:
         publicPath: { type: string }
         status: { type: string, enum: [open, signed, needs_resigning] }
         signedAt: { type: ["string", "null"], format: date-time }
-      required: [token, productTypes, notIncludedProductTypes, documentVersion, status]
+        createdAt: { type: string, format: date-time }
+        createdById: { type: string }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        revokedAt: { type: ["string", "null"], format: date-time }
+        revokedById: { type: ["string", "null"] }
+        revocationReason: { type: ["string", "null"] }
+        replacedFromRequestId: { type: ["integer", "null"] }
+        replacementRequestId: { type: ["integer", "null"] }
+        invalidationReason: { type: ["string", "null"] }
+      required: [token, productTypes, notIncludedProductTypes, documentVersion, status, createdAt, createdById, expiresAt, revokedAt, revokedById, revocationReason, replacedFromRequestId, replacementRequestId, invalidationReason]
     ScopedApprovalsResponse:
       type: object
       properties:
@@ -2912,7 +3049,9 @@ components:
           description: Locked preparation time of this scoped approval snapshot.
         documentVersion: { type: string }
         status: { type: string, enum: [open, signed, needs_resigning] }
-      required: [quote, revisions, productTypes, notIncludedProductTypes, preparedAt, documentVersion, status]
+        receipt:
+          anyOf: [{ $ref: "#/components/schemas/SignoffReceipt" }, { type: "null" }]
+      required: [quote, revisions, productTypes, notIncludedProductTypes, preparedAt, documentVersion, status, receipt]
     ScopedPublicQuote:
       description: Strict public projection for a locked scoped request.
       type: object

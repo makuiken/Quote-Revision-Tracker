@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   exists,
+  gt,
   ilike,
   inArray,
   isNotNull,
@@ -32,6 +33,7 @@ import {
   scopedApprovalRequestsTable,
   scopedApprovalsTable,
   scopedApprovalCoverageTable,
+  shareLinkAuditTable,
 } from "@workspace/db";
 import {
   GetCurrentUserResponse,
@@ -72,10 +74,22 @@ import {
   SetRevisionSignoffExclusionResponse,
   CreateShareLinkParams,
   CreateShareLinkResponse,
+  UpdateShareLinkParams,
+  UpdateShareLinkBody,
+  UpdateShareLinkResponse,
+  RotateShareLinkParams,
+  RotateShareLinkResponse,
   GetSignoffParams,
   SaveSignoffParams,
   SaveSignoffBody,
   SaveSignoffResponse,
+  CreateScopedApprovalResponse,
+  UpdateScopedApprovalLinkParams,
+  UpdateScopedApprovalLinkBody,
+  UpdateScopedApprovalLinkResponse,
+  RotateScopedApprovalLinkParams,
+  RotateScopedApprovalLinkResponse,
+  ListScopedApprovalsResponse,
   ClearSignoffParams,
   ListAttachmentsParams,
   ListAttachmentsResponse,
@@ -984,6 +998,7 @@ router.get("/quotes/:id", async (req, res): Promise<void> => {
         approvedPacket,
       ),
       approvalCoverage: coverage,
+      receipt: null,
     }),
   );
 });
@@ -2019,7 +2034,69 @@ router.delete(
   },
 );
 
-router.post("/quotes/:id/share-link", async (req, res): Promise<void> => {
+function legacyShareLinkResponse(quote: {
+  id: number;
+  shareToken: string | null;
+  shareTokenCreatedAt: Date | null;
+  shareTokenExpiresAt: Date | null;
+  shareTokenRevokedAt: Date | null;
+  shareTokenRotatedFrom: string | null;
+}) {
+  const now = new Date();
+  const status = quote.shareTokenRevokedAt
+    ? "revoked" as const
+    : quote.shareTokenExpiresAt && quote.shareTokenExpiresAt <= now
+      ? "expired" as const
+      : "active" as const;
+  return {
+    token: quote.shareToken ?? "",
+    status,
+    createdAt: quote.shareTokenCreatedAt ?? new Date(0),
+    expiresAt: quote.shareTokenExpiresAt,
+    revokedAt: quote.shareTokenRevokedAt,
+    rotatedFrom: quote.shareTokenRotatedFrom,
+    publicPath: `/public/signoff/${quote.shareToken ?? ""}`,
+  };
+}
+
+function scopedApprovalResponse(
+  request: typeof scopedApprovalRequestsTable.$inferSelect,
+  approval: typeof scopedApprovalsTable.$inferSelect | undefined,
+  snapshot: { notIncludedProductTypes?: string[] },
+  invalidationReason: string | null = null,
+) {
+  const expired = request.expiresAt !== null && request.expiresAt <= new Date();
+  const lifecycleReason = request.revocationReason ??
+    (expired ? "Approval link expired." : null);
+  return {
+    id: request.id,
+    approvalId: approval?.id ?? null,
+    token: request.token,
+    productTypes: request.productTypes,
+    notIncludedProductTypes: snapshot.notIncludedProductTypes ?? [],
+    documentVersion: request.documentVersion,
+    publicPath: `/public/scoped-signoff/${request.token}`,
+    status: approval && !invalidationReason
+      ? "signed" as const
+      : !approval && request.status === "signed"
+        ? "signed" as const
+      : !approval && request.status === "open" && !expired
+        ? "open" as const
+        : "needs_resigning" as const,
+    signedAt: approval?.signedAt ?? null,
+    createdAt: request.createdAt,
+    createdById: request.createdById,
+    expiresAt: request.expiresAt,
+    revokedAt: request.revokedAt,
+    revokedById: request.revokedById,
+    revocationReason: request.revocationReason,
+    replacedFromRequestId: request.replacedFromRequestId,
+    replacementRequestId: request.replacementRequestId,
+    invalidationReason: invalidationReason ?? lifecycleReason,
+  };
+}
+
+router.post("/quotes/:id/share-link", async (req: AuthedRequest, res): Promise<void> => {
   const params = CreateShareLinkParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -2043,8 +2120,11 @@ router.post("/quotes/:id/share-link", async (req, res): Promise<void> => {
     const newToken = randomBytes(24).toString("base64url");
     await tx
       .update(quotesTable)
-      .set({ shareToken: newToken })
+      .set({ shareToken: newToken, shareTokenCreatedAt: new Date(), shareTokenRevokedAt: null, shareTokenRevocationReason: null })
       .where(eq(quotesTable.id, quote.id));
+    await tx.insert(shareLinkAuditTable).values({
+      quoteId: quote.id, token: newToken, action: "created", actorId: req.userId!,
+    });
     return newToken;
   });
 
@@ -2053,7 +2133,82 @@ router.post("/quotes/:id/share-link", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(CreateShareLinkResponse.parse({ token }));
+  const [updated] = await db.select().from(quotesTable).where(eq(quotesTable.id, quote.id));
+  res.json(CreateShareLinkResponse.parse(legacyShareLinkResponse(updated ?? quote)));
+});
+
+router.patch("/quotes/:id/share-link", async (req: AuthedRequest, res): Promise<void> => {
+  const params = UpdateShareLinkParams.safeParse(req.params);
+  const body = UpdateShareLinkBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Invalid body." });
+    return;
+  }
+  const result = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, params.data.id);
+    if (!quote || !quote.shareToken) return null;
+    if (quote.shareTokenRevokedAt) return "revoked" as const;
+    await tx.update(quotesTable).set({ shareTokenExpiresAt: body.data.expiresAt })
+      .where(eq(quotesTable.id, quote.id));
+    return { ...quote, shareTokenExpiresAt: body.data.expiresAt };
+  });
+  if (!result) { res.status(404).json({ error: "Share link not found." }); return; }
+  if (result === "revoked") { res.status(409).json({ error: "A revoked share link cannot be edited." }); return; }
+  res.json(UpdateShareLinkResponse.parse(legacyShareLinkResponse(result)));
+});
+
+router.delete("/quotes/:id/share-link", async (req: AuthedRequest, res): Promise<void> => {
+  const params = UpdateShareLinkParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const result = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, params.data.id);
+    if (!quote || !quote.shareToken) return "notFound" as const;
+    if (quote.shareTokenRevokedAt) return "alreadyRevoked" as const;
+    const now = new Date();
+    await tx.update(quotesTable).set({
+      shareTokenRevokedAt: now,
+      shareTokenRevokedById: req.userId!,
+      shareTokenRevocationReason: "Revoked by staff",
+    }).where(eq(quotesTable.id, quote.id));
+    await tx.insert(shareLinkAuditTable).values({
+      quoteId: quote.id, token: quote.shareToken, action: "revoked",
+      actorId: req.userId!, reason: "Revoked by staff", expiresAt: quote.shareTokenExpiresAt,
+    });
+    return "ok" as const;
+  });
+  if (result === "notFound") { res.status(404).json({ error: "Share link not found." }); return; }
+  if (result === "alreadyRevoked") { res.status(409).json({ error: "Share link is already revoked." }); return; }
+  res.sendStatus(204);
+});
+
+router.post("/quotes/:id/share-link/rotate", async (req: AuthedRequest, res): Promise<void> => {
+  const params = RotateShareLinkParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const result = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, params.data.id);
+    if (!quote || !quote.shareToken) return null;
+    const oldToken = quote.shareToken;
+    const token = randomBytes(24).toString("base64url");
+    const now = new Date();
+    await tx.update(quotesTable).set({
+      shareToken: token, shareTokenCreatedAt: now, shareTokenExpiresAt: null,
+      shareTokenRevokedAt: null, shareTokenRevokedById: null,
+      shareTokenRevocationReason: null, shareTokenRotatedFrom: oldToken,
+    }).where(eq(quotesTable.id, quote.id));
+    await tx.insert(shareLinkAuditTable).values({
+      quoteId: quote.id, token: oldToken, action: "rotated",
+      replacementToken: token, actorId: req.userId!, expiresAt: quote.shareTokenExpiresAt,
+    });
+    await tx.insert(shareLinkAuditTable).values({
+      quoteId: quote.id, token, action: "created", actorId: req.userId!,
+    });
+    return {
+      ...quote, shareToken: token, shareTokenCreatedAt: now, shareTokenExpiresAt: null,
+      shareTokenRevokedAt: null, shareTokenRotatedFrom: oldToken,
+    };
+  });
+  if (!result) { res.status(404).json({ error: "Share link not found." }); return; }
+  res.status(201).json(RotateShareLinkResponse.parse(legacyShareLinkResponse(result)));
 });
 
 router.get("/quotes/:id/signoff", async (req, res): Promise<void> => {
@@ -2089,24 +2244,17 @@ router.get("/quotes/:id/scoped-approvals", async (req, res): Promise<void> => {
     approvalCoverage(db, quote),
   ]);
   const approvalByRequest = new Map(approvals.map((approval) => [approval.requestId, approval]));
-  res.json({
+  res.json(ListScopedApprovalsResponse.parse({
     approvals: requests.map((request) => {
       const approval = approvalByRequest.get(request.id);
       const snapshot = request.snapshot as { notIncludedProductTypes?: string[] };
-      return {
-        id: request.id,
-        approvalId: approval?.id ?? null,
-        token: request.token,
-        productTypes: request.productTypes,
-        notIncludedProductTypes: snapshot.notIncludedProductTypes ?? [],
-        documentVersion: request.documentVersion,
-        publicPath: `/public/scoped-signoff/${request.token}`,
-        status: approval ? "signed" : request.status === "open" ? "open" : "needs_resigning",
-        signedAt: approval?.signedAt ?? null,
-      };
+      const affectedCoverage = coverage.find((row) =>
+        row.approvalId === approval?.id && row.invalidationReason,
+      );
+      return scopedApprovalResponse(request, approval, snapshot, affectedCoverage?.invalidationReason ?? null);
     }),
     coverage,
-  });
+  }));
 });
 
 router.delete("/quotes/:id/scoped-approvals/:requestId", async (req: AuthedRequest, res): Promise<void> => {
@@ -2120,20 +2268,106 @@ router.delete("/quotes/:id/scoped-approvals/:requestId", async (req: AuthedReque
     const quote = await lockQuoteRow(tx, quoteId);
     if (!quote) return "notFound" as const;
     const [request] = await tx
-      .select({ id: scopedApprovalRequestsTable.id, status: scopedApprovalRequestsTable.status })
+      .select({
+        id: scopedApprovalRequestsTable.id,
+        status: scopedApprovalRequestsTable.status,
+        revokedAt: scopedApprovalRequestsTable.revokedAt,
+      })
       .from(scopedApprovalRequestsTable)
       .where(and(eq(scopedApprovalRequestsTable.id, requestId), eq(scopedApprovalRequestsTable.quoteId, quoteId)))
       .for("update");
     if (!request) return "notFound" as const;
-    // A signed request has immutable evidence and is never revoked/deleted.
-    if (request.status !== "open") return "notOpen" as const;
-    await tx.update(scopedApprovalRequestsTable).set({ status: "revoked" })
+    if (request.revokedAt || !["open", "signed"].includes(request.status)) return "notOpen" as const;
+    const revokedAt = new Date();
+    await tx.update(scopedApprovalRequestsTable).set({
+      // Signed status is immutable evidence state. Revoking only closes public
+      // access; it never changes or deletes the signed approval/PDF.
+      status: request.status === "signed" ? "signed" : "revoked",
+      revokedAt,
+      revokedById: req.userId!,
+      revocationReason: "Revoked by staff",
+    })
       .where(eq(scopedApprovalRequestsTable.id, request.id));
     return "ok" as const;
   });
   if (outcome === "notFound") { res.status(404).json({ error: "Scoped approval request not found." }); return; }
-  if (outcome === "notOpen") { res.status(409).json({ error: "Only an open scoped approval request can be cancelled." }); return; }
+  if (outcome === "notOpen") { res.status(409).json({ error: "Only an open or signed scoped approval request can be revoked." }); return; }
   res.sendStatus(204);
+});
+
+router.patch("/quotes/:id/scoped-approvals/:requestId", async (req: AuthedRequest, res): Promise<void> => {
+  const params = UpdateScopedApprovalLinkParams.safeParse(req.params);
+  const body = UpdateScopedApprovalLinkBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Invalid body." });
+    return;
+  }
+  const result = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, params.data.id);
+    if (!quote) return { kind: "notFound" as const };
+    const [request] = await tx.select().from(scopedApprovalRequestsTable)
+      .where(and(eq(scopedApprovalRequestsTable.id, params.data.requestId), eq(scopedApprovalRequestsTable.quoteId, quote.id)))
+      .for("update");
+    if (!request) return { kind: "notFound" as const };
+    if (!["open", "signed"].includes(request.status) || request.revokedAt) return { kind: "closed" as const };
+    const [updated] = await tx.update(scopedApprovalRequestsTable)
+      .set({ expiresAt: body.data.expiresAt })
+      .where(eq(scopedApprovalRequestsTable.id, request.id))
+      .returning();
+    const [approval] = await tx.select().from(scopedApprovalsTable)
+      .where(eq(scopedApprovalsTable.requestId, request.id));
+    return {
+      kind: "ok" as const,
+      request: updated!,
+      approval,
+      snapshot: request.snapshot as { notIncludedProductTypes?: string[] },
+    };
+  });
+  if (result.kind === "notFound") { res.status(404).json({ error: "Scoped approval request not found." }); return; }
+  if (result.kind === "closed") { res.status(409).json({ error: "Only an open or signed scoped approval link can be edited." }); return; }
+  res.json(UpdateScopedApprovalLinkResponse.parse(scopedApprovalResponse(result.request, result.approval, result.snapshot)));
+});
+
+router.post("/quotes/:id/scoped-approvals/:requestId/rotate", async (req: AuthedRequest, res): Promise<void> => {
+  const params = RotateScopedApprovalLinkParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const result = await db.transaction(async (tx) => {
+    const quote = await lockQuoteRow(tx, params.data.id);
+    if (!quote) return { kind: "notFound" as const };
+    const [request] = await tx.select().from(scopedApprovalRequestsTable)
+      .where(and(eq(scopedApprovalRequestsTable.id, params.data.requestId), eq(scopedApprovalRequestsTable.quoteId, quote.id)))
+      .for("update");
+    if (!request) return { kind: "notFound" as const };
+    if (request.status !== "open") return { kind: "closed" as const };
+    const now = new Date();
+    const token = randomBytes(24).toString("base64url");
+    const replacementExpiry = request.expiresAt && request.expiresAt > now ? request.expiresAt : null;
+    await tx.update(scopedApprovalRequestsTable).set({
+      status: "revoked", revokedAt: now, revokedById: req.userId!,
+      revocationReason: "Rotated by staff",
+    }).where(eq(scopedApprovalRequestsTable.id, request.id));
+    const [replacement] = await tx.insert(scopedApprovalRequestsTable).values({
+      quoteId: request.quoteId,
+      token,
+      productTypes: request.productTypes,
+      snapshot: request.snapshot,
+      documentVersion: request.documentVersion,
+      status: "open",
+      createdById: req.userId!,
+      expiresAt: replacementExpiry,
+      replacedFromRequestId: request.id,
+    }).returning();
+    await tx.update(scopedApprovalRequestsTable).set({ replacementRequestId: replacement!.id })
+      .where(eq(scopedApprovalRequestsTable.id, request.id));
+    return {
+      kind: "ok" as const,
+      request: { ...replacement!, replacementRequestId: null },
+      snapshot: replacement!.snapshot as { notIncludedProductTypes?: string[] },
+    };
+  });
+  if (result.kind === "notFound") { res.status(404).json({ error: "Scoped approval request not found." }); return; }
+  if (result.kind === "closed") { res.status(409).json({ error: "Only an open scoped approval link can be rotated." }); return; }
+  res.status(201).json(RotateScopedApprovalLinkResponse.parse(scopedApprovalResponse(result.request, undefined, result.snapshot)));
 });
 
 router.post("/quotes/:id/scoped-approvals", async (req: AuthedRequest, res): Promise<void> => {
@@ -2151,7 +2385,15 @@ router.post("/quotes/:id/scoped-approvals", async (req: AuthedRequest, res): Pro
     if (!productTypes) return { kind: "invalid" as const };
     const open = await tx.select({ productTypes: scopedApprovalRequestsTable.productTypes })
       .from(scopedApprovalRequestsTable)
-      .where(and(eq(scopedApprovalRequestsTable.quoteId, id), eq(scopedApprovalRequestsTable.status, "open")));
+      .where(and(
+        eq(scopedApprovalRequestsTable.quoteId, id),
+        eq(scopedApprovalRequestsTable.status, "open"),
+        isNull(scopedApprovalRequestsTable.revokedAt),
+        or(
+          isNull(scopedApprovalRequestsTable.expiresAt),
+          gt(scopedApprovalRequestsTable.expiresAt, new Date()),
+        ),
+      ));
     if (open.some((request) => request.productTypes.some((type) => productTypes.includes(type)))) {
       return { kind: "overlap" as const };
     }
@@ -2170,11 +2412,9 @@ router.post("/quotes/:id/scoped-approvals", async (req: AuthedRequest, res): Pro
   if (outcome.kind === "invalid") { res.status(400).json({ error: "productTypes must be a unique non-empty subset of this quote's product types." }); return; }
   if (outcome.kind === "unclassified") { res.status(400).json({ error: "Assign a product type to every approved manufacturer packet before creating a scoped approval." }); return; }
   if (outcome.kind === "overlap") { res.status(409).json({ error: "An open scoped approval already overlaps one or more selected product types." }); return; }
-  res.status(201).json({
-    id: outcome.request.id, token: outcome.request.token, productTypes: outcome.request.productTypes,
-    notIncludedProductTypes: outcome.snapshot.notIncludedProductTypes,
-    documentVersion: outcome.request.documentVersion, publicPath: `/public/scoped-signoff/${outcome.request.token}`, status: "open",
-  });
+  res.status(201).json(CreateScopedApprovalResponse.parse(
+    scopedApprovalResponse(outcome.request, undefined, outcome.snapshot),
+  ));
 });
 
 router.put("/quotes/:id/signoff", async (req, res): Promise<void> => {

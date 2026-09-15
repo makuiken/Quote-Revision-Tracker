@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
-import { Check, Copy, ExternalLink, Mail, Printer, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle } from "lucide-react";
+import { Check, Copy, ExternalLink, Mail, Printer, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle, RotateCcw, Clock, XCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetQuoteQueryKey,
@@ -12,8 +12,15 @@ import {
   useGetShareInfo,
   useListScopedApprovals,
   useSetRevisionSignoffExclusion,
+  useRotateScopedApprovalLink,
+  useUpdateScopedApprovalLink,
+  useCreateShareLink,
+  useUpdateShareLink,
+  useRevokeShareLink,
+  useRotateShareLink,
   getSignedSignoffDocument,
   type QuoteCategoriesItem,
+  type ShareLink,
   type ScopedApproval,
   type ScopedApprovalsResponse,
 } from "@workspace/api-client-react";
@@ -25,6 +32,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toaster";
 import { categoryLabel } from "@/lib/revision-categories";
+
+function scopedLinkAccessStatus(approval: ScopedApproval): "active" | "expired" | "revoked" {
+  if (approval.revokedAt) return "revoked";
+  if (approval.expiresAt && new Date(approval.expiresAt).getTime() <= Date.now()) return "expired";
+  return "active";
+}
 
 function ScopedShareDialog({
   approval,
@@ -119,6 +132,7 @@ export default function SignoffPage() {
   const quoteId = Number(id);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: shareInfo } = useGetShareInfo({ query: { queryKey: getGetShareInfoQueryKey() } });
   const { data: detail, isLoading } = useGetQuote(quoteId, { query: { enabled: Number.isFinite(quoteId), queryKey: getGetQuoteQueryKey(quoteId) } });
   const { data: approvalResponse } = useListScopedApprovals(quoteId, {
     query: { enabled: Number.isFinite(quoteId), queryKey: getListScopedApprovalsQueryKey(quoteId) },
@@ -129,6 +143,69 @@ export default function SignoffPage() {
   const [isOpeningLegacyDocument, setIsOpeningLegacyDocument] = useState(false);
   const initializedQuoteRef = useRef<number | null>(null);
 
+  const [legacyLink, setLegacyLink] = useState<ShareLink | null>(null);
+
+  const createLegacyLink = useCreateShareLink({
+    mutation: {
+      onSuccess: (link) => {
+        setLegacyLink(link);
+      },
+      onError: (err) => toast({ title: "Failed to get legacy link", description: err.message, variant: "destructive" })
+    }
+  });
+
+  const revokeLegacyLink = useRevokeShareLink({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Legacy link revoked" });
+        createLegacyLink.mutate({ id: quoteId }); // Refresh
+      },
+      onError: (err) => toast({ title: "Failed to revoke link", description: err.message, variant: "destructive" })
+    }
+  });
+
+  const rotateLegacyLink = useRotateShareLink({
+    mutation: {
+      onSuccess: (link) => {
+        setLegacyLink(link);
+        toast({ title: "Legacy link rotated" });
+      },
+      onError: (err) => toast({ title: "Failed to rotate link", description: err.message, variant: "destructive" })
+    }
+  });
+
+  const updateLegacyLink = useUpdateShareLink({
+    mutation: {
+      onSuccess: (link) => {
+        setLegacyLink(link);
+        toast({ title: "Expiry updated" });
+      },
+      onError: (err) => toast({ title: "Failed to update expiry", description: err.message, variant: "destructive" })
+    }
+  });
+
+  const rotateScoped = useRotateScopedApprovalLink({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Scoped link rotated" });
+        queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
+        queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+      },
+      onError: (err) => toast({ title: "Failed to rotate link", description: err.message, variant: "destructive" })
+    }
+  });
+
+  const updateScopedExpiry = useUpdateScopedApprovalLink({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Expiry updated" });
+        queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
+        queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
+      },
+      onError: (err) => toast({ title: "Failed to update expiry", description: err.message, variant: "destructive" })
+    }
+  });
+
   useEffect(() => {
     if (detail && initializedQuoteRef.current !== quoteId) {
       initializedQuoteRef.current = quoteId;
@@ -136,9 +213,8 @@ export default function SignoffPage() {
     }
   }, [detail, quoteId]);
 
-  const openRequests = (approvalResponse?.approvals ?? []).filter(
-    (approval) => approval.status === "open",
-  );
+  const allRequests = approvalResponse?.approvals ?? [];
+  const openRequests = allRequests.filter(approval => approval.status === "open");
 
   useEffect(() => {
     if (!prepared || !approvalResponse) return;
@@ -184,8 +260,8 @@ export default function SignoffPage() {
         queryClient.invalidateQueries({ queryKey: getListScopedApprovalsQueryKey(quoteId) });
         queryClient.invalidateQueries({ queryKey: getGetQuoteQueryKey(quoteId) });
         toast({
-          title: "Approval request cancelled",
-          description: "Its customer link has been revoked. You can now prepare a different scope.",
+          title: "Customer link revoked",
+          description: "Public access is blocked. Any signed evidence remains available to staff.",
         });
       },
       onError: (error) => toast({
@@ -404,49 +480,225 @@ export default function SignoffPage() {
               </Card>
             )}
 
-            {openRequests.length > 0 && (
+            {allRequests.length > 0 && (
               <Card className="border-amber-200 shadow-sm overflow-hidden">
                 <CardHeader className="bg-amber-50/50 border-b border-amber-100">
-                  <CardTitle className="text-amber-900 text-lg">Existing approval links</CardTitle>
+                  <CardTitle className="text-amber-900 text-lg">Approval Link History</CardTitle>
                   <CardDescription className="text-amber-800/70">
-                    These links have been prepared previously. You can reuse them to avoid replacing the customer's link.
+                    All scoped requests and their current statuses.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-4 space-y-4">
-                  {openRequests.map((approval) => (
+                  {allRequests.map((approval) => (
                     <div key={approval.id ?? approval.token} className="rounded-lg border border-amber-200 bg-card p-4 shadow-sm">
-                      <div className="mb-4">
-                        <h4 className="font-bold text-foreground text-sm mb-1">Included: {approval.productTypes.map(categoryLabel).join(", ")}</h4>
-                        <p className="text-xs font-medium text-muted-foreground">Not included: {approval.notIncludedProductTypes.length ? approval.notIncludedProductTypes.map(categoryLabel).join(", ") : "None"}</p>
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="font-bold text-foreground text-sm mb-1">Scope: {approval.productTypes.map(categoryLabel).join(", ")}</h4>
+                          <p className="text-xs font-medium text-muted-foreground">Not included: {approval.notIncludedProductTypes.length ? approval.notIncludedProductTypes.map(categoryLabel).join(", ") : "None"}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${approval.status === 'open' ? 'bg-amber-100 text-amber-800' : approval.status === 'signed' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                            {approval.status === "signed" ? "Signed evidence" : approval.status}
+                          </span>
+                          <p className={`mt-1 text-[10px] font-bold uppercase tracking-wider ${scopedLinkAccessStatus(approval) === "active" ? "text-green-700" : "text-red-700"}`}>
+                            Link access: {scopedLinkAccessStatus(approval)}
+                          </p>
+                          {approval.expiresAt && <p className="text-[10px] text-muted-foreground mt-1">Expires: {new Date(approval.expiresAt).toLocaleDateString()}</p>}
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => reuseOpenRequest(approval)}>
-                          Reuse this exact request
-                        </Button>
-                        <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => { setPrepared(approval); setShareOpen(true); }}>
-                          <Share2 className="mr-2 h-3.5 w-3.5" /> Share link
-                        </Button>
-                        <Button asChild variant="outline" size="sm" className="bg-muted text-foreground col-span-2">
-                          <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> Open preview</Link>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="col-span-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          disabled={approval.id === undefined || cancel.isPending}
-                          onClick={() => {
-                            if (approval.id === undefined) return;
-                            cancel.mutate({ id: quoteId, requestId: approval.id });
-                          }}
-                        >
-                          Cancel request
-                        </Button>
+                        {(approval.status === "open" || approval.status === "signed") && scopedLinkAccessStatus(approval) === "active" ? (
+                          <>
+                            {approval.status === "open" && (
+                              <>
+                                <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => reuseOpenRequest(approval)}>
+                                  Reuse this exact request
+                                </Button>
+                                <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => { setPrepared(approval); setShareOpen(true); }}>
+                                  <Share2 className="mr-2 h-3.5 w-3.5" /> Share link
+                                </Button>
+                                <Button variant="outline" size="sm" className="bg-muted text-foreground col-span-2" onClick={() => {
+                                  if (approval.id && window.confirm("Replace this customer link? The old link will stop working immediately.")) {
+                                    rotateScoped.mutate({ id: quoteId, requestId: approval.id });
+                                  }
+                                }}>
+                                  <RotateCcw className="mr-2 h-3.5 w-3.5" /> Replace customer link
+                                </Button>
+                              </>
+                            )}
+                            <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => {
+                              if (approval.id) {
+                                const expiresAt = new Date();
+                                expiresAt.setDate(expiresAt.getDate() + 7);
+                                updateScopedExpiry.mutate({ id: quoteId, requestId: approval.id, data: { expiresAt: expiresAt.toISOString() } });
+                              }
+                            }}>
+                              <Clock className="mr-2 h-3.5 w-3.5" /> Set Expiry
+                            </Button>
+                            <Button variant="outline" size="sm" className="bg-muted text-foreground" onClick={() => {
+                              if (approval.id) updateScopedExpiry.mutate({ id: quoteId, requestId: approval.id, data: { expiresAt: null } });
+                            }}>
+                              Remove expiry
+                            </Button>
+                            <Button asChild variant="outline" size="sm" className="bg-muted text-foreground">
+                              {approval.approvalId ? (
+                                <a href={`/api/quotes/${quoteId}/scoped-approvals/${approval.approvalId}/document`} target="_blank" rel="noreferrer">
+                                  <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open signed evidence
+                                </a>
+                              ) : (
+                                <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> Open preview</Link>
+                              )}
+                            </Button>
+                            <Button variant="outline" size="sm" className="text-amber-800 border-amber-300" onClick={() => {
+                              if (approval.id && window.confirm("Expire this customer link now? Public access will stop immediately.")) {
+                                updateScopedExpiry.mutate({ id: quoteId, requestId: approval.id, data: { expiresAt: new Date().toISOString() } });
+                              }
+                            }}>
+                              Expire now
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="col-span-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              disabled={approval.id === undefined || cancel.isPending}
+                              onClick={() => {
+                                if (approval.id === undefined) return;
+                                if (window.confirm("Revoke this customer link? Public access will stop immediately, but signed evidence will be retained.")) {
+                                  cancel.mutate({ id: quoteId, requestId: approval.id });
+                                }
+                              }}
+                            >
+                              Revoke customer link
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button asChild variant="outline" size="sm" className="bg-muted text-foreground col-span-2">
+                              {approval.approvalId ? (
+                                <a href={`/api/quotes/${quoteId}/scoped-approvals/${approval.approvalId}/document`} target="_blank" rel="noreferrer">
+                                  <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open retained signed evidence
+                                </a>
+                              ) : (
+                                <Link href={`/scoped-sign/${approval.token}`}><ExternalLink className="mr-2 h-3.5 w-3.5" /> View status</Link>
+                              )}
+                            </Button>
+                            {!approval.approvalId && !approval.revokedAt && approval.expiresAt && new Date(approval.expiresAt).getTime() <= Date.now() && approval.id && (
+                              <>
+                                <Button variant="outline" size="sm" onClick={() => {
+                                  if (window.confirm("Issue a replacement for this expired link? The expired link will remain inaccessible.")) {
+                                    rotateScoped.mutate({ id: quoteId, requestId: approval.id! });
+                                  }
+                                }}>
+                                  <RotateCcw className="mr-2 h-3.5 w-3.5" /> Issue replacement
+                                </Button>
+                                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => {
+                                  if (window.confirm("Revoke this expired link? Its lifecycle history will be retained.")) {
+                                    cancel.mutate({ id: quoteId, requestId: approval.id! });
+                                  }
+                                }}>
+                                  Revoke link
+                                </Button>
+                              </>
+                            )}
+                            {approval.approvalId && scopedLinkAccessStatus(approval) === "expired" && approval.id && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="col-span-2"
+                                onClick={() => updateScopedExpiry.mutate({ id: quoteId, requestId: approval.id!, data: { expiresAt: null } })}
+                              >
+                                Restore signed-link access
+                              </Button>
+                            )}
+                            {approval.revocationReason && (
+                              <p className="col-span-2 text-xs text-red-600 mt-1 font-medium">Revoked: {approval.revocationReason}</p>
+                            )}
+                            {approval.invalidationReason && (
+                              <p className="col-span-2 text-xs text-amber-700 mt-1 font-medium">Invalidated: {approval.invalidationReason}</p>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
                 </CardContent>
               </Card>
             )}
+
+            <Card className="border-border shadow-sm overflow-hidden">
+              <CardHeader className="bg-muted/50 border-b pb-4">
+                <CardTitle className="font-serif text-lg font-bold text-foreground">Legacy Whole-Quote Approval Link</CardTitle>
+                <CardDescription className="text-muted-foreground text-xs">
+                  Manage the legacy link that exposes the entire quote.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 space-y-4">
+                {!legacyLink ? (
+                  <Button variant="outline" className="w-full" onClick={() => createLegacyLink.mutate({ id: quoteId })} disabled={createLegacyLink.isPending}>
+                    {createLegacyLink.isPending ? "Fetching..." : "Fetch / Generate Legacy Link"}
+                  </Button>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-muted rounded p-3 text-sm">
+                      <p className="font-mono text-xs break-all">{shareInfo?.publicOrigin || window.location.origin}{import.meta.env.BASE_URL.replace(/\/$/, "")}/sign/{legacyLink.token}</p>
+                      <p className="mt-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Status: <span className={legacyLink.status === 'active' ? 'text-green-600' : 'text-red-600'}>{legacyLink.status}</span></p>
+                      {legacyLink.expiresAt && <p className="mt-1 text-xs text-muted-foreground">Expires: {new Date(legacyLink.expiresAt).toLocaleString()}</p>}
+                    </div>
+                    {legacyLink.status === 'active' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/sign/${legacyLink.token}`}><ExternalLink className="w-3.5 h-3.5 mr-2" /> Open</Link>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => {
+                          navigator.clipboard.writeText(`${shareInfo?.publicOrigin || window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/sign/${legacyLink.token}`);
+                          toast({ title: "Copied" });
+                        }}>
+                          <Copy className="w-3.5 h-3.5 mr-2" /> Copy
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => {
+                          if (window.confirm("Replace this legacy customer link? The old link will stop working immediately.")) {
+                            rotateLegacyLink.mutate({ id: quoteId });
+                          }
+                        }}>
+                          <RotateCcw className="w-3.5 h-3.5 mr-2" /> Rotate
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => {
+                          const date = new Date();
+                          date.setDate(date.getDate() + 7);
+                          updateLegacyLink.mutate({ id: quoteId, data: { expiresAt: date.toISOString() } });
+                        }}>
+                          <Clock className="w-3.5 h-3.5 mr-2" /> Expiry +7d
+                        </Button>
+                        <Button variant="ghost" size="sm" className="col-span-2 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => revokeLegacyLink.mutate({ id: quoteId })}>
+                          <XCircle className="w-3.5 h-3.5 mr-2" /> Revoke
+                        </Button>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" onClick={() => updateLegacyLink.mutate({ id: quoteId, data: { expiresAt: null } })} disabled={legacyLink.status === "revoked"}>
+                        Remove expiry
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-amber-800 border-amber-300" onClick={() => {
+                        if (window.confirm("Expire this legacy customer link now? Public access will stop immediately.")) {
+                          updateLegacyLink.mutate({ id: quoteId, data: { expiresAt: new Date().toISOString() } });
+                        }
+                      }} disabled={legacyLink.status === "revoked"}>
+                        Expire now
+                      </Button>
+                      {legacyLink.status !== "active" && (
+                        <Button variant="outline" size="sm" className="col-span-2" onClick={() => {
+                          if (window.confirm("Issue a replacement legacy link? The old link will remain inaccessible.")) {
+                            rotateLegacyLink.mutate({ id: quoteId });
+                          }
+                        }}>
+                          <RotateCcw className="w-3.5 h-3.5 mr-2" /> Issue replacement link
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           <div className="space-y-6">

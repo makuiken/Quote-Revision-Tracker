@@ -5,6 +5,12 @@
       "summary": "Baseline production compatibility contract for quote, approval, packet, and attachment data.",
       "contractHash": "d0445a6a36316e107f69bb3eb90fa1db176276d0f314184948dae81c70433a7a",
       "codeReference": "schema-contract:d0445a6a36316e107f69bb3eb90fa1db176276d0f314184948dae81c70433a7a"
+    },
+    {
+      "id": "2026-09-15-3fa678ff13d0",
+      "summary": "Add auditable expiry, revocation, and rotation metadata for legacy and scoped signing links.",
+      "contractHash": "3fa678ff13d094d6bc27ffa67ee2e2ba9c43b18e1ccbda211ffc44389767809e",
+      "codeReference": "schema-contract:3fa678ff13d094d6bc27ffa67ee2e2ba9c43b18e1ccbda211ffc44389767809e"
     }
   ]
 }

@@ -5,6 +5,7 @@
  * Quote Revision Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { SignoffReceipt } from './signoffReceipt';
 import type { SignoffSignatureType } from './signoffSignatureType';
 import type { SignoffStakeholderRole } from './signoffStakeholderRole';
 
@@ -16,4 +17,5 @@ export interface Signoff {
   signatureType: SignoffSignatureType;
   signatureData: string;
   signedAt: Date;
+  receipt?: SignoffReceipt | null;
 }

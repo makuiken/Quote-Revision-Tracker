@@ -10,6 +10,7 @@ import type { LegacyApproval } from './legacyApproval';
 import type { Quote } from './quote';
 import type { Revision } from './revision';
 import type { Signoff } from './signoff';
+import type { SignoffReceipt } from './signoffReceipt';
 
 export interface QuoteDetail {
   quote: Quote;
@@ -19,4 +20,5 @@ export interface QuoteDetail {
   documentVersion: string;
   approvalCoverage?: ApprovalCoverage[];
   legacyApproval?: LegacyApproval | null;
+  receipt: SignoffReceipt | null;
 }

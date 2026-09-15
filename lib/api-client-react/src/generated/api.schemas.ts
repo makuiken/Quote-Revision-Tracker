@@ -582,8 +582,57 @@ export interface ReadinessStatus {
   checks: ReadinessStatusChecks;
 }
 
+export type ShareLinkStatus = typeof ShareLinkStatus[keyof typeof ShareLinkStatus];
+
+
+export const ShareLinkStatus = {
+  active: 'active',
+  expired: 'expired',
+  revoked: 'revoked',
+} as const;
+
 export interface ShareLink {
   token: string;
+  status: ShareLinkStatus;
+  createdAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  /** @nullable */
+  revokedAt: string | null;
+  /** @nullable */
+  rotatedFrom: string | null;
+  publicPath: string;
+}
+
+export interface LinkExpiryInput {
+  /**
+     * Absolute expiry. Null removes an expiry from an otherwise active link.
+     * @nullable
+     */
+  expiresAt: string | null;
+}
+
+export type SignoffReceiptStatus = typeof SignoffReceiptStatus[keyof typeof SignoffReceiptStatus];
+
+
+export const SignoffReceiptStatus = {
+  current: 'current',
+  outdated: 'outdated',
+} as const;
+
+export interface SignoffReceipt {
+  signerName: string;
+  signerRole: string;
+  signedAt: string;
+  quoteId: number;
+  quoteNumber: string;
+  signedDocumentAvailable: boolean;
+  /** @nullable */
+  signedDocumentPath: string | null;
+  approvalScope: string[];
+  status: SignoffReceiptStatus;
+  /** @nullable */
+  reason: string | null;
 }
 
 export interface ShareInfo {
@@ -921,6 +970,7 @@ export interface Signoff {
   signatureType: SignoffSignatureType;
   signatureData: string;
   signedAt: string;
+  receipt?: SignoffReceipt | null;
 }
 
 export type LegacyApprovalStatus = typeof LegacyApprovalStatus[keyof typeof LegacyApprovalStatus];
@@ -958,6 +1008,7 @@ export interface QuoteDetail {
   documentVersion: string;
   approvalCoverage?: ApprovalCoverage[];
   legacyApproval?: LegacyApproval | null;
+  receipt: SignoffReceipt | null;
 }
 
 export interface ArchiveQuoteInput {
@@ -1155,6 +1206,22 @@ export interface ScopedApproval {
   status: ScopedApprovalStatus;
   /** @nullable */
   signedAt?: string | null;
+  createdAt: string;
+  createdById: string;
+  /** @nullable */
+  expiresAt: string | null;
+  /** @nullable */
+  revokedAt: string | null;
+  /** @nullable */
+  revokedById: string | null;
+  /** @nullable */
+  revocationReason: string | null;
+  /** @nullable */
+  replacedFromRequestId: number | null;
+  /** @nullable */
+  replacementRequestId: number | null;
+  /** @nullable */
+  invalidationReason: string | null;
 }
 
 export interface ScopedApprovalsResponse {
@@ -1234,6 +1301,7 @@ export interface ScopedSignoffDetail {
   preparedAt: string;
   documentVersion: string;
   status: ScopedSignoffDetailStatus;
+  receipt: SignoffReceipt | null;
 }
 
 export interface DashboardSummary {

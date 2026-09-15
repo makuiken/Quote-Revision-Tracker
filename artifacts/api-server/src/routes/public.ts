@@ -33,7 +33,6 @@ import {
   serializeQuote,
   computeDocumentVersion,
   ensureUnsignedDocumentCached,
-  ensureLegacySignedDocumentSnapshot,
   cleanupUploadedDocumentIfUnreferenced,
   UnsignedDocumentBuildCapacityError,
   loadManifestPdfPages,
@@ -59,6 +58,7 @@ import {
   canAccessScopedPublicToken,
   publicScopedRevisions,
   scopedApprovalFinalizationDecision,
+  buildApprovalReceipt,
 } from "../lib/scopedApprovalModel";
 
 // Public, token-gated routes. No login required — access is granted by
@@ -77,7 +77,43 @@ async function loadQuoteByToken(token: string) {
     .select()
     .from(quotesTable)
     .where(eq(quotesTable.shareToken, token));
-  return quote ?? null;
+  return quote && isLegacyLinkActive(quote) ? quote : null;
+}
+
+function isLegacyLinkActive(
+  quote: { shareTokenRevokedAt?: Date | null; shareTokenExpiresAt?: Date | null },
+  now = new Date(),
+) {
+  return !quote.shareTokenRevokedAt &&
+    (!quote.shareTokenExpiresAt || quote.shareTokenExpiresAt.getTime() > now.getTime());
+}
+
+function legacyReceipt(
+  quote: { id: number; quoteNumber: string },
+  signoff: {
+    customerName: string;
+    stakeholderRole: string;
+    signedAt: Date;
+    signedDocumentObjectPath: string | null;
+    legacyStatus: "signed" | "needs_resigning";
+    legacyInvalidationReason: string | null;
+  } | null,
+  token: string,
+) {
+  if (!signoff) return null;
+  return buildApprovalReceipt({
+    signerName: signoff.customerName,
+    signerRole: signoff.stakeholderRole,
+    signedAt: signoff.signedAt,
+    quoteId: quote.id,
+    quoteNumber: quote.quoteNumber,
+    signedDocumentPath: signoff.signedDocumentObjectPath
+      ? `/public/signoff/${token}/document`
+      : null,
+    approvalScope: ["legacy whole quote"],
+    current: signoff.legacyStatus === "signed",
+    reason: signoff.legacyInvalidationReason,
+  });
 }
 
 function asScopedSnapshot(value: unknown): ScopedSnapshot | null {
@@ -127,7 +163,7 @@ async function scopedRequestByToken(token: string) {
   const snapshot = request ? asScopedSnapshot(request.snapshot) : null;
   // Revocation is an access-control boundary, not merely a UI status. Every
   // scoped public detail/document/page/sign route goes through this resolver.
-  return request && canAccessScopedPublicToken(request.status) && snapshot ? { request, snapshot } : null;
+  return request && canAccessScopedPublicToken(request.status, request.expiresAt, new Date(), request.revokedAt) && snapshot ? { request, snapshot } : null;
 }
 
 function scopedSignoffRow(approval: typeof scopedApprovalsTable.$inferSelect | null) {
@@ -149,6 +185,14 @@ router.get("/public/scoped-signoff/:token", async (req, res): Promise<void> => {
   if (!record) { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
   const [approval] = await db.select().from(scopedApprovalsTable)
     .where(eq(scopedApprovalsTable.requestId, record.request.id));
+  const coverage = approval
+    ? await db.select().from(scopedApprovalCoverageTable)
+      .where(and(
+        eq(scopedApprovalCoverageTable.quoteId, record.request.quoteId),
+        eq(scopedApprovalCoverageTable.approvalId, approval.id),
+      ))
+    : [];
+  const invalidationReason = coverage.find((row) => row.invalidationReason)?.invalidationReason ?? null;
   res.json(GetPublicScopedSignoffResponse.parse({
     quote: record.snapshot.quote,
     revisions: record.snapshot.revisions,
@@ -159,6 +203,18 @@ router.get("/public/scoped-signoff/:token", async (req, res): Promise<void> => {
     preparedAt: record.snapshot.preparedAt,
     documentVersion: record.request.documentVersion,
     status: approval ? "signed" : record.request.status === "open" ? "open" : "needs_resigning",
+    receipt: approval ? buildApprovalReceipt({
+      signerName: approval.customerName,
+      signerRole: approval.stakeholderRole,
+      signedAt: approval.signedAt,
+      quoteId: record.request.quoteId,
+      quoteNumber: record.snapshot.quote.quoteNumber,
+      signedDocumentPath: `/public/scoped-signoff/${record.request.token}/document`,
+      approvalScope: approval.productTypes,
+      current: coverage.length === approval.productTypes.length &&
+        coverage.every((row) => row.status === "signed"),
+      reason: invalidationReason,
+    }) : null,
   }));
 });
 
@@ -198,7 +254,7 @@ router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (re
         eq(scopedApprovalRequestsTable.token, String(req.params.token)),
         eq(scopedApprovalRequestsTable.quoteId, quote.id),
       )).for("update");
-    if (!request || request.status === "revoked") return { kind: "notFound" as const };
+    if (!request || !canAccessScopedPublicToken(request.status, request.expiresAt, new Date(), request.revokedAt)) return { kind: "notFound" as const };
     if (request.status !== "open" || request.documentVersion !== body.documentVersion) return { kind: "stale" as const };
     const snapshot = asScopedSnapshot(JSON.parse(JSON.stringify(request.snapshot)));
     if (!snapshot) return { kind: "stale" as const };
@@ -258,7 +314,7 @@ router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (re
           eq(scopedApprovalRequestsTable.id, prepared.request.id),
           eq(scopedApprovalRequestsTable.quoteId, quote.id),
         )).for("update");
-      if (!request || request.status === "revoked") return { kind: "notFound" as const };
+        if (!request || !canAccessScopedPublicToken(request.status, request.expiresAt, new Date(), request.revokedAt)) return { kind: "notFound" as const };
       if (request.status !== "open" || request.documentVersion !== body.documentVersion) {
         return { kind: "stale" as const };
       }
@@ -314,7 +370,19 @@ router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (re
     if (outcome.kind === "stale") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(409).json({ error: "This scoped approval has changed or is no longer current. Ask your sales representative for a new link." }); return; }
     if (outcome.kind === "alreadySigned") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(409).json({ error: "This scoped approval is already signed." }); return; }
     if (outcome.kind !== "ok") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(500).json({ error: "The scoped approval could not be finalized." }); return; }
-    res.json(scopedSignoffRow(outcome.approval));
+    res.json({
+      ...scopedSignoffRow(outcome.approval),
+      receipt: buildApprovalReceipt({
+        signerName: outcome.approval.customerName,
+        signerRole: outcome.approval.stakeholderRole,
+        signedAt: outcome.approval.signedAt,
+        quoteId: outcome.approval.quoteId,
+        quoteNumber: prepared.snapshot.quote.quoteNumber,
+        signedDocumentPath: `/public/scoped-signoff/${prepared.request.token}/document`,
+        approvalScope: outcome.approval.productTypes,
+        current: true,
+      }),
+    });
   } catch (error) {
     try { await cleanupUploadedDocumentIfUnreferenced(path); } catch (cleanupError) {
       req.log.warn({ err: cleanupError, path }, "Unable to clean up unreferenced scoped signoff PDF");
@@ -436,6 +504,7 @@ router.get("/public/signoff/:token", async (req, res): Promise<void> => {
       signoff: null,
       legacyApproval: legacyApprovalMetadata(signoff ?? null),
       documentVersion: computeDocumentVersion(quote, revisions, approvedPacket),
+      receipt: legacyReceipt(quote, signoff ?? null, params.data.token),
     }),
   );
 });
@@ -491,6 +560,7 @@ router.put(
     const prepared = await db.transaction(async (tx) => {
       const current = await lockQuoteRow(tx, quote.id);
       if (!current || current.archivedAt) return null;
+      if (current.shareToken !== params.data.token || !isLegacyLinkActive(current)) return "linkInactive" as const;
       const [existing] = await tx
         .select({ id: signoffsTable.id })
         .from(signoffsTable)
@@ -523,6 +593,10 @@ router.put(
       });
       return;
     }
+    if (prepared === "linkInactive") {
+      res.status(404).json({ error: "Invalid or revoked link" });
+      return;
+    }
     if (!prepared) {
       res.status(409).json({
         error:
@@ -553,6 +627,7 @@ router.put(
       const signoff = await db.transaction(async (tx) => {
         const current = await lockQuoteRow(tx, quote.id);
         if (!current || current.archivedAt) return null;
+        if (current.shareToken !== params.data.token || !isLegacyLinkActive(current)) return "linkInactive" as const;
         const [existing] = await tx.select({ id: signoffsTable.id })
           .from(signoffsTable).where(eq(signoffsTable.quoteId, quote.id)).for("update");
         if (existing) return "alreadySigned" as const;
@@ -580,6 +655,11 @@ router.put(
         });
         return;
       }
+      if (signoff === "linkInactive") {
+        await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
+        res.status(404).json({ error: "Invalid or revoked link" });
+        return;
+      }
       if (!signoff) {
         await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
         res.status(409).json({
@@ -587,7 +667,10 @@ router.put(
         });
         return;
       }
-      res.json(SavePublicSignoffResponse.parse(signoff));
+      res.json(SavePublicSignoffResponse.parse({
+        ...signoff,
+        receipt: legacyReceipt(prepared.current, signoff, params.data.token),
+      }));
     } catch (error) {
       try { await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath); } catch (cleanupError) {
         req.log.warn({ err: cleanupError, path: signedDocumentObjectPath }, "Unable to clean up unreferenced legacy signoff PDF");
@@ -660,7 +743,7 @@ router.get(
         .where(eq(quotesTable.shareToken, params.data.token));
       if (!unlockedQuote) return null;
       const quote = await lockQuoteRow(tx, unlockedQuote.id);
-      if (!quote || quote.shareToken !== params.data.token) return null;
+      if (!quote || quote.shareToken !== params.data.token || !isLegacyLinkActive(quote)) return null;
       const revisions = await loadIncludedRevisions(tx, quote.id);
       const manifest = await loadApprovedManifest(tx, quote.id);
       const version = computeDocumentVersion(quote, revisions, manifest);
@@ -716,7 +799,7 @@ router.get("/public/signoff/:token/document", publicDocumentLimiter, async (req,
       .where(eq(quotesTable.shareToken, params.data.token));
     if (!candidate) return null;
     const quote = await lockQuoteRow(tx, candidate.id);
-    if (!quote || quote.shareToken !== params.data.token) return null;
+    if (!quote || quote.shareToken !== params.data.token || !isLegacyLinkActive(quote)) return null;
     const [signoff] = await tx
       .select()
       .from(signoffsTable)
@@ -747,20 +830,12 @@ router.get("/public/signoff/:token/document", publicDocumentLimiter, async (req,
   try {
     let objectPath = snapshot.signoff?.signedDocumentObjectPath ?? null;
     if (snapshot.signoff && !objectPath) {
-      const backfilled = await ensureLegacySignedDocumentSnapshot(
-        snapshot.quote.id,
-        {
-          id: snapshot.signoff.id,
-          signedAt: snapshot.signoff.signedAt,
-        },
-      );
-      if (!backfilled?.signedDocumentObjectPath) {
-        res.status(409).json({
-          error: "This signed approval changed while its legacy PDF snapshot was being created.",
-        });
-        return;
-      }
-      objectPath = backfilled.signedDocumentObjectPath;
+      // Legacy rows created before immutable PDF capture remain evidence, but
+      // must not be reconstructed from today's mutable quote content.
+      res.status(409).json({
+        error: "The immutable signed legacy document is unavailable.",
+      });
+      return;
     }
     if (!objectPath) {
       objectPath = await ensureUnsignedDocumentCached(
