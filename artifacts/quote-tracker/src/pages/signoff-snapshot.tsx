@@ -318,8 +318,8 @@ export default function SignoffSnapshotPage() {
             >
               <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
             </Button>
-            <Button type="button" variant="outline" onClick={downloadOriginalPdf} disabled={isDownloading}>
-              <Download className="mr-2 h-4 w-4" /> {isDownloading ? "Downloading…" : "Download original PDF"}
+              <Button type="button" variant="outline" onClick={downloadOriginalPdf} disabled={isDownloading}>
+               <Download className="mr-2 h-4 w-4" /> {isDownloading ? "Downloading…" : "Download original signed PDF"}
             </Button>
           </div>
         </header>

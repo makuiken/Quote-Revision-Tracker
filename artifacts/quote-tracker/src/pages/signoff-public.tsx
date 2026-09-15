@@ -316,18 +316,27 @@ export default function PublicSignoffPage() {
               </Button>
             )}
           </div>
-          <Button
-            onClick={() => window.print()}
-            disabled={!detail.receipt && (!manifestState.isReady || !!manifestState.error)}
-            title="Print this document, or choose Save as PDF in the print dialog."
-            className="bg-black text-white hover:bg-gray-800"
-          >
-            <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
-          </Button>
+          {!detail.receipt && (
+            <Button
+              onClick={() => window.print()}
+              disabled={!manifestState.isReady || !!manifestState.error}
+              title="Print this document, or choose Save as PDF in the print dialog."
+              className="bg-black text-white hover:bg-gray-800"
+            >
+              <Printer className="w-4 h-4 mr-2" /> Print / Save PDF
+            </Button>
+          )}
         </div>
-        <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 print:hidden">
-          <p><strong>{legacyApproval ? "Historical signature notice:" : "Current review document:"}</strong> this HTML page shows the current quote content and is not proof of an earlier signature. Only an immutable signed PDF is approval evidence.</p>
-        </div>
+        {!detail.receipt && (
+          <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 print:hidden">
+            <p><strong>{legacyApproval ? "Historical signature notice:" : "Current review document:"}</strong> this HTML page shows the current quote content and is not proof of an earlier signature. Only an immutable signed PDF is approval evidence.</p>
+          </div>
+        )}
+        {detail.receipt && (
+          <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 print:hidden">
+            <p><strong>Historical signature notice:</strong> no safe structured signed snapshot is available for this legacy approval, so the live quote is not reconstructed as a signed document. The original signed PDF is the only approval evidence.</p>
+          </div>
+        )}
         {detail.receipt ? (
           <SignoffReceiptView receipt={detail.receipt} />
         ) : (

@@ -901,7 +901,7 @@ test.describe.serial("scoped approval API contract", () => {
           response.url().endsWith(`/api/quotes/${legacyQuoteId}/signoff/document`),
       ),
       page.waitForEvent("popup"),
-      page.getByRole("button", { name: "Open legacy signed PDF" }).click(),
+      page.getByRole("button", { name: "Download original signed PDF" }).click(),
     ]);
     expect(legacyDocumentResponse.status()).toBe(200);
     expect(legacyDocumentResponse.headers()["content-type"]).toContain("application/pdf");
@@ -1245,6 +1245,76 @@ test.describe.serial("scoped approval API contract", () => {
       page.getByText("Authorized Signature", { exact: true }),
     ).toBeVisible();
     await page.emulateMedia({ media: "screen" });
+  });
+
+  test("public scoped receipt opens the original styled signed document", async ({
+    page,
+  }) => {
+    const api = page.context().request;
+    const quoteId = await createScopedQuote(api);
+    const scoped = await createScopedApproval(api, quoteId, ["windows"]);
+    await signCurrentScopedApproval(api, scoped.token);
+
+    const signed = await approvalForToken(api, quoteId, scoped.token);
+    expect(signed.status).toBe("signed");
+
+    // Make the live quote diverge after signing. The public receipt must still
+    // render the immutable approval snapshot rather than today's quote.
+    const liveProjectName = "Live quote name after scoped signing";
+    const changed = await api.patch(apiPath(`/quotes/${quoteId}`), {
+      data: { projectName: liveProjectName },
+    });
+    expect(changed.status()).toBe(200);
+
+    await page.addInitScript(() => {
+      (window as Window & { __printCalled?: boolean }).print = () => {
+        (window as Window & { __printCalled?: boolean }).__printCalled = true;
+      };
+    });
+    await page.goto(`/scoped-sign/${scoped.token}`);
+    await expect(
+      page.getByRole("heading", { name: "Approval Outdated", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: "View or print signed document",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: "Download original signed PDF",
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    await page
+      .getByRole("button", {
+        name: "View or print signed document",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Signoff Document", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(liveProjectName, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/^Scoped Approval E2E Customer - Scoped approval fixture/)).toBeVisible();
+    await expect(page.getByText("Electronically Signed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Scoped Approval Signer", { exact: true }).last()).toBeVisible();
+
+    const printButton = page.getByRole("button", {
+      name: "Print / Save PDF",
+      exact: true,
+    });
+    await expect(printButton).toBeEnabled();
+    await printButton.click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => Boolean((window as Window & { __printCalled?: boolean }).__printCalled),
+        ),
+      )
+      .toBe(true);
   });
 
   test("recovers an open picker request after refresh and cancels it before preparing another", async ({

@@ -27,11 +27,26 @@ try {
     platform: "node",
     format: "esm",
     target: "node20",
-    external: ["*.node", "@napi-rs/canvas", "pdfjs-dist", "pdfjs-dist/*"],
+    external: [
+      "*.node",
+      "@napi-rs/canvas",
+      "pdfjs-dist",
+      "pdfjs-dist/*",
+      "playwright-core",
+      "chromium-bidi",
+      "react",
+      "react-dom",
+      "react-dom/server",
+      "@workspace/db",
+    ],
   });
   // Bundled packet modules retain their `src/lib/packets` relative layout;
   // signoffDocument resolves embedded fonts adjacent to that output folder.
   await cp("assets", join(outdir, "packets", "assets"), { recursive: true });
+  await cp(
+    "../quote-tracker/public/logo.png",
+    join(outdir, "packets", "assets", "logo.png"),
+  );
   const files = [
     "packets/engine.test.js",
     "packets/workerClient.test.js",
@@ -49,6 +64,7 @@ try {
   ].map((file) => join(outdir, file));
   const child = spawn(process.execPath, ["--test", ...files], {
     stdio: "inherit",
+    env: { ...process.env, NODE_ENV: "test" },
   });
   const code = await new Promise((resolve) => child.on("exit", resolve));
   process.exitCode = code ?? 1;

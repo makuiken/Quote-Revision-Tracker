@@ -1,10 +1,21 @@
 import { format } from "date-fns";
-import { CheckCircle, AlertTriangle, FileText } from "lucide-react";
+import { CheckCircle, AlertTriangle, Download, FileText } from "lucide-react";
 import type { SignoffReceipt } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-export function SignoffReceiptView({ receipt }: { receipt: SignoffReceipt }) {
+export function SignoffReceiptView({
+  receipt,
+  onViewDocument,
+}: {
+  receipt: SignoffReceipt;
+  /**
+   * Optional read-only HTML view of the immutable signed snapshot. The
+   * callback is intentionally supplied by the page that owns the snapshot so
+   * this reusable receipt never has to fetch or reconstruct document content.
+   */
+  onViewDocument?: () => void;
+}) {
   const isCurrent = receipt.status === "current";
   const signedDate = format(new Date(receipt.signedAt), "MMMM d, yyyy 'at' h:mm a");
   const scopeLabels: Record<string, string> = {
@@ -65,20 +76,36 @@ export function SignoffReceiptView({ receipt }: { receipt: SignoffReceipt }) {
 
         {receipt.signedDocumentAvailable && receipt.signedDocumentPath ? (
           <div className="space-y-3 w-full max-w-sm">
-            <Button asChild className="w-full h-12 text-base font-bold bg-black text-white hover:bg-gray-800">
-              <a href={`/api${receipt.signedDocumentPath}`} target="_blank" rel="noreferrer">
+            {onViewDocument && (
+              <Button
+                type="button"
+                onClick={onViewDocument}
+                className="w-full h-12 text-base font-bold bg-black text-white hover:bg-gray-800"
+              >
                 <FileText className="w-5 h-5 mr-2" />
-                Open Signed Document
+                View or print signed document
+              </Button>
+            )}
+            <Button asChild variant={onViewDocument ? "outline" : "default"} className="w-full h-11 text-base font-bold">
+              <a
+                href={`/api${receipt.signedDocumentPath}`}
+                download={`quote-${receipt.quoteNumber}-original-signed.pdf`}
+              >
+                <Download className="w-5 h-5 mr-2" />
+                Download original signed PDF
               </a>
             </Button>
             <p className="text-xs text-gray-500 font-medium px-4">
-              This immutable PDF is your evidence of approval. The current live quote may have changed since signing.
+              The original signed PDF is immutable evidence of approval. The
+              {onViewDocument
+                ? " formatted view uses the captured signed snapshot, not the current live quote."
+                : " no formatted view is shown because a safe signed snapshot is unavailable."}
             </p>
           </div>
         ) : (
           <div className="text-sm text-gray-500 bg-gray-100 p-4 rounded-md w-full max-w-md border border-gray-200">
             <p className="font-bold mb-1">Signed document unavailable</p>
-            <p>The original signed PDF for this historical approval cannot be retrieved.</p>
+            <p>The original signed PDF for this historical approval cannot be retrieved. A formatted document cannot be reconstructed safely.</p>
           </div>
         )}
       </CardContent>

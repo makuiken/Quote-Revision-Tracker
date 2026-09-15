@@ -383,7 +383,7 @@ export const SIGNOFF_CONTENT_VERSION = 3;
  * renderer. Existing issued signed snapshots remain immutable and continue to
  * use their original object path.
  */
-export const SIGNOFF_DOCUMENT_FORMAT_VERSION = 2;
+export const SIGNOFF_DOCUMENT_FORMAT_VERSION = 3;
 
 export type SignoffSubmission = {
   customerName: string;

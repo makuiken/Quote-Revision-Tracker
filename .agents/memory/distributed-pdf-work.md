@@ -13,3 +13,9 @@ description: Cross-replica conventions for bounding packet processing and signof
 **Why:** Expensive I/O under row locks serializes unrelated users and raises deadlock/timeout risk. Rendering outside the transaction is safe only if finalization re-locks quote first and revalidates the exact snapshot/version before recording evidence.
 
 **How to apply:** Prepare and fingerprint under a short transaction, render outside it, then finalize under the same lock order. Delete a newly uploaded object only after fresh reference checks prove it is not signed or otherwise referenced.
+
+**Rule:** Keep the HTML PDF browser sandbox enabled and its network disabled.
+
+**Why:** Customer-controlled document and signature content reaches the renderer. Blocking network traffic alone does not isolate it from server files and credentials. Sandboxed system Chromium was verified in this environment.
+
+**How to apply:** Treat sandbox launch failures as explicit failures, never silently add `--no-sandbox`. Keep rendering deadlines inclusive of queue acquisition and cleanup.

@@ -12,14 +12,21 @@ import {
   type Revision,
 } from "@workspace/db";
 import { loadManifestPdfPages } from "../routes/quotes";
-import { hashLockedScopedContent, normalizeProductScope, publicScopedRevisions } from "./scopedApprovalModel";
-import { projectScopedPublicQuote, type ScopedPublicQuote } from "./scopedPublicQuote";
+import {
+  hashLockedScopedContent,
+  normalizeProductScope,
+  publicScopedRevisions,
+} from "./scopedApprovalModel";
+import {
+  projectScopedPublicQuote,
+  type ScopedPublicQuote,
+} from "./scopedPublicQuote";
 
 // Bump alongside changes to signoffDocument terms/layout. Scoped documents use
 // an independently locked render date, so these values must participate in the
 // token's content fingerprint as well.
-export const SCOPED_APPROVAL_CONTENT_VERSION = 3;
-export const SCOPED_APPROVAL_DOCUMENT_FORMAT_VERSION = 2;
+export const SCOPED_APPROVAL_CONTENT_VERSION = 4;
+export const SCOPED_APPROVAL_DOCUMENT_FORMAT_VERSION = 4;
 
 export type ScopedSnapshot = {
   quote: ScopedPublicQuote;
@@ -49,10 +56,12 @@ export const productTypeLabel = (type: string) =>
     millwork: "Millwork",
   })[type] ?? type;
 
-export function normalizedScope(input: unknown, quote: Pick<Quote, "categories">): string[] | null {
+export function normalizedScope(
+  input: unknown,
+  quote: Pick<Quote, "categories">,
+): string[] | null {
   return normalizeProductScope(input, quote.categories);
 }
-
 
 function stableSnapshotJson(snapshot: ScopedSnapshot): string {
   return JSON.stringify({
@@ -155,20 +164,32 @@ export async function buildScopedSnapshot(
         (revision) =>
           !revision.excludedFromSignoff &&
           (!revision.categories?.length ||
-            revision.categories.some((category) => productTypes.includes(category))),
+            revision.categories.some((category) =>
+              productTypes.includes(category),
+            )),
       ),
-      manifest: productTypes.flatMap((productType) =>
-        manifest.filter(
-          (entry): entry is typeof entry & { productType: string; sanitizedPdfObjectPath: string } =>
-            entry.productType === productType && !!entry.sanitizedPdfObjectPath,
-        ),
-      ).map((entry, scopedOrder) => ({
-        ...entry,
-        // Rendering uses this normalized order as well as hashing it.
-        pageOrder: scopedOrder,
-      })),
+      manifest: productTypes
+        .flatMap((productType) =>
+          manifest.filter(
+            (
+              entry,
+            ): entry is typeof entry & {
+              productType: string;
+              sanitizedPdfObjectPath: string;
+            } =>
+              entry.productType === productType &&
+              !!entry.sanitizedPdfObjectPath,
+          ),
+        )
+        .map((entry, scopedOrder) => ({
+          ...entry,
+          // Rendering uses this normalized order as well as hashing it.
+          pageOrder: scopedOrder,
+        })),
       productTypes,
-      notIncludedProductTypes: quote.categories.filter((type) => !productTypes.includes(type)),
+      notIncludedProductTypes: quote.categories.filter(
+        (type) => !productTypes.includes(type),
+      ),
       preparedAt,
     },
   };
@@ -189,20 +210,27 @@ export async function invalidateApprovalCoverage(
   if (!productTypes.length) return;
   await invalidateLegacyApproval(tx, quoteId, reason);
   // A request has a locked snapshot. Mark only requests touching the mutation
-  const openRequests = await tx.select({
-    id: scopedApprovalRequestsTable.id,
-    productTypes: scopedApprovalRequestsTable.productTypes,
-  }).from(scopedApprovalRequestsTable).where(
-    and(
-      eq(scopedApprovalRequestsTable.quoteId, quoteId),
-      eq(scopedApprovalRequestsTable.status, "open"),
-    ),
-  );
+  const openRequests = await tx
+    .select({
+      id: scopedApprovalRequestsTable.id,
+      productTypes: scopedApprovalRequestsTable.productTypes,
+    })
+    .from(scopedApprovalRequestsTable)
+    .where(
+      and(
+        eq(scopedApprovalRequestsTable.quoteId, quoteId),
+        eq(scopedApprovalRequestsTable.status, "open"),
+      ),
+    );
   const staleIds = openRequests
-    .filter((request) => request.productTypes.some((type) => productTypes.includes(type)))
+    .filter((request) =>
+      request.productTypes.some((type) => productTypes.includes(type)),
+    )
     .map((request) => request.id);
   if (staleIds.length) {
-    await tx.update(scopedApprovalRequestsTable).set({ status: "stale" })
+    await tx
+      .update(scopedApprovalRequestsTable)
+      .set({ status: "stale" })
       .where(inArray(scopedApprovalRequestsTable.id, staleIds));
   }
   await tx
@@ -246,7 +274,10 @@ export async function invalidateLegacyApproval(
     );
 }
 
-export async function approvalCoverage(tx: Pick<typeof db, "select">, quote: Quote) {
+export async function approvalCoverage(
+  tx: Pick<typeof db, "select">,
+  quote: Quote,
+) {
   const existing = await tx
     .select()
     .from(scopedApprovalCoverageTable)

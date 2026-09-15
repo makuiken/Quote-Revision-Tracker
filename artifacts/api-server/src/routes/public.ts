@@ -48,7 +48,6 @@ import { hashApprovedManifest } from "../lib/packets/manifestHash";
 import {
   buildScopedSnapshot,
   loadScopedManifestPdfPages,
-  productTypeLabel,
   scopedDocumentVersion,
   type ScopedSnapshot,
 } from "../lib/scopedApprovals";
@@ -81,11 +80,17 @@ async function loadQuoteByToken(token: string) {
 }
 
 function isLegacyLinkActive(
-  quote: { shareTokenRevokedAt?: Date | null; shareTokenExpiresAt?: Date | null },
+  quote: {
+    shareTokenRevokedAt?: Date | null;
+    shareTokenExpiresAt?: Date | null;
+  },
   now = new Date(),
 ) {
-  return !quote.shareTokenRevokedAt &&
-    (!quote.shareTokenExpiresAt || quote.shareTokenExpiresAt.getTime() > now.getTime());
+  return (
+    !quote.shareTokenRevokedAt &&
+    (!quote.shareTokenExpiresAt ||
+      quote.shareTokenExpiresAt.getTime() > now.getTime())
+  );
 }
 
 function legacyReceipt(
@@ -119,11 +124,14 @@ function legacyReceipt(
 function asScopedSnapshot(value: unknown): ScopedSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const snapshot = value as ScopedSnapshot;
-  if (!(Array.isArray(snapshot.productTypes) &&
+  if (!(
+    Array.isArray(snapshot.productTypes) &&
     Array.isArray(snapshot.notIncludedProductTypes) &&
     Array.isArray(snapshot.revisions) &&
     Array.isArray(snapshot.manifest) &&
-    !!snapshot.quote)) return null;
+    !!snapshot.quote
+  ))
+    return null;
   const rawQuote = snapshot.quote as unknown as Record<string, unknown>;
   if (
     typeof rawQuote.id !== "number" ||
@@ -135,8 +143,11 @@ function asScopedSnapshot(value: unknown): ScopedSnapshot | null {
     !rawQuote.categories.every((category) => typeof category === "string") ||
     !rawQuote.specs ||
     typeof rawQuote.specs !== "object" ||
-    (rawQuote.notes !== null && rawQuote.notes !== undefined && typeof rawQuote.notes !== "string")
-  ) return null;
+    (rawQuote.notes !== null &&
+      rawQuote.notes !== undefined &&
+      typeof rawQuote.notes !== "string")
+  )
+    return null;
   // Old snapshots may contain a raw quote because early scoped issuance spread
   // the DB row. Project it at read time; storage is audit evidence and must
   // never be rewritten merely to remove now-private fields.
@@ -149,7 +160,8 @@ function asScopedSnapshot(value: unknown): ScopedSnapshot | null {
   snapshot.revisions = publicScopedRevisions(snapshot.revisions);
   // Requests created during the additive rollout are still immutable; give
   // their preview a deterministic fallback rather than current wall-clock time.
-  if (typeof snapshot.preparedAt !== "string") snapshot.preparedAt = "1970-01-01T00:00:00.000Z";
+  if (typeof snapshot.preparedAt !== "string")
+    snapshot.preparedAt = "1970-01-01T00:00:00.000Z";
   return snapshot;
 }
 
@@ -158,308 +170,624 @@ function snapshotJson(snapshot: ScopedSnapshot): string {
 }
 
 async function scopedRequestByToken(token: string) {
-  const [request] = await db.select().from(scopedApprovalRequestsTable)
+  const [request] = await db
+    .select()
+    .from(scopedApprovalRequestsTable)
     .where(eq(scopedApprovalRequestsTable.token, token));
-  const snapshot = request ? asScopedSnapshot(request.snapshot) : null;
   // Revocation is an access-control boundary, not merely a UI status. Every
   // scoped public detail/document/page/sign route goes through this resolver.
-  return request && canAccessScopedPublicToken(request.status, request.expiresAt, new Date(), request.revokedAt) && snapshot ? { request, snapshot } : null;
+  if (
+    !request ||
+    !canAccessScopedPublicToken(
+      request.status,
+      request.expiresAt,
+      new Date(),
+      request.revokedAt,
+    )
+  ) {
+    return null;
+  }
+  const snapshot = asScopedSnapshot(request.snapshot);
+  if (snapshot) return { request, snapshot };
+
+  // A signed approval has its own immutable copy. If an older request row is
+  // malformed, do not reconstruct it from the live quote; recover only from
+  // that stored approval snapshot.
+  if (request.status === "signed") {
+    const [approval] = await db
+      .select({ snapshot: scopedApprovalsTable.snapshot })
+      .from(scopedApprovalsTable)
+      .where(eq(scopedApprovalsTable.requestId, request.id));
+    const signedSnapshot = approval
+      ? asScopedSnapshot(JSON.parse(JSON.stringify(approval.snapshot)))
+      : null;
+    if (signedSnapshot) return { request, snapshot: signedSnapshot };
+  }
+  return null;
 }
 
-function scopedSignoffRow(approval: typeof scopedApprovalsTable.$inferSelect | null) {
-  return approval ? {
-    id: approval.id,
-    quoteId: approval.quoteId,
-    customerName: approval.customerName,
-    stakeholderRole: approval.stakeholderRole,
-    signatureType: approval.signatureType,
-    signatureData: approval.signatureData,
-    signedAt: approval.signedAt,
-  } : null;
+/**
+ * Once a request is signed, the approval row is the immutable source of the
+ * structured document. The request snapshot normally matches it, but using
+ * the approval copy here keeps a later request-row change from changing what
+ * a customer sees beside the original signed PDF.
+ */
+async function storedScopedApprovalSnapshot(requestId: number) {
+  const [approval] = await db
+    .select()
+    .from(scopedApprovalsTable)
+    .where(eq(scopedApprovalsTable.requestId, requestId));
+  const snapshot = approval
+    ? asScopedSnapshot(JSON.parse(JSON.stringify(approval.snapshot)))
+    : null;
+  return { approval, snapshot };
+}
+
+function scopedSignoffRow(
+  approval: typeof scopedApprovalsTable.$inferSelect | null,
+) {
+  return approval
+    ? {
+        id: approval.id,
+        quoteId: approval.quoteId,
+        customerName: approval.customerName,
+        stakeholderRole: approval.stakeholderRole,
+        signatureType: approval.signatureType,
+        signatureData: approval.signatureData,
+        signedAt: approval.signedAt,
+      }
+    : null;
 }
 
 // Scoped token paths deliberately use only request.snapshot for rendering and
 // attachment access. A client never supplies (or can widen) productTypes.
 router.get("/public/scoped-signoff/:token", async (req, res): Promise<void> => {
   const record = await scopedRequestByToken(String(req.params.token));
-  if (!record) { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-  const [approval] = await db.select().from(scopedApprovalsTable)
-    .where(eq(scopedApprovalsTable.requestId, record.request.id));
-  const coverage = approval
-    ? await db.select().from(scopedApprovalCoverageTable)
-      .where(and(
-        eq(scopedApprovalCoverageTable.quoteId, record.request.quoteId),
-        eq(scopedApprovalCoverageTable.approvalId, approval.id),
-      ))
-    : [];
-  const invalidationReason = coverage.find((row) => row.invalidationReason)?.invalidationReason ?? null;
-  res.json(GetPublicScopedSignoffResponse.parse({
-    quote: record.snapshot.quote,
-    revisions: record.snapshot.revisions,
-    signoff: scopedSignoffRow(approval ?? null),
-    approval: scopedSignoffRow(approval ?? null),
-    productTypes: record.snapshot.productTypes,
-    notIncludedProductTypes: record.snapshot.notIncludedProductTypes,
-    preparedAt: record.snapshot.preparedAt,
-    documentVersion: record.request.documentVersion,
-    status: approval ? "signed" : record.request.status === "open" ? "open" : "needs_resigning",
-    receipt: approval ? buildApprovalReceipt({
-      signerName: approval.customerName,
-      signerRole: approval.stakeholderRole,
-      signedAt: approval.signedAt,
-      quoteId: record.request.quoteId,
-      quoteNumber: record.snapshot.quote.quoteNumber,
-      signedDocumentPath: `/public/scoped-signoff/${record.request.token}/document`,
-      approvalScope: approval.productTypes,
-      current: coverage.length === approval.productTypes.length &&
-        coverage.every((row) => row.status === "signed"),
-      reason: invalidationReason,
-    }) : null,
-  }));
-});
-
-router.put("/public/scoped-signoff/:token", publicSignoffWriteLimiter, async (req, res): Promise<void> => {
-  const body = req.body as Record<string, unknown>;
-  if (!body || typeof body.documentVersion !== "string" || !body.documentVersion) {
-    res.status(400).json({ error: "A documentVersion is required." }); return;
-  }
-  const parsed = {
-    customerName: typeof body.customerName === "string" ? body.customerName : "",
-    stakeholderRole: body.stakeholderRole,
-    signatureType: body.signatureType,
-    signatureData: typeof body.signatureData === "string" ? body.signatureData : "",
-  };
-  if (!["Homeowner", "Contractor", "Architect/Designer", "Other"].includes(String(parsed.stakeholderRole)) ||
-      !["typed", "drawn"].includes(String(parsed.signatureType))) {
-    res.status(400).json({ error: "A valid signer role and signature type are required." }); return;
-  }
-  const validated = validateSignoffSubmission(parsed as SignoffSubmission);
-  if ("error" in validated) { res.status(400).json({ error: validated.error }); return; }
-  // Identify the parent quote before the transaction, then use the shared
-  // quote -> request lock order inside it. This avoids deadlocking with quote
-  // mutations that invalidate scoped requests under that same order.
-  const [requestIdentity] = await db
-    .select({ quoteId: scopedApprovalRequestsTable.quoteId })
-    .from(scopedApprovalRequestsTable)
-    .where(eq(scopedApprovalRequestsTable.token, String(req.params.token)));
-  if (!requestIdentity) {
+  if (!record) {
     res.status(404).json({ error: "Invalid or revoked scoped approval link" });
     return;
   }
-  const prepared = await db.transaction(async (tx) => {
-    const quote = await lockQuoteRow(tx, requestIdentity.quoteId);
-    if (!quote || quote.archivedAt) return { kind: "stale" as const };
-    const [request] = await tx.select().from(scopedApprovalRequestsTable)
-      .where(and(
-        eq(scopedApprovalRequestsTable.token, String(req.params.token)),
-        eq(scopedApprovalRequestsTable.quoteId, quote.id),
-      )).for("update");
-    if (!request || !canAccessScopedPublicToken(request.status, request.expiresAt, new Date(), request.revokedAt)) return { kind: "notFound" as const };
-    if (request.status !== "open" || request.documentVersion !== body.documentVersion) return { kind: "stale" as const };
-    const snapshot = asScopedSnapshot(JSON.parse(JSON.stringify(request.snapshot)));
-    if (!snapshot) return { kind: "stale" as const };
-    // The request's preparation time is part of its locked PDF/version. Do
-    // not mint a fresh render date while checking a submitted signature.
-    const current = await buildScopedSnapshot(
-      tx,
-      quote,
-      request.productTypes,
-      snapshot.preparedAt,
-    );
-    if (current.unclassifiedPacket || scopedDocumentVersion(current.snapshot) !== request.documentVersion) {
-      await tx.update(scopedApprovalRequestsTable).set({ status: "stale" })
-        .where(eq(scopedApprovalRequestsTable.id, request.id));
-      return { kind: "stale" as const };
-    }
-    return {
-      kind: "ready" as const,
-      quote,
-      request,
-      snapshot,
-      snapshotFingerprint: snapshotJson(snapshot),
-      signedAt: new Date(),
-    };
-  });
-  if (prepared.kind === "notFound") { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-  if (prepared.kind === "stale") { res.status(409).json({ error: "This scoped approval has changed or is no longer current. Ask your sales representative for a new link." }); return; }
+  const stored = await storedScopedApprovalSnapshot(record.request.id);
+  if (stored.approval && !stored.snapshot) {
+    res
+      .status(409)
+      .json({
+        error: "The immutable signed approval snapshot is unavailable.",
+      });
+    return;
+  }
+  const approval = stored.approval;
+  const snapshot = stored.snapshot ?? record.snapshot;
+  const coverage = approval
+    ? await db
+        .select()
+        .from(scopedApprovalCoverageTable)
+        .where(
+          and(
+            eq(scopedApprovalCoverageTable.quoteId, record.request.quoteId),
+            eq(scopedApprovalCoverageTable.approvalId, approval.id),
+          ),
+        )
+    : [];
+  const invalidationReason =
+    coverage.find((row) => row.invalidationReason)?.invalidationReason ?? null;
+  res.json(
+    GetPublicScopedSignoffResponse.parse({
+      quote: snapshot.quote,
+      revisions: snapshot.revisions,
+      signoff: scopedSignoffRow(approval ?? null),
+      approval: scopedSignoffRow(approval ?? null),
+      productTypes: snapshot.productTypes,
+      notIncludedProductTypes: snapshot.notIncludedProductTypes,
+      preparedAt: snapshot.preparedAt,
+      documentVersion: record.request.documentVersion,
+      status: approval
+        ? "signed"
+        : record.request.status === "open"
+          ? "open"
+          : "needs_resigning",
+      receipt: approval
+        ? buildApprovalReceipt({
+            signerName: approval.customerName,
+            signerRole: approval.stakeholderRole,
+            signedAt: approval.signedAt,
+            quoteId: record.request.quoteId,
+            quoteNumber: snapshot.quote.quoteNumber,
+            signedDocumentPath: `/public/scoped-signoff/${record.request.token}/document`,
+            approvalScope: approval.productTypes,
+            current:
+              coverage.length === approval.productTypes.length &&
+              coverage.every((row) => row.status === "signed"),
+            reason: invalidationReason,
+          })
+        : null,
+    }),
+  );
+});
 
-  // Downloads, PDF generation, and object upload intentionally happen after
-  // the quote/request locks are released. The final transaction below repeats
-  // the immutable snapshot/version check before committing evidence.
-  const path = `/objects/scoped-signoff-documents/${prepared.request.quoteId}/${prepared.request.id}-${randomUUID()}.pdf`;
-  try {
-    const document = await createSignedPacketDocument({
-      quote: prepared.snapshot.quote,
-      revisions: prepared.snapshot.revisions as typeof revisionsTable.$inferSelect[],
-      approvedPacketPages: await loadScopedManifestPdfPages(prepared.snapshot),
-      scope: {
-        included: prepared.snapshot.productTypes.map(productTypeLabel),
-        notIncluded: prepared.snapshot.notIncludedProductTypes.map(productTypeLabel),
-      },
-      documentDate: new Date(prepared.snapshot.preparedAt),
-      signoff: {
-        customerName: validated.customerName,
-        stakeholderRole: parsed.stakeholderRole as "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
-        signatureType: parsed.signatureType as "typed" | "drawn",
-        signatureData: validated.signatureData,
-        signedAt: prepared.signedAt,
-      },
-    });
-    await packetStorage.saveObjectEntityImmutable(path, document.bytes, "application/pdf");
-    const outcome = await db.transaction(async (tx) => {
-      const quote = await lockQuoteRow(tx, prepared.request.quoteId);
+router.put(
+  "/public/scoped-signoff/:token",
+  publicSignoffWriteLimiter,
+  async (req, res): Promise<void> => {
+    const body = req.body as Record<string, unknown>;
+    if (
+      !body ||
+      typeof body.documentVersion !== "string" ||
+      !body.documentVersion
+    ) {
+      res.status(400).json({ error: "A documentVersion is required." });
+      return;
+    }
+    const parsed = {
+      customerName:
+        typeof body.customerName === "string" ? body.customerName : "",
+      stakeholderRole: body.stakeholderRole,
+      signatureType: body.signatureType,
+      signatureData:
+        typeof body.signatureData === "string" ? body.signatureData : "",
+    };
+    if (
+      !["Homeowner", "Contractor", "Architect/Designer", "Other"].includes(
+        String(parsed.stakeholderRole),
+      ) ||
+      !["typed", "drawn"].includes(String(parsed.signatureType))
+    ) {
+      res
+        .status(400)
+        .json({
+          error: "A valid signer role and signature type are required.",
+        });
+      return;
+    }
+    const validated = validateSignoffSubmission(parsed as SignoffSubmission);
+    if ("error" in validated) {
+      res.status(400).json({ error: validated.error });
+      return;
+    }
+    // Identify the parent quote before the transaction, then use the shared
+    // quote -> request lock order inside it. This avoids deadlocking with quote
+    // mutations that invalidate scoped requests under that same order.
+    const [requestIdentity] = await db
+      .select({ quoteId: scopedApprovalRequestsTable.quoteId })
+      .from(scopedApprovalRequestsTable)
+      .where(eq(scopedApprovalRequestsTable.token, String(req.params.token)));
+    if (!requestIdentity) {
+      res
+        .status(404)
+        .json({ error: "Invalid or revoked scoped approval link" });
+      return;
+    }
+    const prepared = await db.transaction(async (tx) => {
+      const quote = await lockQuoteRow(tx, requestIdentity.quoteId);
       if (!quote || quote.archivedAt) return { kind: "stale" as const };
-      const [request] = await tx.select().from(scopedApprovalRequestsTable)
-        .where(and(
-          eq(scopedApprovalRequestsTable.id, prepared.request.id),
-          eq(scopedApprovalRequestsTable.quoteId, quote.id),
-        )).for("update");
-        if (!request || !canAccessScopedPublicToken(request.status, request.expiresAt, new Date(), request.revokedAt)) return { kind: "notFound" as const };
-      if (request.status !== "open" || request.documentVersion !== body.documentVersion) {
+      const [request] = await tx
+        .select()
+        .from(scopedApprovalRequestsTable)
+        .where(
+          and(
+            eq(scopedApprovalRequestsTable.token, String(req.params.token)),
+            eq(scopedApprovalRequestsTable.quoteId, quote.id),
+          ),
+        )
+        .for("update");
+      if (
+        !request ||
+        !canAccessScopedPublicToken(
+          request.status,
+          request.expiresAt,
+          new Date(),
+          request.revokedAt,
+        )
+      )
+        return { kind: "notFound" as const };
+      if (
+        request.status !== "open" ||
+        request.documentVersion !== body.documentVersion
+      )
         return { kind: "stale" as const };
-      }
-      const currentSnapshot = asScopedSnapshot(JSON.parse(JSON.stringify(request.snapshot)));
-      if (!currentSnapshot || snapshotJson(currentSnapshot) !== prepared.snapshotFingerprint) {
-        return { kind: "stale" as const };
-      }
+      const snapshot = asScopedSnapshot(
+        JSON.parse(JSON.stringify(request.snapshot)),
+      );
+      if (!snapshot) return { kind: "stale" as const };
+      // The request's preparation time is part of its locked PDF/version. Do
+      // not mint a fresh render date while checking a submitted signature.
       const current = await buildScopedSnapshot(
         tx,
         quote,
         request.productTypes,
-        currentSnapshot.preparedAt,
+        snapshot.preparedAt,
       );
       if (
         current.unclassifiedPacket ||
         scopedDocumentVersion(current.snapshot) !== request.documentVersion
       ) {
+        await tx
+          .update(scopedApprovalRequestsTable)
+          .set({ status: "stale" })
+          .where(eq(scopedApprovalRequestsTable.id, request.id));
         return { kind: "stale" as const };
       }
-      const [existing] = await tx.select({ id: scopedApprovalsTable.id })
-        .from(scopedApprovalsTable)
-        .where(eq(scopedApprovalsTable.requestId, request.id))
-        .for("update");
-      const decision = scopedApprovalFinalizationDecision({
-        existingApproval: Boolean(existing),
-        submittedVersion: body.documentVersion,
-        currentVersion: request.documentVersion,
-        preparedSnapshotFingerprint: prepared.snapshotFingerprint,
-        currentSnapshotFingerprint: snapshotJson(currentSnapshot),
-      });
-      if (decision !== "ready") return { kind: decision as "stale" | "alreadySigned" };
-      const [approval] = await tx.insert(scopedApprovalsTable).values({
-        requestId: request.id, quoteId: request.quoteId, productTypes: request.productTypes,
-        snapshot: currentSnapshot, documentVersion: request.documentVersion, customerName: validated.customerName,
-        stakeholderRole: String(parsed.stakeholderRole), signatureType: String(parsed.signatureType),
-        signatureData: validated.signatureData, signedDocumentObjectPath: path,
-        signedDocumentSha256: document.sha256, signedAt: prepared.signedAt,
-      }).returning();
-      await tx.update(scopedApprovalRequestsTable).set({ status: "signed", signedAt: prepared.signedAt })
-        .where(eq(scopedApprovalRequestsTable.id, request.id));
-      for (const productType of request.productTypes) {
-        await tx.insert(scopedApprovalCoverageTable).values({
-          quoteId: request.quoteId, productType, approvalId: approval!.id, status: "signed",
-          invalidatedAt: null, invalidationReason: null, updatedAt: prepared.signedAt,
-        }).onConflictDoUpdate({
-          target: [scopedApprovalCoverageTable.quoteId, scopedApprovalCoverageTable.productType],
-          set: { approvalId: approval!.id, status: "signed", invalidatedAt: null, invalidationReason: null, updatedAt: prepared.signedAt },
-        });
-      }
-      return { kind: "ok" as const, approval: approval! };
+      return {
+        kind: "ready" as const,
+        quote,
+        request,
+        snapshot,
+        snapshotFingerprint: snapshotJson(snapshot),
+        signedAt: new Date(),
+      };
     });
-    if (outcome.kind === "notFound") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-    if (outcome.kind === "stale") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(409).json({ error: "This scoped approval has changed or is no longer current. Ask your sales representative for a new link." }); return; }
-    if (outcome.kind === "alreadySigned") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(409).json({ error: "This scoped approval is already signed." }); return; }
-    if (outcome.kind !== "ok") { await cleanupUploadedDocumentIfUnreferenced(path); res.status(500).json({ error: "The scoped approval could not be finalized." }); return; }
-    res.json({
-      ...scopedSignoffRow(outcome.approval),
-      receipt: buildApprovalReceipt({
-        signerName: outcome.approval.customerName,
-        signerRole: outcome.approval.stakeholderRole,
-        signedAt: outcome.approval.signedAt,
-        quoteId: outcome.approval.quoteId,
-        quoteNumber: prepared.snapshot.quote.quoteNumber,
-        signedDocumentPath: `/public/scoped-signoff/${prepared.request.token}/document`,
-        approvalScope: outcome.approval.productTypes,
-        current: true,
-      }),
-    });
-  } catch (error) {
-    try { await cleanupUploadedDocumentIfUnreferenced(path); } catch (cleanupError) {
-      req.log.warn({ err: cleanupError, path }, "Unable to clean up unreferenced scoped signoff PDF");
-    }
-    throw error;
-  }
-});
-
-router.get("/public/scoped-signoff/:token/packet", async (req, res): Promise<void> => {
-  const record = await scopedRequestByToken(String(req.params.token));
-  if (!record) { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-  res.json({
-    id: record.request.id,
-    manufacturer: null,
-    pageCount: record.snapshot.manifest.length,
-    productTypes: record.snapshot.productTypes,
-    // A locked request records the approved packet's timestamp. Older
-    // snapshots issued during rollout have no field, so use request creation
-    // rather than exposing a mutable packet row.
-    approvedAt: record.snapshot.manifest[0]?.approvedAt ?? record.request.createdAt,
-  });
-});
-
-router.get("/public/scoped-signoff/:token/packet/pages/:pageNumber", async (req, res): Promise<void> => {
-  const pageNumber = Number(req.params.pageNumber);
-  const documentVersion = typeof req.query.documentVersion === "string" ? req.query.documentVersion : "";
-  const record = await scopedRequestByToken(String(req.params.token));
-  if (!record) { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-  if (!Number.isInteger(pageNumber) || pageNumber < 1 || documentVersion !== record.request.documentVersion) {
-    res.status(409).json({ error: "This scoped signoff document has changed. Refresh before viewing pages." }); return;
-  }
-  const page = record.snapshot.manifest[pageNumber - 1];
-  const objectPath = page?.pagePath?.[page.pageNumber - 1];
-  if (!objectPath) { res.status(404).json({ error: "Approved scoped packet page not found." }); return; }
-  try {
-    const file = await packetStorage.getObjectEntityFile(objectPath);
-    const response = await packetStorage.downloadObject(file, 0);
-    res.status(response.status).setHeader("Content-Type", "image/png");
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-    if (response.body) Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(res); else res.end();
-  } catch {
-    res.status(404).json({ error: "Approved scoped packet page not found." });
-  }
-});
-
-router.get("/public/scoped-signoff/:token/document", publicDocumentLimiter, async (req, res): Promise<void> => {
-  const record = await scopedRequestByToken(String(req.params.token));
-  if (!record) { res.status(404).json({ error: "Invalid or revoked scoped approval link" }); return; }
-  const [approval] = await db.select().from(scopedApprovalsTable)
-    .where(eq(scopedApprovalsTable.requestId, record.request.id));
-  try {
-    if (approval) {
-      const file = await packetStorage.getObjectEntityFile(approval.signedDocumentObjectPath);
-      const response = await packetStorage.downloadObject(file, 0);
-      res.status(response.status).setHeader("Content-Disposition", 'inline; filename="scoped-customer-signoff.pdf"');
-      response.headers.forEach((value, key) => res.setHeader(key, value));
-      if (response.body) Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(res); else res.end();
+    if (prepared.kind === "notFound") {
+      res
+        .status(404)
+        .json({ error: "Invalid or revoked scoped approval link" });
       return;
     }
-    const document = await createSignedPacketDocument({
-      quote: record.snapshot.quote,
-      revisions: record.snapshot.revisions as typeof revisionsTable.$inferSelect[],
-      approvedPacketPages: await loadScopedManifestPdfPages(record.snapshot),
-      documentDate: new Date(record.snapshot.preparedAt),
-      scope: {
-        included: record.snapshot.productTypes.map(productTypeLabel),
-        notIncluded: record.snapshot.notIncludedProductTypes.map(productTypeLabel),
-      },
+    if (prepared.kind === "stale") {
+      res
+        .status(409)
+        .json({
+          error:
+            "This scoped approval has changed or is no longer current. Ask your sales representative for a new link.",
+        });
+      return;
+    }
+
+    // Downloads, PDF generation, and object upload intentionally happen after
+    // the quote/request locks are released. The final transaction below repeats
+    // the immutable snapshot/version check before committing evidence.
+    const path = `/objects/scoped-signoff-documents/${prepared.request.quoteId}/${prepared.request.id}-${randomUUID()}.pdf`;
+    try {
+      const document = await createSignedPacketDocument({
+        quote: prepared.snapshot.quote,
+        revisions: prepared.snapshot
+          .revisions as (typeof revisionsTable.$inferSelect)[],
+        approvedPacketPages: await loadScopedManifestPdfPages(
+          prepared.snapshot,
+        ),
+        scope: {
+          included: prepared.snapshot.productTypes,
+          notIncluded: prepared.snapshot.notIncludedProductTypes,
+        },
+        documentDate: new Date(prepared.snapshot.preparedAt),
+        signoff: {
+          customerName: validated.customerName,
+          stakeholderRole: parsed.stakeholderRole as
+            "Homeowner" | "Contractor" | "Architect/Designer" | "Other",
+          signatureType: parsed.signatureType as "typed" | "drawn",
+          signatureData: validated.signatureData,
+          signedAt: prepared.signedAt,
+        },
+      });
+      await packetStorage.saveObjectEntityImmutable(
+        path,
+        document.bytes,
+        "application/pdf",
+      );
+      const outcome = await db.transaction(async (tx) => {
+        const quote = await lockQuoteRow(tx, prepared.request.quoteId);
+        if (!quote || quote.archivedAt) return { kind: "stale" as const };
+        const [request] = await tx
+          .select()
+          .from(scopedApprovalRequestsTable)
+          .where(
+            and(
+              eq(scopedApprovalRequestsTable.id, prepared.request.id),
+              eq(scopedApprovalRequestsTable.quoteId, quote.id),
+            ),
+          )
+          .for("update");
+        if (
+          !request ||
+          !canAccessScopedPublicToken(
+            request.status,
+            request.expiresAt,
+            new Date(),
+            request.revokedAt,
+          )
+        )
+          return { kind: "notFound" as const };
+        if (
+          request.status !== "open" ||
+          request.documentVersion !== body.documentVersion
+        ) {
+          return { kind: "stale" as const };
+        }
+        const currentSnapshot = asScopedSnapshot(
+          JSON.parse(JSON.stringify(request.snapshot)),
+        );
+        if (
+          !currentSnapshot ||
+          snapshotJson(currentSnapshot) !== prepared.snapshotFingerprint
+        ) {
+          return { kind: "stale" as const };
+        }
+        const current = await buildScopedSnapshot(
+          tx,
+          quote,
+          request.productTypes,
+          currentSnapshot.preparedAt,
+        );
+        if (
+          current.unclassifiedPacket ||
+          scopedDocumentVersion(current.snapshot) !== request.documentVersion
+        ) {
+          return { kind: "stale" as const };
+        }
+        const [existing] = await tx
+          .select({ id: scopedApprovalsTable.id })
+          .from(scopedApprovalsTable)
+          .where(eq(scopedApprovalsTable.requestId, request.id))
+          .for("update");
+        const decision = scopedApprovalFinalizationDecision({
+          existingApproval: Boolean(existing),
+          submittedVersion: body.documentVersion,
+          currentVersion: request.documentVersion,
+          preparedSnapshotFingerprint: prepared.snapshotFingerprint,
+          currentSnapshotFingerprint: snapshotJson(currentSnapshot),
+        });
+        if (decision !== "ready")
+          return { kind: decision as "stale" | "alreadySigned" };
+        const [approval] = await tx
+          .insert(scopedApprovalsTable)
+          .values({
+            requestId: request.id,
+            quoteId: request.quoteId,
+            productTypes: request.productTypes,
+            snapshot: currentSnapshot,
+            documentVersion: request.documentVersion,
+            customerName: validated.customerName,
+            stakeholderRole: String(parsed.stakeholderRole),
+            signatureType: String(parsed.signatureType),
+            signatureData: validated.signatureData,
+            signedDocumentObjectPath: path,
+            signedDocumentSha256: document.sha256,
+            signedAt: prepared.signedAt,
+          })
+          .returning();
+        await tx
+          .update(scopedApprovalRequestsTable)
+          .set({ status: "signed", signedAt: prepared.signedAt })
+          .where(eq(scopedApprovalRequestsTable.id, request.id));
+        for (const productType of request.productTypes) {
+          await tx
+            .insert(scopedApprovalCoverageTable)
+            .values({
+              quoteId: request.quoteId,
+              productType,
+              approvalId: approval!.id,
+              status: "signed",
+              invalidatedAt: null,
+              invalidationReason: null,
+              updatedAt: prepared.signedAt,
+            })
+            .onConflictDoUpdate({
+              target: [
+                scopedApprovalCoverageTable.quoteId,
+                scopedApprovalCoverageTable.productType,
+              ],
+              set: {
+                approvalId: approval!.id,
+                status: "signed",
+                invalidatedAt: null,
+                invalidationReason: null,
+                updatedAt: prepared.signedAt,
+              },
+            });
+        }
+        return { kind: "ok" as const, approval: approval! };
+      });
+      if (outcome.kind === "notFound") {
+        await cleanupUploadedDocumentIfUnreferenced(path);
+        res
+          .status(404)
+          .json({ error: "Invalid or revoked scoped approval link" });
+        return;
+      }
+      if (outcome.kind === "stale") {
+        await cleanupUploadedDocumentIfUnreferenced(path);
+        res
+          .status(409)
+          .json({
+            error:
+              "This scoped approval has changed or is no longer current. Ask your sales representative for a new link.",
+          });
+        return;
+      }
+      if (outcome.kind === "alreadySigned") {
+        await cleanupUploadedDocumentIfUnreferenced(path);
+        res
+          .status(409)
+          .json({ error: "This scoped approval is already signed." });
+        return;
+      }
+      if (outcome.kind !== "ok") {
+        await cleanupUploadedDocumentIfUnreferenced(path);
+        res
+          .status(500)
+          .json({ error: "The scoped approval could not be finalized." });
+        return;
+      }
+      res.json({
+        ...scopedSignoffRow(outcome.approval),
+        receipt: buildApprovalReceipt({
+          signerName: outcome.approval.customerName,
+          signerRole: outcome.approval.stakeholderRole,
+          signedAt: outcome.approval.signedAt,
+          quoteId: outcome.approval.quoteId,
+          quoteNumber: prepared.snapshot.quote.quoteNumber,
+          signedDocumentPath: `/public/scoped-signoff/${prepared.request.token}/document`,
+          approvalScope: outcome.approval.productTypes,
+          current: true,
+        }),
+      });
+    } catch (error) {
+      try {
+        await cleanupUploadedDocumentIfUnreferenced(path);
+      } catch (cleanupError) {
+        req.log.warn(
+          { err: cleanupError, path },
+          "Unable to clean up unreferenced scoped signoff PDF",
+        );
+      }
+      throw error;
+    }
+  },
+);
+
+router.get(
+  "/public/scoped-signoff/:token/packet",
+  async (req, res): Promise<void> => {
+    const record = await scopedRequestByToken(String(req.params.token));
+    if (!record) {
+      res
+        .status(404)
+        .json({ error: "Invalid or revoked scoped approval link" });
+      return;
+    }
+    const stored = await storedScopedApprovalSnapshot(record.request.id);
+    if (stored.approval && !stored.snapshot) {
+      res
+        .status(409)
+        .json({
+          error: "The immutable signed approval snapshot is unavailable.",
+        });
+      return;
+    }
+    const snapshot = stored.snapshot ?? record.snapshot;
+    res.json({
+      id: record.request.id,
+      manufacturer: null,
+      pageCount: snapshot.manifest.length,
+      productTypes: snapshot.productTypes,
+      // A locked request records the approved packet's timestamp. Older
+      // snapshots issued during rollout have no field, so use request creation
+      // rather than exposing a mutable packet row.
+      approvedAt: snapshot.manifest[0]?.approvedAt ?? record.request.createdAt,
     });
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", 'inline; filename="scoped-customer-signoff-preview.pdf"');
-    res.send(Buffer.from(document.bytes));
-  } catch (error) {
-    req.log.error({ err: error, requestId: record.request.id }, "Unable to create scoped signoff document");
-    res.status(500).json({ error: "The scoped signoff document could not be generated." });
-  }
-});
+  },
+);
+
+router.get(
+  "/public/scoped-signoff/:token/packet/pages/:pageNumber",
+  async (req, res): Promise<void> => {
+    const pageNumber = Number(req.params.pageNumber);
+    const documentVersion =
+      typeof req.query.documentVersion === "string"
+        ? req.query.documentVersion
+        : "";
+    const record = await scopedRequestByToken(String(req.params.token));
+    if (!record) {
+      res
+        .status(404)
+        .json({ error: "Invalid or revoked scoped approval link" });
+      return;
+    }
+    if (
+      !Number.isInteger(pageNumber) ||
+      pageNumber < 1 ||
+      documentVersion !== record.request.documentVersion
+    ) {
+      res
+        .status(409)
+        .json({
+          error:
+            "This scoped signoff document has changed. Refresh before viewing pages.",
+        });
+      return;
+    }
+    const stored = await storedScopedApprovalSnapshot(record.request.id);
+    if (stored.approval && !stored.snapshot) {
+      res
+        .status(409)
+        .json({
+          error: "The immutable signed approval snapshot is unavailable.",
+        });
+      return;
+    }
+    const snapshot = stored.snapshot ?? record.snapshot;
+    const page = snapshot.manifest[pageNumber - 1];
+    const objectPath = page?.pagePath?.[page.pageNumber - 1];
+    if (!objectPath) {
+      res.status(404).json({ error: "Approved scoped packet page not found." });
+      return;
+    }
+    try {
+      const file = await packetStorage.getObjectEntityFile(objectPath);
+      const response = await packetStorage.downloadObject(file, 0);
+      res.status(response.status).setHeader("Content-Type", "image/png");
+      response.headers.forEach((value, key) => res.setHeader(key, value));
+      if (response.body)
+        Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(res);
+      else res.end();
+    } catch {
+      res.status(404).json({ error: "Approved scoped packet page not found." });
+    }
+  },
+);
+
+router.get(
+  "/public/scoped-signoff/:token/document",
+  publicDocumentLimiter,
+  async (req, res): Promise<void> => {
+    const record = await scopedRequestByToken(String(req.params.token));
+    if (!record) {
+      res
+        .status(404)
+        .json({ error: "Invalid or revoked scoped approval link" });
+      return;
+    }
+    const [approval] = await db
+      .select()
+      .from(scopedApprovalsTable)
+      .where(eq(scopedApprovalsTable.requestId, record.request.id));
+    try {
+      if (approval) {
+        const file = await packetStorage.getObjectEntityFile(
+          approval.signedDocumentObjectPath,
+        );
+        const response = await packetStorage.downloadObject(file, 0);
+        res
+          .status(response.status)
+          .setHeader(
+            "Content-Disposition",
+            'inline; filename="scoped-customer-signoff.pdf"',
+          );
+        response.headers.forEach((value, key) => res.setHeader(key, value));
+        if (response.body)
+          Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(
+            res,
+          );
+        else res.end();
+        return;
+      }
+      const document = await createSignedPacketDocument({
+        quote: record.snapshot.quote,
+        revisions: record.snapshot
+          .revisions as (typeof revisionsTable.$inferSelect)[],
+        approvedPacketPages: await loadScopedManifestPdfPages(record.snapshot),
+        documentDate: new Date(record.snapshot.preparedAt),
+        scope: {
+          included: record.snapshot.productTypes,
+          notIncluded: record.snapshot.notIncludedProductTypes,
+        },
+      });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="scoped-customer-signoff-preview.pdf"',
+      );
+      res.send(Buffer.from(document.bytes));
+    } catch (error) {
+      req.log.error(
+        { err: error, requestId: record.request.id },
+        "Unable to create scoped signoff document",
+      );
+      res
+        .status(500)
+        .json({ error: "The scoped signoff document could not be generated." });
+    }
+  },
+);
 
 router.get("/public/signoff/:token", async (req, res): Promise<void> => {
   const params = GetPublicSignoffParams.safeParse(req.params);
@@ -560,7 +888,11 @@ router.put(
     const prepared = await db.transaction(async (tx) => {
       const current = await lockQuoteRow(tx, quote.id);
       if (!current || current.archivedAt) return null;
-      if (current.shareToken !== params.data.token || !isLegacyLinkActive(current)) return "linkInactive" as const;
+      if (
+        current.shareToken !== params.data.token ||
+        !isLegacyLinkActive(current)
+      )
+        return "linkInactive" as const;
       const [existing] = await tx
         .select({ id: signoffsTable.id })
         .from(signoffsTable)
@@ -584,12 +916,19 @@ router.put(
           ),
         )
         .orderBy(revisionsTable.createdAt);
-      return { current, revisions, approvedPacket, signedAt: new Date(), version: parsed.data.documentVersion };
+      return {
+        current,
+        revisions,
+        approvedPacket,
+        signedAt: new Date(),
+        version: parsed.data.documentVersion,
+      };
     });
 
     if (prepared === "alreadySigned") {
       res.status(409).json({
-        error: "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
+        error:
+          "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
       });
       return;
     }
@@ -617,7 +956,9 @@ router.put(
           signatureData: validated.signatureData,
           signedAt: prepared.signedAt,
         },
-        approvedPacketPages: await loadManifestPdfPages(prepared.approvedPacket),
+        approvedPacketPages: await loadManifestPdfPages(
+          prepared.approvedPacket,
+        ),
       });
       await packetStorage.saveObjectEntityImmutable(
         signedDocumentObjectPath,
@@ -627,31 +968,46 @@ router.put(
       const signoff = await db.transaction(async (tx) => {
         const current = await lockQuoteRow(tx, quote.id);
         if (!current || current.archivedAt) return null;
-        if (current.shareToken !== params.data.token || !isLegacyLinkActive(current)) return "linkInactive" as const;
-        const [existing] = await tx.select({ id: signoffsTable.id })
-          .from(signoffsTable).where(eq(signoffsTable.quoteId, quote.id)).for("update");
+        if (
+          current.shareToken !== params.data.token ||
+          !isLegacyLinkActive(current)
+        )
+          return "linkInactive" as const;
+        const [existing] = await tx
+          .select({ id: signoffsTable.id })
+          .from(signoffsTable)
+          .where(eq(signoffsTable.quoteId, quote.id))
+          .for("update");
         if (existing) return "alreadySigned" as const;
         const included = await loadIncludedRevisions(tx, quote.id);
         const approvedPacket = await loadApprovedManifest(tx, quote.id);
-        if (computeDocumentVersion(current, included, approvedPacket) !== prepared.version) return null;
-        const [row] = await tx.insert(signoffsTable).values({
-          quoteId: quote.id,
-          customerName: validated.customerName,
-          stakeholderRole: parsed.data.stakeholderRole,
-          signatureType: parsed.data.signatureType,
-          signatureData: validated.signatureData,
-          signedPacketId: approvedPacket[0]?.packetId ?? null,
-          signedPacketSha256: hashApprovedManifest(approvedPacket),
-          signedDocumentObjectPath,
-          signedDocumentSha256: signedDocument.sha256,
-          signedAt: prepared.signedAt,
-        }).returning();
+        if (
+          computeDocumentVersion(current, included, approvedPacket) !==
+          prepared.version
+        )
+          return null;
+        const [row] = await tx
+          .insert(signoffsTable)
+          .values({
+            quoteId: quote.id,
+            customerName: validated.customerName,
+            stakeholderRole: parsed.data.stakeholderRole,
+            signatureType: parsed.data.signatureType,
+            signatureData: validated.signatureData,
+            signedPacketId: approvedPacket[0]?.packetId ?? null,
+            signedPacketSha256: hashApprovedManifest(approvedPacket),
+            signedDocumentObjectPath,
+            signedDocumentSha256: signedDocument.sha256,
+            signedAt: prepared.signedAt,
+          })
+          .returning();
         return row;
       });
       if (signoff === "alreadySigned") {
         await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
         res.status(409).json({
-          error: "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
+          error:
+            "This legacy signoff link is read-only after signing. Request a new scoped approval link for any replacement approval.",
         });
         return;
       }
@@ -663,17 +1019,25 @@ router.put(
       if (!signoff) {
         await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
         res.status(409).json({
-          error: "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
+          error:
+            "This document has changed since it was loaded. Please refresh and review the latest version before signing.",
         });
         return;
       }
-      res.json(SavePublicSignoffResponse.parse({
-        ...signoff,
-        receipt: legacyReceipt(prepared.current, signoff, params.data.token),
-      }));
+      res.json(
+        SavePublicSignoffResponse.parse({
+          ...signoff,
+          receipt: legacyReceipt(prepared.current, signoff, params.data.token),
+        }),
+      );
     } catch (error) {
-      try { await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath); } catch (cleanupError) {
-        req.log.warn({ err: cleanupError, path: signedDocumentObjectPath }, "Unable to clean up unreferenced legacy signoff PDF");
+      try {
+        await cleanupUploadedDocumentIfUnreferenced(signedDocumentObjectPath);
+      } catch (cleanupError) {
+        req.log.warn(
+          { err: cleanupError, path: signedDocumentObjectPath },
+          "Unable to clean up unreferenced legacy signoff PDF",
+        );
       }
       throw error;
     }
@@ -711,16 +1075,20 @@ router.get("/public/signoff/:token/packet", async (req, res): Promise<void> => {
     )
     .orderBy(manufacturerPacketManifestTable.pageOrder);
   if (!entries.length || !entries[0]?.approvedAt) {
-    res.status(404).json({ error: "No approved manufacturer packet is available." });
+    res
+      .status(404)
+      .json({ error: "No approved manufacturer packet is available." });
     return;
   }
   // No paths, original filename, analyzer output, or review metadata escapes.
-  res.json(GetPublicManufacturerPacketResponse.parse({
-    id: entries[0]!.packetId,
-    manufacturer: entries.length === 1 ? entries[0]!.manufacturer : null,
-    pageCount: entries.length,
-    approvedAt: entries[0]!.approvedAt,
-  }));
+  res.json(
+    GetPublicManufacturerPacketResponse.parse({
+      id: entries[0]!.packetId,
+      manufacturer: entries.length === 1 ? entries[0]!.manufacturer : null,
+      pageCount: entries.length,
+      approvedAt: entries[0]!.approvedAt,
+    }),
+  );
 });
 
 router.get(
@@ -731,9 +1099,13 @@ router.get(
       res.status(400).json({ error: params.error.message });
       return;
     }
-    const query = GetPublicManufacturerPacketPageQueryParams.safeParse(req.query);
+    const query = GetPublicManufacturerPacketPageQueryParams.safeParse(
+      req.query,
+    );
     if (!query.success) {
-      res.status(400).json({ error: "A documentVersion is required to load packet pages." });
+      res
+        .status(400)
+        .json({ error: "A documentVersion is required to load packet pages." });
       return;
     }
     const snapshot = await db.transaction(async (tx) => {
@@ -743,14 +1115,20 @@ router.get(
         .where(eq(quotesTable.shareToken, params.data.token));
       if (!unlockedQuote) return null;
       const quote = await lockQuoteRow(tx, unlockedQuote.id);
-      if (!quote || quote.shareToken !== params.data.token || !isLegacyLinkActive(quote)) return null;
+      if (
+        !quote ||
+        quote.shareToken !== params.data.token ||
+        !isLegacyLinkActive(quote)
+      )
+        return null;
       const revisions = await loadIncludedRevisions(tx, quote.id);
       const manifest = await loadApprovedManifest(tx, quote.id);
       const version = computeDocumentVersion(quote, revisions, manifest);
       const manifestPage = manifest[params.data.pageNumber - 1];
       return {
         version,
-        objectPath: manifestPage?.pagePath?.[manifestPage.pageNumber - 1] ?? null,
+        objectPath:
+          manifestPage?.pagePath?.[manifestPage.pageNumber - 1] ?? null,
       };
     });
     if (!snapshot) {
@@ -759,7 +1137,8 @@ router.get(
     }
     if (snapshot.version !== query.data.documentVersion) {
       res.status(409).json({
-        error: "This signoff document has changed. Refresh before viewing the current packet pages.",
+        error:
+          "This signoff document has changed. Refresh before viewing the current packet pages.",
       });
       return;
     }
@@ -786,86 +1165,106 @@ router.get(
   },
 );
 
-router.get("/public/signoff/:token/document", publicDocumentLimiter, async (req, res): Promise<void> => {
-  const params = GetPublicSignoffDocumentParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-  const snapshot = await db.transaction(async (tx) => {
-    const [candidate] = await tx
-      .select()
-      .from(quotesTable)
-      .where(eq(quotesTable.shareToken, params.data.token));
-    if (!candidate) return null;
-    const quote = await lockQuoteRow(tx, candidate.id);
-    if (!quote || quote.shareToken !== params.data.token || !isLegacyLinkActive(quote)) return null;
-    const [signoff] = await tx
-      .select()
-      .from(signoffsTable)
-      .where(eq(signoffsTable.quoteId, quote.id));
-    const revisions = await tx
-      .select()
-      .from(revisionsTable)
-      .where(
-        and(
-          eq(revisionsTable.quoteId, quote.id),
-          eq(revisionsTable.excludedFromSignoff, false),
-        ),
+router.get(
+  "/public/signoff/:token/document",
+  publicDocumentLimiter,
+  async (req, res): Promise<void> => {
+    const params = GetPublicSignoffDocumentParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const snapshot = await db.transaction(async (tx) => {
+      const [candidate] = await tx
+        .select()
+        .from(quotesTable)
+        .where(eq(quotesTable.shareToken, params.data.token));
+      if (!candidate) return null;
+      const quote = await lockQuoteRow(tx, candidate.id);
+      if (
+        !quote ||
+        quote.shareToken !== params.data.token ||
+        !isLegacyLinkActive(quote)
       )
-      .orderBy(revisionsTable.createdAt);
-    const manifest = await loadApprovedManifest(tx, quote.id);
-    return {
-      quote,
-      signoff: signoff ?? null,
-      revisions,
-      manifest,
-      version: computeDocumentVersion(quote, revisions, manifest),
-    };
-  });
-  if (!snapshot) {
-    res.status(404).json({ error: "Invalid or revoked link" });
-    return;
-  }
-  try {
-    let objectPath = snapshot.signoff?.signedDocumentObjectPath ?? null;
-    if (snapshot.signoff && !objectPath) {
-      // Legacy rows created before immutable PDF capture remain evidence, but
-      // must not be reconstructed from today's mutable quote content.
-      res.status(409).json({
-        error: "The immutable signed legacy document is unavailable.",
-      });
+        return null;
+      const [signoff] = await tx
+        .select()
+        .from(signoffsTable)
+        .where(eq(signoffsTable.quoteId, quote.id));
+      const revisions = await tx
+        .select()
+        .from(revisionsTable)
+        .where(
+          and(
+            eq(revisionsTable.quoteId, quote.id),
+            eq(revisionsTable.excludedFromSignoff, false),
+          ),
+        )
+        .orderBy(revisionsTable.createdAt);
+      const manifest = await loadApprovedManifest(tx, quote.id);
+      return {
+        quote,
+        signoff: signoff ?? null,
+        revisions,
+        manifest,
+        version: computeDocumentVersion(quote, revisions, manifest),
+      };
+    });
+    if (!snapshot) {
+      res.status(404).json({ error: "Invalid or revoked link" });
       return;
     }
-    if (!objectPath) {
-      objectPath = await ensureUnsignedDocumentCached(
-        snapshot.quote,
-        snapshot.revisions,
-        snapshot.manifest,
-        snapshot.version,
+    try {
+      let objectPath = snapshot.signoff?.signedDocumentObjectPath ?? null;
+      if (snapshot.signoff && !objectPath) {
+        // Legacy rows created before immutable PDF capture remain evidence, but
+        // must not be reconstructed from today's mutable quote content.
+        res.status(409).json({
+          error: "The immutable signed legacy document is unavailable.",
+        });
+        return;
+      }
+      if (!objectPath) {
+        objectPath = await ensureUnsignedDocumentCached(
+          snapshot.quote,
+          snapshot.revisions,
+          snapshot.manifest,
+          snapshot.version,
+        );
+      }
+      const file = await packetStorage.getObjectEntityFile(objectPath);
+      const response = await packetStorage.downloadObject(file, 0);
+      res.status(response.status);
+      res.setHeader(
+        "Content-Disposition",
+        'inline; filename="customer-signoff-packet.pdf"',
       );
+      response.headers.forEach((value, key) => res.setHeader(key, value));
+      if (response.body) {
+        Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(res);
+      } else {
+        res.end();
+      }
+    } catch (error) {
+      if (error instanceof UnsignedDocumentBuildCapacityError) {
+        res
+          .status(429)
+          .json({
+            error: "Document generation is busy. Please retry shortly.",
+          });
+        return;
+      }
+      req.log.error(
+        { err: error, quoteId: snapshot.quote.id },
+        "Unable to create or stream public signoff document",
+      );
+      res
+        .status(500)
+        .json({
+          error: "The current signoff document could not be generated.",
+        });
     }
-    const file = await packetStorage.getObjectEntityFile(objectPath);
-    const response = await packetStorage.downloadObject(file, 0);
-    res.status(response.status);
-    res.setHeader("Content-Disposition", 'inline; filename="customer-signoff-packet.pdf"');
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-    if (response.body) {
-      Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(res);
-    } else {
-      res.end();
-    }
-  } catch (error) {
-    if (error instanceof UnsignedDocumentBuildCapacityError) {
-      res.status(429).json({ error: "Document generation is busy. Please retry shortly." });
-      return;
-    }
-    req.log.error(
-      { err: error, quoteId: snapshot.quote.id },
-      "Unable to create or stream public signoff document",
-    );
-    res.status(500).json({ error: "The current signoff document could not be generated." });
-  }
-});
+  },
+);
 
 export default router;

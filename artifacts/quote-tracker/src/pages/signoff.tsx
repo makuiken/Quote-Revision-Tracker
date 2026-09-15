@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
-import { Check, Copy, ExternalLink, Mail, Printer, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle, RotateCcw, Clock, XCircle } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Mail, Share2, ArrowLeft, PenTool, CheckCircle, AlertTriangle, RotateCcw, Clock, XCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetQuoteQueryKey,
@@ -335,8 +335,8 @@ export default function SignoffPage() {
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (error) {
       documentWindow.close();
-      toast({
-        title: "Could not open legacy signed PDF",
+        toast({
+          title: "Could not download original signed PDF",
         description: error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
       });
@@ -360,7 +360,7 @@ export default function SignoffPage() {
           </div>
           {detail.legacyApproval?.documentAvailable ? (
             <Button type="button" variant="outline" className="bg-card text-foreground" onClick={openLegacyDocument} disabled={isOpeningLegacyDocument}>
-              <Printer className="mr-2 h-4 w-4" /> {isOpeningLegacyDocument ? "Opening PDF…" : "Open legacy signed PDF"}
+              <Download className="mr-2 h-4 w-4" /> {isOpeningLegacyDocument ? "Opening PDF…" : "Download original signed PDF"}
             </Button>
           ) : detail.legacyApproval ? (
             <p className="text-right text-xs text-amber-700 max-w-xs font-medium">The legacy signature is recorded, but its original PDF is unavailable.</p>

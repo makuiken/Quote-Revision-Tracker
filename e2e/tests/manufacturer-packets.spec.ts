@@ -650,7 +650,7 @@ test.describe("manufacturer packet API contract", () => {
     await page.goto(`/sign/${token}`);
     await expect(
       page.getByRole("link", {
-        name: "Open Signed Document",
+        name: "Download original signed PDF",
         exact: true,
       }),
     ).toBeVisible();
@@ -702,7 +702,7 @@ test.describe("manufacturer packet API contract", () => {
     await expect(page.getByRole("heading", { name: "Approval Outdated" })).toBeVisible();
     await expect(
       page.getByRole("link", {
-        name: "Open Signed Document",
+        name: "Download original signed PDF",
         exact: true,
       }),
     ).toBeVisible();

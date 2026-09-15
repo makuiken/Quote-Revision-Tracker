@@ -20,6 +20,13 @@ async function buildAll() {
     path.resolve(distDir, "assets"),
     { recursive: true },
   );
+  // The print renderer embeds this immutable brand asset in its standalone
+  // HTML. Keep the source of truth with the customer-facing application while
+  // packaging a copy next to the production API bundle.
+  await cp(
+    path.resolve(artifactDir, "../quote-tracker/public/logo.png"),
+    path.resolve(distDir, "assets/logo.png"),
+  );
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
@@ -35,6 +42,7 @@ async function buildAll() {
     // - uses native modules and loads them dynamically (e.g. sharp)
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
+      "playwright-core",
       "*.node",
       "@napi-rs/canvas",
       "pdfjs-dist",
@@ -108,12 +116,15 @@ async function buildAll() {
       "playwright",
       "puppeteer",
       "puppeteer-core",
+      "chromium-bidi",
+      "react",
+      "react-dom",
       "electron",
     ],
     sourcemap: "linked",
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
-      esbuildPluginPino({ transports: ["pino-pretty"] })
+      esbuildPluginPino({ transports: ["pino-pretty"] }),
     ],
     // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
     banner: {

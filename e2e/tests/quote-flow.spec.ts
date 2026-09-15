@@ -358,7 +358,7 @@ test.describe.serial("quote-to-signoff flow", () => {
     await prepareExactPreview(page);
     await submitDrawnSignature(page, customerName, "Contractor");
     await expect(page.getByRole("heading", { name: "Approval Recorded" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Signed Document" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Download original signed PDF" })).toBeVisible();
     await expect(page.getByText(/contractor/i)).toBeVisible();
   });
 

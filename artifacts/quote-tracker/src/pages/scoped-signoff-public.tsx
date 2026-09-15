@@ -82,12 +82,18 @@ function ScopedPacketViewer({
   onStateChange,
   fallbackOpened,
   setFallbackOpened,
+  allowFallbackForReady = true,
 }: {
   token: string;
   documentVersion: string;
   onStateChange: (state: { hasManifest: boolean; isReady: boolean; error?: string }) => void;
   fallbackOpened: boolean;
   setFallbackOpened: (opened: boolean) => void;
+  /**
+   * Signing can proceed after the customer opens the exact PDF fallback, but
+   * a formatted receipt view must never print while packet images are missing.
+   */
+  allowFallbackForReady?: boolean;
 }) {
   const { data: packet, isLoading, isError, error, refetch } = useGetPublicScopedManufacturerPacket(token, {
     query: {
@@ -142,7 +148,7 @@ function ScopedPacketViewer({
     } else if (noPacket) {
       onStateChange({ hasManifest: false, isReady: true });
     } else if (isError || failedPages.size > 0) {
-      if (fallbackOpened) {
+      if (fallbackOpened && allowFallbackForReady) {
         onStateChange({ hasManifest: true, isReady: true });
       } else {
         onStateChange({ hasManifest: true, isReady: false, error: "One or more packet images failed to load." });
@@ -152,7 +158,7 @@ function ScopedPacketViewer({
     } else {
       onStateChange({ hasManifest: false, isReady: true });
     }
-  }, [isLoading, isError, noPacket, failedPages.size, pageCount, loaded.size, onStateChange, fallbackOpened]);
+  }, [isLoading, isError, noPacket, failedPages.size, pageCount, loaded.size, onStateChange, fallbackOpened, allowFallbackForReady]);
 
   if (noPacket || (!isError && pageCount === 0)) return null;
   return (
@@ -220,6 +226,7 @@ export default function ScopedPublicSignoffPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [manifestState, setManifestState] = useState<{ hasManifest: boolean; isReady: boolean; error?: string }>({ hasManifest: false, isReady: false });
   const [fallbackOpened, setFallbackOpened] = useState(false);
+  const [showSignedDocument, setShowSignedDocument] = useState(false);
   const onManifestStateChange = React.useCallback((next: { hasManifest: boolean; isReady: boolean; error?: string }) => {
     setManifestState((current) => current.hasManifest === next.hasManifest && current.isReady === next.isReady && current.error === next.error ? current : next);
   }, []);
@@ -315,13 +322,64 @@ export default function ScopedPublicSignoffPage() {
                 Share Link
               </Button>
             )}
-            <Button onClick={() => window.print()} disabled={!receipt && Boolean(disabledReason)} className="bg-black text-white hover:bg-gray-800" title="Print this exact approval document or choose Save as PDF.">
-              <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
-            </Button>
+             {(!receipt || showSignedDocument) && (
+               <>
+                 {receipt && showSignedDocument && (
+                   <Button
+                     type="button"
+                     variant="outline"
+                     onClick={() => setShowSignedDocument(false)}
+                     className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                   >
+                     Back to receipt
+                   </Button>
+                 )}
+                 <Button
+                   onClick={() => window.print()}
+                   disabled={
+                     !manifestState.isReady ||
+                     Boolean(manifestState.error) ||
+                     (!receipt && Boolean(disabledReason))
+                   }
+                   className="bg-black text-white hover:bg-gray-800"
+                   title={manifestState.isReady ? "Print this formatted signed document or choose Save as PDF." : "Wait until every packet page has loaded before printing."}
+                 >
+                   <Printer className="mr-2 h-4 w-4" /> Print / Save PDF
+                 </Button>
+               </>
+             )}
           </div>
         </div>
-        {receipt ? (
-          <SignoffReceiptView receipt={receipt} />
+        {receipt && !showSignedDocument ? (
+          <SignoffReceiptView
+            receipt={receipt}
+            onViewDocument={() => {
+              setManifestState({ hasManifest: false, isReady: false });
+              setShowSignedDocument(true);
+            }}
+          />
+        ) : receipt ? (
+          <SignoffDocument
+            quote={detail.quote}
+            revisions={detail.revisions}
+            signoff={detail.signoff ?? null}
+            isSigned
+            productTypes={detail.productTypes}
+            notIncludedProductTypes={detail.notIncludedProductTypes}
+            preparedAt={detail.preparedAt}
+            hasManifest={manifestState.hasManifest}
+            packetSection={
+              <ScopedPacketViewer
+                token={token!}
+                documentVersion={detail.documentVersion}
+                onStateChange={onManifestStateChange}
+                fallbackOpened={fallbackOpened}
+                setFallbackOpened={setFallbackOpened}
+                allowFallbackForReady={false}
+              />
+            }
+            onSubmit={() => undefined}
+          />
         ) : (
           <SignoffDocument
             quote={detail.quote}
