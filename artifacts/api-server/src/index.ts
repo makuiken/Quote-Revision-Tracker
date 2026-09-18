@@ -6,6 +6,7 @@ const [
   { default: app },
   { logger },
   { startPacketJobRecovery },
+  { assertPdfCapacityConfiguration },
   { startAttachmentUploadRecovery },
   { startOperationalReporting },
 ] = await Promise.all([
@@ -13,9 +14,11 @@ const [
   import("./app"),
   import("./lib/logger"),
   import("./lib/packets/service"),
+  import("./lib/packets/capacity"),
   import("./lib/attachmentUploads"),
   import("./lib/operationalSignals"),
 ]);
+assertPdfCapacityConfiguration();
 
 // Development may reconcile an old local database. Production is read-only:
 // schema changes must have been applied before publishing the API.

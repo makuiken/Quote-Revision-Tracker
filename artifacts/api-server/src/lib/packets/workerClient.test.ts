@@ -10,7 +10,7 @@ import {
   runWorkerWithDeadline,
 } from "./workerClient";
 
-test("packet worker queue caps concurrent work at two", async () => {
+test("packet worker queue caps concurrent work at configured capacity", async () => {
   const queue = createBoundedWorkerQueue(MAX_PACKET_ENGINE_WORKERS);
   let active = 0;
   let peak = 0;
@@ -28,10 +28,32 @@ test("packet worker queue caps concurrent work at two", async () => {
     ),
   );
   await Promise.all(jobs);
-  assert.equal(peak, 2);
+  assert.equal(peak, MAX_PACKET_ENGINE_WORKERS);
   assert.equal(queue.activeCount, 0);
   assert.equal(queue.pendingCount, 0);
   assert.ok(PACKET_ENGINE_WORKER_RESOURCE_LIMITS.maxOldGenerationSizeMb <= 384);
+});
+
+test("packet processing jumps ahead of queued optional previews", async () => {
+  const queue = createBoundedWorkerQueue(1);
+  const order: string[] = [];
+  let releaseActive!: () => void;
+  const active = queue.run(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseActive = resolve;
+      }),
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const preview = queue.run(async () => {
+    order.push("preview");
+  });
+  const processing = queue.run(async () => {
+    order.push("processing");
+  }, "high");
+  releaseActive();
+  await Promise.all([active, preview, processing]);
+  assert.deepEqual(order, ["processing", "preview"]);
 });
 
 test("hard deadline terminates an unresponsive packet worker", async () => {

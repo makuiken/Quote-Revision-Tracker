@@ -2,7 +2,7 @@ import { Worker } from "node:worker_threads";
 
 import type { PacketWorkerRequest, PacketWorkerResponse } from "./workerProtocol";
 
-export const MAX_PACKET_ENGINE_WORKERS = 2;
+export const MAX_PACKET_ENGINE_WORKERS = 1;
 export const PACKET_ENGINE_WORKER_TIMEOUT_MS = 90_000;
 export const PACKET_ENGINE_WORKER_RESOURCE_LIMITS = {
   maxOldGenerationSizeMb: 384,
@@ -25,32 +25,45 @@ export class PacketWorkerError extends Error {
 }
 
 /**
- * A tiny FIFO semaphore. Limiting worker creation bounds native canvas memory
- * under concurrent packet uploads without sharing mutable PDF state.
+ * A tiny priority semaphore. Limiting worker creation bounds native canvas
+ * memory; prioritizing packet state transitions prevents a burst of optional
+ * page previews from starving upload analysis or sanitization.
  */
 export function createBoundedWorkerQueue(maxConcurrent = MAX_PACKET_ENGINE_WORKERS) {
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
     throw new Error("Packet worker concurrency must be a positive integer.");
   }
   let active = 0;
-  const pending: Array<() => void> = [];
+  const pending: Array<{ start: () => void; priority: "high" | "normal" }> = [];
 
   const drain = () => {
     while (active < maxConcurrent && pending.length > 0) {
       active++;
-      pending.shift()!();
+      pending.shift()!.start();
     }
   };
 
   return {
-    run<T>(job: () => Promise<T>): Promise<T> {
+    run<T>(
+      job: () => Promise<T>,
+      priority: "high" | "normal" = "normal",
+    ): Promise<T> {
       return new Promise<T>((resolve, reject) => {
-        pending.push(() => {
-          void job().then(resolve, reject).finally(() => {
-            active--;
-            drain();
-          });
-        });
+        const entry = {
+          priority,
+          start: () => {
+            void job().then(resolve, reject).finally(() => {
+              active--;
+              drain();
+            });
+          },
+        };
+        const firstNormal = pending.findIndex((item) => item.priority === "normal");
+        if (priority === "high" && firstNormal >= 0) {
+          pending.splice(firstNormal, 0, entry);
+        } else {
+          pending.push(entry);
+        }
         drain();
       });
     },
@@ -126,12 +139,14 @@ export function runPacketEngineInWorker(request: PacketWorkerRequest): Promise<u
   // usable while the worker owns its independent bytes.
   const bytes = new Uint8Array(request.bytes);
   const copiedRequest = { ...request, bytes } as PacketWorkerRequest;
-  return workerQueue.run(() =>
-    runWorkerWithDeadline(
-      spawnPacketWorker(),
-      copiedRequest,
-      PACKET_ENGINE_WORKER_TIMEOUT_MS,
-      [bytes.buffer as ArrayBuffer],
-    ),
+  return workerQueue.run(
+    () =>
+      runWorkerWithDeadline(
+        spawnPacketWorker(),
+        copiedRequest,
+        PACKET_ENGINE_WORKER_TIMEOUT_MS,
+        [bytes.buffer as ArrayBuffer],
+      ),
+    request.operation === "preview" ? "normal" : "high",
   );
 }

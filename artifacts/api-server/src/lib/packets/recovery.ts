@@ -3,7 +3,10 @@ export interface RecoverablePacketState {
   processingStartedAt: Date | null;
 }
 
-export const PROCESSING_ABANDONED_AFTER_MS = 15 * 60 * 1000;
+// A worker is forcibly terminated after 90 seconds. Five minutes leaves ample
+// time for bounded storage/finalization retries without making staff wait
+// fifteen minutes after a replica exits.
+export const PROCESSING_ABANDONED_AFTER_MS = 5 * 60 * 1000;
 
 export function nextRecoveryScanCursor(
   lastCandidateId: number,

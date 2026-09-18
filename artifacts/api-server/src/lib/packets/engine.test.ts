@@ -20,6 +20,31 @@ test("recognizes supplied-manufacturer layouts without treating product text as 
   assert.equal(detectPacketProfile(undefined, "unrelated quote"), "unknown");
 });
 
+test("analyzes a forty-page letter-size manufacturer quote within document limits", async () => {
+  const document = await PDFDocument.create();
+  for (let pageNumber = 1; pageNumber <= 40; pageNumber += 1) {
+    const page = document.addPage([612, 792]);
+    page.drawText(
+      pageNumber === 1
+        ? "Marvin manufacturer quote administrative cover"
+        : `Marvin product specification continuation page ${pageNumber}`,
+      { x: 36, y: 744, size: 12 },
+    );
+  }
+  const bytes = Buffer.from(await document.save());
+  const result = await analyzePdf(bytes, "Marvin");
+
+  assert.equal(result.pages.length, 40);
+  assert.ok(
+    result.pages.every(
+      (page, index) =>
+        page.pageNumber === index + 1 &&
+        page.width === 612 &&
+        page.height === 792,
+    ),
+  );
+});
+
 test("suggests narrow administrative fields, not the dealer company name", () => {
   const regions = findAdministrativeRegions([
     {

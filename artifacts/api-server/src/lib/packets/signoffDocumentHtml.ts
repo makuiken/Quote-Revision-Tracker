@@ -8,11 +8,10 @@ import {
   SignoffDocumentPrint,
   type SignoffDocumentProps,
 } from "@workspace/signoff-document";
+import { pdfCapacityConfiguration } from "./capacity";
 
 const RENDER_TIMEOUT_MS = 60_000;
 const MAX_RENDERERS = 2;
-const MAX_GLOBAL_RENDERER_SLOTS = 4;
-const DEFAULT_GLOBAL_RENDERER_SLOTS = 2;
 const GLOBAL_RENDERER_LOCK_BASE = 7_472_657_500;
 const GLOBAL_RENDERER_POLL_MS = 100;
 let activeRenderers = 0;
@@ -45,12 +44,7 @@ async function closeWithDeadline(close: () => Promise<void>): Promise<void> {
 }
 
 function globalRendererSlotCount(): number {
-  const configured = Number(process.env.SIGNOFF_RENDERER_GLOBAL_SLOTS);
-  return Number.isSafeInteger(configured) &&
-    configured >= 1 &&
-    configured <= MAX_GLOBAL_RENDERER_SLOTS
-    ? configured
-    : DEFAULT_GLOBAL_RENDERER_SLOTS;
+  return pdfCapacityConfiguration().signoffSlots;
 }
 
 async function acquireGlobalRendererSlot(
@@ -73,30 +67,24 @@ async function acquireGlobalRendererSlot(
     remaining(),
     "Signoff PDF renderer setup exceeded its time limit.",
   );
-  const clientPromise = pool.connect();
-  let client: Awaited<typeof clientPromise>;
-  try {
-    client = await withTimeout(
-      clientPromise,
-      remaining(),
-      "Signoff PDF renderer capacity setup exceeded its time limit.",
-    );
-  } catch (error) {
-    void clientPromise
-      .then((lateClient) =>
-        lateClient.release(error instanceof Error ? error : undefined),
-      )
-      .catch(() => undefined);
-    throw error;
-  }
-  let clientReleased = false;
-  const releaseClient = (error?: Error) => {
-    if (clientReleased) return;
-    clientReleased = true;
-    client.release(error);
-  };
-  try {
-    while (Date.now() < deadline) {
+  while (Date.now() < deadline) {
+    const clientPromise = pool.connect();
+    let client: Awaited<typeof clientPromise>;
+    try {
+      client = await withTimeout(
+        clientPromise,
+        remaining(),
+        "Signoff PDF renderer capacity setup exceeded its time limit.",
+      );
+    } catch (error) {
+      void clientPromise
+        .then((lateClient) =>
+          lateClient.release(error instanceof Error ? error : undefined),
+        )
+        .catch(() => undefined);
+      throw error;
+    }
+    try {
       for (let slot = 0; slot < globalRendererSlotCount(); slot += 1) {
         const key = GLOBAL_RENDERER_LOCK_BASE + slot;
         const queryTimeout = remaining();
@@ -115,27 +103,27 @@ async function acquireGlobalRendererSlot(
           released = true;
           try {
             await client.query("SELECT pg_advisory_unlock($1::bigint)", [key]);
-            releaseClient();
+            client.release();
           } catch (error) {
-            releaseClient(
+            client.release(
               error instanceof Error ? error : new Error(String(error)),
             );
             throw error;
           }
         };
       }
+      client.release();
       await new Promise((resolve) =>
         setTimeout(resolve, Math.min(GLOBAL_RENDERER_POLL_MS, remaining())),
       );
+    } catch (error) {
+      client.release(error instanceof Error ? error : new Error(String(error)));
+      throw error;
     }
-    releaseClient();
-    throw new Error(
-      "Signoff PDF renderer capacity wait exceeded its time limit.",
-    );
-  } catch (error) {
-    releaseClient(error instanceof Error ? error : new Error(String(error)));
-    throw error;
   }
+  throw new Error(
+    "Signoff PDF renderer capacity wait exceeded its time limit.",
+  );
 }
 
 async function acquireRenderer(deadline: number): Promise<() => void> {

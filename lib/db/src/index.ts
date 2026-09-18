@@ -12,9 +12,10 @@ if (!process.env.DATABASE_URL) {
 
 // Bound pool so each autoscaled instance uses a predictable share of DB
 // connections. At max=5 a 10-instance autoscale fleet stays within 50 total.
+export const DB_POOL_MAX = 5;
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 5,
+  max: DB_POOL_MAX,
   connectionTimeoutMillis: 5_000, // fail fast rather than queue indefinitely
   idleTimeoutMillis: 30_000,      // release idle connections quickly
 });

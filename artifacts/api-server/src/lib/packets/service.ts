@@ -27,15 +27,12 @@ import {
   templateLayoutMismatchFeedback,
   templateNoActiveMatchFeedback,
 } from "./templates";
+import { pdfCapacityConfiguration } from "./capacity";
+import { PacketWorkerError, PacketWorkerTimeoutError } from "./workerClient";
 
 const storage = new ObjectStorageService();
 const MAX_PROCESSING_ATTEMPTS = 3;
 const MAX_PACKET_BYTES = 40 * 1024 * 1024;
-const DEFAULT_GLOBAL_PACKET_WORKER_SLOTS = 2;
-// The DB pool reserves at least one connection for claim/finalization work;
-// allowing all five pool connections to be held by session locks would
-// deadlock every worker before it can claim its row.
-const MAX_GLOBAL_PACKET_WORKER_SLOTS = 4;
 const PACKET_WORKER_LOCK_BASE = 7_472_657_400;
 const RECOVERY_PAGE_SIZE = 50;
 const RECOVERY_MAX_PAGES = 4;
@@ -53,15 +50,7 @@ export { isAbandonedProcessingJob } from "./recovery";
  * API replica therefore competes for the same finite set of slots.
  */
 function globalPacketWorkerSlotCount(): number {
-  const configured = Number(process.env.PACKET_WORKER_GLOBAL_SLOTS);
-  if (
-    Number.isSafeInteger(configured) &&
-    configured >= 1 &&
-    configured <= MAX_GLOBAL_PACKET_WORKER_SLOTS
-  ) {
-    return configured;
-  }
-  return DEFAULT_GLOBAL_PACKET_WORKER_SLOTS;
+  return pdfCapacityConfiguration().packetSlots;
 }
 
 async function tryAcquireGlobalPacketWorkerSlot(): Promise<{
@@ -207,6 +196,14 @@ function renderedPagePath(quoteId: number, packetId: number, pageNumber: number)
 }
 
 function cleanError(error: unknown) {
+  if (error instanceof PacketWorkerTimeoutError) {
+    return "PDF analysis timed out before it could finish. Retry once; if it fails again, split the manufacturer quote into smaller PDFs.";
+  }
+  if (error instanceof PacketWorkerError) {
+    return error.code === "ERR_WORKER_OUT_OF_MEMORY"
+      ? "PDF analysis exceeded its memory limit. Split the manufacturer quote into smaller PDFs and upload them separately."
+      : `PDF analysis worker failed: ${error.message}`;
+  }
   const message = error instanceof Error ? error.message : "Unknown packet processing error";
   return message.slice(0, 500);
 }
@@ -266,6 +263,56 @@ async function updateProcessingPacket(
       .where(eq(manufacturerPacketsTable.id, packetId));
     return true;
   });
+}
+
+async function updateProcessingPacketWithRetry(
+  quoteId: number,
+  packetId: number,
+  attemptToken: string,
+  values: ProcessingPacketUpdate,
+): Promise<boolean> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await updateProcessingPacket(quoteId, packetId, attemptToken, values);
+    } catch (error) {
+      lastError = error;
+      recordOperationalFailure("packet_processing");
+      logger.warn(
+        { err: error, packetId, attempt },
+        "Packet finalization could not acquire database capacity; retrying",
+      );
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function saveRenderedPages(
+  pages: Array<{ pngBytes: Uint8Array }>,
+  paths: string[],
+  heartbeat: () => Promise<void>,
+): Promise<void> {
+  const concurrency = 2;
+  for (let index = 0; index < pages.length; index += concurrency) {
+    const batch = pages.slice(index, index + concurrency);
+    const writes = await Promise.allSettled(
+      batch.map((page, offset) =>
+        storage.saveObjectEntityImmutable(
+          paths[index + offset]!,
+          page.pngBytes,
+          "image/png",
+        ),
+      ),
+    );
+    const failedWrite = writes.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failedWrite) throw failedWrite.reason;
+    await heartbeat();
+  }
 }
 
 /**
@@ -426,6 +473,45 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
   });
   if (!claimed?.sourceObjectPath || !claimed.processingAttemptToken) return;
   const attemptToken = claimed.processingAttemptToken;
+  let lastHeartbeatAt = Date.now();
+  const heartbeat = async (force = false): Promise<void> => {
+    const now = Date.now();
+    if (!force && now - lastHeartbeatAt < 60_000) return;
+    const stillOwned = await updateProcessingPacketWithRetry(
+      claimed.quoteId,
+      claimed.id,
+      attemptToken,
+      {
+        status: "processing",
+        processingStartedAt: new Date(now),
+      },
+    );
+    if (!stillOwned) {
+      throw new Error("Packet processing attempt was superseded during persistence.");
+    }
+    lastHeartbeatAt = now;
+  };
+  const withHeartbeats = async <T>(operation: () => Promise<T>): Promise<T> => {
+    let heartbeatFailure: unknown;
+    let heartbeatChain = Promise.resolve();
+    await heartbeat(true);
+    const timer = setInterval(() => {
+      heartbeatChain = heartbeatChain
+        .then(() => heartbeat(true))
+        .catch((error: unknown) => {
+          heartbeatFailure ??= error;
+        });
+    }, 60_000);
+    timer.unref?.();
+    try {
+      const result = await operation();
+      await heartbeatChain;
+      if (heartbeatFailure) throw heartbeatFailure;
+      return result;
+    } finally {
+      clearInterval(timer);
+    }
+  };
   let newlyWrittenRenderPaths: string[] = [];
 
   try {
@@ -445,7 +531,9 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       throw new Error("Uploaded file is not a valid PDF.");
     }
 
-    const analysis = await packetEngine.analyzePdf(source, claimed.manufacturer);
+    const analysis = await withHeartbeats(() =>
+      packetEngine.analyzePdf(source, claimed.manufacturer),
+    );
     if (!validAnalysis(analysis.pages)) {
       throw new Error("PDF analysis returned invalid or unsupported page geometry.");
     }
@@ -507,7 +595,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
           "No active redaction template matched; manual review required",
         );
       }
-      await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
+      await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
         status: "needs_review",
         analysis: analysis.pages,
         manualRedactions: manualFromTemplate
@@ -533,15 +621,17 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const redactionsByPage = Object.fromEntries(
       Object.entries(manual).map(([page, rectangles]) => [Number(page), rectangles]),
     );
-    const sanitized = await packetEngine.generateSanitizedPacket({
-      bytes: source,
-      // Prefer the explicit manufacturer but pass a bounded deterministic
-      // detection result through to the engine when the upload did not name it.
-      manufacturer:
-        claimed.manufacturer ??
-        (detectedProfile === "unknown" ? null : detectedProfile),
-      redactionsByPage,
-    });
+    const sanitized = await withHeartbeats(() =>
+      packetEngine.generateSanitizedPacket({
+        bytes: source,
+        // Prefer the explicit manufacturer but pass a bounded deterministic
+        // detection result through to the engine when the upload did not name it.
+        manufacturer:
+          claimed.manufacturer ??
+          (detectedProfile === "unknown" ? null : detectedProfile),
+        redactionsByPage,
+      }),
+    );
     if (
       sanitized.pages.length !== analysis.pages.length ||
       sanitized.pages.some((page, index) => page.pageNumber !== index + 1 || !page.pngBytes.length) ||
@@ -549,6 +639,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     ) {
       throw new Error("PDF sanitization returned incomplete page output.");
     }
+    await heartbeat(true);
 
     const pdfPath = renderedPdfPath(claimed.quoteId, claimed.id);
     const pagePaths = sanitized.pages.map((page) =>
@@ -556,17 +647,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     );
     newlyWrittenRenderPaths = [pdfPath, ...pagePaths];
     await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
-    const pageWrites = await Promise.allSettled(
-      sanitized.pages.map((page, index) =>
-        storage.saveObjectEntityImmutable(pagePaths[index]!, page.pngBytes, "image/png"),
-      ),
-    );
-    const failedPageWrite = pageWrites.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failedPageWrite) throw failedPageWrite.reason;
+    await heartbeat(true);
+    await saveRenderedPages(sanitized.pages, pagePaths, heartbeat);
     const hash = createHash("sha256").update(sanitized.pdfBytes).digest("hex");
-    const committed = await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
+    const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       status: "ready_for_approval",
       analysis: analysis.pages,
       detectedManufacturer:
@@ -586,7 +670,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     }
   } catch (error) {
     try {
-      await updateProcessingPacket(claimed.quoteId, claimed.id, attemptToken, {
+      await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
         status: "failed",
         processingStartedAt: null,
         failureMessage: cleanError(error),
@@ -749,6 +833,13 @@ export async function recoverPacketJobs(now = Date.now()): Promise<void> {
         return requeued
           ? ({ kind: "queue", id: requeued.id } as const)
           : ({ kind: "skip" } as const);
+      }).catch((error: unknown) => {
+        recordOperationalFailure("packet_recovery");
+        logger.error(
+          { err: error, packetId: candidate.id },
+          "Packet recovery candidate failed; continuing bounded scan",
+        );
+        return { kind: "error" as const };
       });
       if (outcome.kind === "queue") {
         queued += 1;

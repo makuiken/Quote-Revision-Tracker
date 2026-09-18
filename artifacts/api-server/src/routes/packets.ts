@@ -84,6 +84,7 @@ import {
 
 const router: IRouter = Router();
 const storage = new ObjectStorageService();
+const originalPreviewJobs = new Map<string, Promise<void>>();
 
 router.use(requireAuth, requireApproved);
 
@@ -718,13 +719,23 @@ router.get(
       try {
         await storage.getObjectEntityFile(previewPath);
       } catch {
-        const source = await storage.downloadObjectBytes(packet.sourceObjectPath);
-        const png = await renderPdfPreviewInWorker(source, params.pageNumber);
-        try {
-          await storage.saveObjectEntityImmutable(previewPath, png, "image/png");
-        } catch {
-          // Another request rendered this immutable private preview first.
+        let previewJob = originalPreviewJobs.get(previewPath);
+        if (!previewJob) {
+          previewJob = (async () => {
+            const source = await storage.downloadObjectBytesBounded(
+              packet.sourceObjectPath!,
+              40 * 1024 * 1024,
+            );
+            const png = await renderPdfPreviewInWorker(source, params.pageNumber);
+            try {
+              await storage.saveObjectEntityImmutable(previewPath, png, "image/png");
+            } catch {
+              // Another replica rendered this immutable private preview first.
+            }
+          })().finally(() => originalPreviewJobs.delete(previewPath));
+          originalPreviewJobs.set(previewPath, previewJob);
         }
+        await previewJob;
       }
       await streamPrivateObject(previewPath, res);
     } catch (error) {

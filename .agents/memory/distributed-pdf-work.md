@@ -8,6 +8,18 @@ description: Cross-replica conventions for bounding packet processing and signof
 
 **How to apply:** Keep durable rows queued until a global slot is acquired; retry contention with bounded delay rather than tight loops. Leases must expire after crashes, and immutable object writes remain the final duplicate-write guard.
 
+**Rule:** Capacity waiters must not retain database clients, and state-changing PDF jobs outrank optional preview jobs in process-local queues.
+
+**Why:** Advisory-lock waiters can exhaust a small pool without owning a slot, while a burst of page previews can otherwise starve upload analysis and sanitization.
+
+**How to apply:** Check out a client only for one advisory-lock attempt, release it before sleeping, and use stable priority FIFO ordering with packet transitions above previews.
+
+**Rule:** Refresh token-fenced processing leases through worker waits and object persistence, and await every sibling write before failure cleanup begins.
+
+**Why:** Recovery can supersede healthy long jobs when only the initial claim timestamp exists; fail-fast batched writes can finish after cleanup and leave private orphan objects.
+
+**How to apply:** Heartbeat well inside the stale threshold, abort on lease loss, use bounded all-settled write batches, then perform fresh reference checks before deletion.
+
 **Rule:** Never hold quote or approval row locks while downloading sources, rendering PDFs, or uploading objects.
 
 **Why:** Expensive I/O under row locks serializes unrelated users and raises deadlock/timeout risk. Rendering outside the transaction is safe only if finalization re-locks quote first and revalidates the exact snapshot/version before recording evidence.

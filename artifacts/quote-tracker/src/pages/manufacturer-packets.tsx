@@ -50,6 +50,31 @@ export function canonicalManufacturer(value: string): string {
 }
 
 export type TemplateFeedbackCode = "no_active_match" | "layout_incompatible";
+const PROCESSING_SLOW_AFTER_MS = 2 * 60 * 1000;
+const PROCESSING_POLL_STOP_AFTER_MS = 6 * 60 * 1000;
+
+function packetProcessingAgeMs(
+  packet: Pick<ManufacturerPacket, "updatedAt">,
+  now = Date.now(),
+): number {
+  const updatedAt = Date.parse(String(packet.updatedAt));
+  return Number.isFinite(updatedAt) ? Math.max(0, now - updatedAt) : 0;
+}
+
+export function packetProcessingPollInterval(
+  packets: readonly ManufacturerPacket[] | undefined,
+  now = Date.now(),
+): number | false {
+  const pending = packets?.filter(
+    (packet) => packet.status === "queued" || packet.status === "processing",
+  ) ?? [];
+  if (!pending.length) return false;
+  const youngestAge = Math.min(
+    ...pending.map((packet) => packetProcessingAgeMs(packet, now)),
+  );
+  if (youngestAge >= PROCESSING_POLL_STOP_AFTER_MS) return false;
+  return youngestAge >= PROCESSING_SLOW_AFTER_MS ? 15_000 : 2_000;
+}
 
 export function parseTemplateFeedback(
   value: string | null | undefined,
@@ -109,12 +134,8 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
       queryKey: getListManufacturerPacketsQueryKey(quoteId),
       refetchOnMount: "always",
       refetchOnWindowFocus: true,
-      refetchInterval: (query) => {
-        const hasPending = query.state.data?.some(p =>
-          p.status === "queued" || p.status === "processing"
-        );
-        return hasPending ? 2000 : false;
-      }
+      refetchInterval: (query) =>
+        packetProcessingPollInterval(query.state.data),
     }
   });
   const packets = packetData;
@@ -708,13 +729,40 @@ function PacketDetails({ quoteId, packet, hasApprovals }: { quoteId: number, pac
   }
 
   if (packet.status === "queued" || packet.status === "processing") {
+    const processingAge = packetProcessingAgeMs(packet);
+    const delayed = processingAge >= PROCESSING_SLOW_AFTER_MS;
+    const pollingStopped = processingAge >= PROCESSING_POLL_STOP_AFTER_MS;
     return (
-      <Card className="h-full flex flex-col items-center justify-center p-12 text-center border-dashed bg-muted/50">
-        <Loader2 className="w-10 h-10 animate-spin text-muted-foreground mb-4" />
-        <h3 className="text-lg font-bold text-foreground mb-2">Analyzing Document...</h3>
+      <Card className={`h-full flex flex-col items-center justify-center p-12 text-center border-dashed ${delayed ? "border-amber-300 bg-amber-50/60" : "bg-muted/50"}`}>
+        {delayed ? (
+          <AlertTriangle className="w-10 h-10 text-amber-600 mb-4" />
+        ) : (
+          <Loader2 className="w-10 h-10 animate-spin text-muted-foreground mb-4" />
+        )}
+        <h3 className="text-lg font-bold text-foreground mb-2">
+          {delayed ? "Processing is taking longer than expected" : "Analyzing Document..."}
+        </h3>
         <p className="text-sm text-muted-foreground max-w-sm">
-          Extracting pages and detecting areas to redact. This usually takes a few moments.
+          {pollingStopped
+            ? "Automatic status checks have stopped. Check again now; if processing failed, retry once or split this manufacturer quote into smaller PDFs."
+            : delayed
+              ? "The quote is still queued or processing. Status checks will continue at a reduced rate."
+              : "Extracting pages and detecting areas to redact. This usually takes a few moments."}
         </p>
+        {delayed && (
+          <Button
+            variant="outline"
+            className="mt-5 bg-card"
+            onClick={() =>
+              queryClient.invalidateQueries({
+                queryKey: getListManufacturerPacketsQueryKey(quoteId),
+              })
+            }
+          >
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Check status
+          </Button>
+        )}
       </Card>
     );
   }
