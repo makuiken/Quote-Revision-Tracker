@@ -9,3 +9,4 @@
 - [Distributed PDF work](distributed-pdf-work.md) — use global slots and DB leases across replicas; render outside locks, then revalidate before committing immutable evidence.
 - [Presigned upload finalization](presigned-upload-finalization.md) — attach only generation-bound immutable copies; keep cleanup tombstones until every issued write URL expires.
 - [Production schema release gate](production-schema-release-gate.md) — bind each release ID to the schema-contract hash; Publish applies schema, API startup only verifies.
+- [Revision text integrity](revision-text-integrity.md) — revision history and printed documents must preserve complete text; compact previews require explicit expansion.

@@ -1074,8 +1074,9 @@ router.patch("/quotes/:id", async (req: AuthedRequest, res): Promise<void> => {
         .map((item) => SPEC_LABELS[String(item)] ?? String(item))
         .join(", ");
     }
-    const s = typeof normalized === "string" ? normalized : JSON.stringify(normalized);
-    return s.length > 120 ? `${s.slice(0, 117)}...` : s;
+    return typeof normalized === "string"
+      ? normalized
+      : JSON.stringify(normalized);
   };
 
   const humanizeField = (value: string): string => {

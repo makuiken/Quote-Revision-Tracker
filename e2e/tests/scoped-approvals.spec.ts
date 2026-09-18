@@ -439,6 +439,33 @@ test.describe.serial("scoped approval API contract", () => {
     await expect(approvalStatus).toContainText("Needs re-signing");
   });
 
+  test("preserves complete general notes in automatic revision history", async ({
+    page,
+  }) => {
+    const api = page.context().request;
+    const quoteId = await createScopedQuote(api);
+    const originalNotes = `Original complete general notes: ${"old details ".repeat(24)}END-OF-ORIGINAL`;
+    const updatedNotes = `Updated complete general notes: ${"new details ".repeat(24)}END-OF-UPDATED`;
+
+    const setOriginal = await api.patch(apiPath(`/quotes/${quoteId}`), {
+      data: { notes: originalNotes },
+    });
+    expect(setOriginal.status()).toBe(200);
+    const setUpdated = await api.patch(apiPath(`/quotes/${quoteId}`), {
+      data: { notes: updatedNotes },
+    });
+    expect(setUpdated.status()).toBe(200);
+
+    const detail = await getQuoteDetail(api, quoteId);
+    const revision = detail.revisions.find(
+      (candidate) =>
+        candidate.note.includes("Notes changed") &&
+        candidate.note.includes("END-OF-UPDATED"),
+    );
+    expect(revision?.note).toContain(originalNotes);
+    expect(revision?.note).toContain(updatedNotes);
+  });
+
   test("PATCH distinguishes targeted specs, simultaneous shared edits, and no-op edits", async ({
     page,
   }) => {
