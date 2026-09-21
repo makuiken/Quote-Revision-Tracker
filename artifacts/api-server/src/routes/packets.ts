@@ -74,7 +74,14 @@ import {
   UnsignedDocumentBuildCapacityError,
 } from "./quotes";
 import { loadApprovedManifest } from "../lib/packets/service";
-import { renderPdfPreviewInWorker } from "../lib/packets/engine";
+import {
+  createBoundedWorkerQueue,
+  PacketWorkerAbortedError,
+  PacketWorkerQueueFullError,
+  PacketWorkerTimeoutError,
+  runPacketEngineInWorker,
+} from "../lib/packets/workerClient";
+import { PreviewSingleflight } from "../lib/packets/previewSingleflight";
 import { invalidateApprovalCoverage, invalidateLegacyApproval } from "../lib/scopedApprovals";
 import { changedManifestProductTypes, manifestChanged } from "../lib/packets/manifestScope";
 import {
@@ -84,7 +91,9 @@ import {
 
 const router: IRouter = Router();
 const storage = new ObjectStorageService();
-const originalPreviewJobs = new Map<string, Promise<void>>();
+const originalPreviewJobs = new PreviewSingleflight<void>();
+const originalPreviewAdmission = createBoundedWorkerQueue(1, 4);
+const ORIGINAL_PREVIEW_HTTP_BUDGET_MS = 29_000;
 
 router.use(requireAuth, requireApproved);
 
@@ -707,10 +716,21 @@ router.get(
 router.get(
   "/quotes/:id/manufacturer-packets/:packetId/source/pages/:pageNumber",
   async (req, res): Promise<void> => {
+    const deadlineAt = Date.now() + ORIGINAL_PREVIEW_HTTP_BUDGET_MS;
+    const requestController = new AbortController();
+    const cancelRequest = () => requestController.abort();
+    req.once("aborted", cancelRequest);
+    res.once("close", cancelRequest);
     const params = parseParams(GetManufacturerPacketPageParams, req.params, res);
-    if (!params) return;
+    if (!params) {
+      req.off("aborted", cancelRequest);
+      res.off("close", cancelRequest);
+      return;
+    }
     const packet = await getPacket(params.id, params.packetId);
     if (!packet?.sourceObjectPath) {
+      req.off("aborted", cancelRequest);
+      res.off("close", cancelRequest);
       res.status(404).json({ error: "Original packet is not available." });
       return;
     }
@@ -719,28 +739,60 @@ router.get(
       try {
         await storage.getObjectEntityFile(previewPath);
       } catch {
-        let previewJob = originalPreviewJobs.get(previewPath);
-        if (!previewJob) {
-          previewJob = (async () => {
-            const source = await storage.downloadObjectBytesBounded(
-              packet.sourceObjectPath!,
-              40 * 1024 * 1024,
-            );
-            const png = await renderPdfPreviewInWorker(source, params.pageNumber);
-            try {
-              await storage.saveObjectEntityImmutable(previewPath, png, "image/png");
-            } catch {
-              // Another replica rendered this immutable private preview first.
-            }
-          })().finally(() => originalPreviewJobs.delete(previewPath));
-          originalPreviewJobs.set(previewPath, previewJob);
-        }
-        await previewJob;
+        await originalPreviewJobs.subscribe(
+          previewPath,
+          ({ signal, deadlineAt: jobDeadline }) =>
+            originalPreviewAdmission.run(
+              async () => {
+                const source = await storage.downloadObjectBytesBounded(
+                  packet.sourceObjectPath!,
+                  40 * 1024 * 1024,
+                  { signal, deadlineAt: jobDeadline },
+                );
+                const png = Buffer.from(await runPacketEngineInWorker(
+                  {
+                    operation: "preview",
+                    bytes: source,
+                    pageNumber: params.pageNumber,
+                  },
+                  { signal, deadlineAt: jobDeadline },
+                ) as Uint8Array);
+                if (signal.aborted || Date.now() >= jobDeadline) {
+                  throw new PacketWorkerAbortedError();
+                }
+                try {
+                  await storage.saveObjectEntityImmutable(previewPath, png, "image/png");
+                } catch {
+                  // Another replica rendered this immutable private preview first.
+                }
+              },
+              "normal",
+              { signal, deadlineAt: jobDeadline },
+            ),
+          { signal: requestController.signal, deadlineAt },
+        );
       }
+      if (requestController.signal.aborted) return;
       await streamPrivateObject(previewPath, res);
     } catch (error) {
+      if (requestController.signal.aborted) return;
+      if (error instanceof PacketWorkerAbortedError) {
+        res.status(503).json({ error: "Packet preview was cancelled. Please retry." });
+        return;
+      }
+      if (error instanceof PacketWorkerQueueFullError) {
+        res.status(429).json({ error: "Packet preview capacity is busy. Please retry shortly." });
+        return;
+      }
+      if (error instanceof PacketWorkerTimeoutError) {
+        res.status(503).json({ error: "Packet preview took too long. Please retry." });
+        return;
+      }
       req.log.warn({ err: error }, "Unable to render private original packet page");
       res.status(404).json({ error: "Original packet page is not available." });
+    } finally {
+      req.off("aborted", cancelRequest);
+      res.off("close", cancelRequest);
     }
   },
 );

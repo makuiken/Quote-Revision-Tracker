@@ -77,6 +77,9 @@ export interface SanitizationSelection {
   pages: ReadonlyArray<{
     pageNumber: number;
     bounds: readonly NormalizedRect[];
+    /** Source-bound geometry used to reject stale analysis/redaction data. */
+    expectedWidth?: number;
+    expectedHeight?: number;
   }>;
   /**
    * Optional source-page order. Omitting a page excludes it from the flattened
@@ -91,6 +94,11 @@ export interface SanitizedPacket {
   pages: Array<{ pageNumber: number; width: number; height: number; pngBytes: Buffer }>;
   pageCount: number;
   renderDpi: number;
+  diagnostics: {
+    renderAndPngMs: number;
+    pdfEncodeMs: number;
+    totalMs: number;
+  };
 }
 
 export type PacketEngineAdapter = Omit<
@@ -126,6 +134,14 @@ export type PacketEngineAdapter = Omit<
     pageNumber: number,
     options?: RenderPreviewOptions,
   ): Promise<Buffer>;
+  /** Render one redacted PNG directly, without constructing a throwaway PDF. */
+  renderRedactedPdfPreview(input: {
+    bytes: Uint8Array;
+    pageNumber: number;
+    pageDimensions: Pick<StoredPageAnalysis, "width" | "height">;
+    redactions: RedactionRect[];
+    options?: RenderPreviewOptions;
+  }): Promise<Buffer>;
 };
 
 export class PacketEngineError extends Error {
@@ -183,6 +199,8 @@ type CanvasModule = {
   createCanvas(width: number, height: number): CanvasLike;
 };
 
+let libraryPromise: Promise<{ pdfjs: PdfJsModule; canvas: CanvasModule }> | undefined;
+
 interface ImagePlacement {
   key: string;
   bounds: NormalizedRect;
@@ -218,18 +236,22 @@ function assertRenderDpi(dpi: number, limits: PacketEngineLimits): number {
 }
 
 async function loadLibraries(): Promise<{ pdfjs: PdfJsModule; canvas: CanvasModule }> {
-  try {
-    const [pdfjs, canvas] = await Promise.all([
-      import("pdfjs-dist/legacy/build/pdf.mjs"),
-      import("@napi-rs/canvas"),
-    ]);
-    return { pdfjs: pdfjs as unknown as PdfJsModule, canvas: canvas as unknown as CanvasModule };
-  } catch (error) {
-    throw new PacketEngineError(
-      "RENDER_FAILED",
-      `Packet rendering dependencies are unavailable: ${error instanceof Error ? error.message : "unknown error"}.`,
-    );
-  }
+  libraryPromise ??= Promise.all([
+    import("pdfjs-dist/legacy/build/pdf.mjs"),
+    import("@napi-rs/canvas"),
+  ])
+    .then(([pdfjs, canvas]) => ({
+      pdfjs: pdfjs as unknown as PdfJsModule,
+      canvas: canvas as unknown as CanvasModule,
+    }))
+    .catch((error: unknown) => {
+      libraryPromise = undefined;
+      throw new PacketEngineError(
+        "RENDER_FAILED",
+        `Packet rendering dependencies are unavailable: ${error instanceof Error ? error.message : "unknown error"}.`,
+      );
+    });
+  return libraryPromise;
 }
 
 async function openDocument(bytes: Buffer, limits: PacketEngineLimits): Promise<PdfJsDocument> {
@@ -538,11 +560,11 @@ function selectionMap(
   selection: SanitizationSelection,
   pageCount: number,
   limits: PacketEngineLimits,
-): Map<number, readonly NormalizedRect[]> {
+): Map<number, SanitizationSelection["pages"][number]> {
   if (!selection || !Array.isArray(selection.pages)) {
     throw new PacketEngineError("INVALID_SELECTION", "A page-by-page sanitization selection is required.");
   }
-  const selected = new Map<number, readonly NormalizedRect[]>();
+  const selected = new Map<number, SanitizationSelection["pages"][number]>();
   for (const entry of selection.pages) {
     if (!Number.isInteger(entry.pageNumber) || entry.pageNumber < 1 || entry.pageNumber > pageCount) {
       throw new PacketEngineError("INVALID_SELECTION", "Selection contains an invalid page number.");
@@ -553,9 +575,35 @@ function selectionMap(
     if (!entry.bounds.every(isNormalizedRect)) {
       throw new PacketEngineError("INVALID_SELECTION", "Each selected bound must be a normalized in-page rectangle.");
     }
-    selected.set(entry.pageNumber, entry.bounds);
+    if (
+      (entry.expectedWidth !== undefined &&
+        (!Number.isFinite(entry.expectedWidth) || entry.expectedWidth <= 0)) ||
+      (entry.expectedHeight !== undefined &&
+        (!Number.isFinite(entry.expectedHeight) || entry.expectedHeight <= 0))
+    ) {
+      throw new PacketEngineError("INVALID_SELECTION", "Selection contains invalid expected page geometry.");
+    }
+    selected.set(entry.pageNumber, entry);
   }
   return selected;
+}
+
+function assertExpectedDimensions(
+  expected: Pick<SanitizationSelection["pages"][number], "expectedWidth" | "expectedHeight"> | undefined,
+  actual: Pick<PdfPageBounds, "width" | "height">,
+): void {
+  const tolerance = 0.01;
+  if (
+    (expected?.expectedWidth !== undefined &&
+      Math.abs(expected.expectedWidth - actual.width) > tolerance) ||
+    (expected?.expectedHeight !== undefined &&
+      Math.abs(expected.expectedHeight - actual.height) > tolerance)
+  ) {
+    throw new PacketEngineError(
+      "INVALID_SELECTION",
+      "Selected redactions were analyzed against different source page dimensions.",
+    );
+  }
 }
 
 export function rasterBoundsForNormalizedRect(
@@ -647,14 +695,21 @@ export async function analyzePdf(bytes: Buffer, manufacturer?: string): Promise<
       images: ImagePlacement[];
     }> = [];
     let documentText = "";
+    const { pdfjs } = await loadLibraries();
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
       assertWithinDeadline(startedAt, limits);
       const page = await document.getPage(pageNumber);
       try {
         const dimensions = dimensionsFor(page, limits);
-        const lines = textLinesFromContent((await page.getTextContent()).items, dimensions);
-        const { pdfjs } = await loadLibraries();
-        const images = imagePlacementsFromOperators(await page.getOperatorList(), pdfjs.OPS, dimensions);
+        // PDF.js can prepare text and operators from the same parsed page in
+        // parallel. This removes avoidable per-page serialization without
+        // changing either deterministic analysis result.
+        const [textContent, operatorList] = await Promise.all([
+          page.getTextContent(),
+          page.getOperatorList(),
+        ]);
+        const lines = textLinesFromContent(textContent.items, dimensions);
+        const images = imagePlacementsFromOperators(operatorList, pdfjs.OPS, dimensions);
         const text = pageText(lines);
         documentText += `\n${text}`;
         drafts.push({
@@ -770,6 +825,49 @@ export async function renderPdfPreview(
 /** Alias kept concise for route consumers. */
 export const renderPreview = renderPdfPreview;
 
+/** Renders one redacted PNG directly, avoiding PDF assembly/encoding. */
+export async function renderRedactedPdfPreview(
+  bytes: Buffer,
+  pageNumber: number,
+  bounds: readonly NormalizedRect[],
+  expectedDimensions: { width: number; height: number },
+  options: RenderPreviewOptions = {},
+): Promise<Buffer> {
+  const limits = resolveLimits(options.limits);
+  const startedAt = Date.now();
+  assertPdfBytes(bytes, limits);
+  if (
+    !Number.isInteger(pageNumber) ||
+    pageNumber < 1 ||
+    bounds.length > limits.maxRectsPerPage ||
+    !bounds.every(isNormalizedRect)
+  ) {
+    throw new PacketEngineError("INVALID_SELECTION", "Redacted preview selection is invalid.");
+  }
+  const dpi = assertRenderDpi(options.dpi ?? DEFAULT_RENDER_DPI, limits);
+  const document = await openDocument(bytes, limits);
+  try {
+    if (pageNumber > document.numPages) {
+      throw new PacketEngineError("INVALID_SELECTION", "Preview page number is outside the document.");
+    }
+    const page = await document.getPage(pageNumber);
+    try {
+      const dimensions = dimensionsFor(page, limits);
+      assertExpectedDimensions(
+        { expectedWidth: expectedDimensions.width, expectedHeight: expectedDimensions.height },
+        dimensions,
+      );
+      const rendered = await renderPage(page, dpi, limits, bounds);
+      assertWithinDeadline(startedAt, limits);
+      return rendered.png;
+    } finally {
+      page.cleanup();
+    }
+  } finally {
+    await closeDocument(document);
+  }
+}
+
 /** Worker-isolated full analysis for callers that need profile/regions. */
 export async function analyzePdfInWorker(bytes: Uint8Array, manufacturer?: string | null): Promise<PdfAnalysis> {
   return (await runPacketEngineInWorker({
@@ -827,12 +925,15 @@ export async function sanitizePdf(
     const pagePngs: Buffer[] = [];
     const pages: SanitizedPacket["pages"] = [];
     let totalPixels = 0;
+    const renderStartedAt = Date.now();
     for (const [outputPageIndex, sourcePageNumber] of sourcePageOrder.entries()) {
       assertWithinDeadline(startedAt, limits);
       const page = await document.getPage(sourcePageNumber);
       try {
         const dimensions = dimensionsFor(page, limits);
-        const rendered = await renderPage(page, dpi, limits, selected.get(sourcePageNumber) ?? []);
+        const pageSelection = selected.get(sourcePageNumber);
+        assertExpectedDimensions(pageSelection, dimensions);
+        const rendered = await renderPage(page, dpi, limits, pageSelection?.bounds ?? []);
         totalPixels += rendered.width * rendered.height;
         if (totalPixels > limits.maxTotalPixels) {
           throw new PacketEngineError("LIMIT_EXCEEDED", "Packet raster pixels exceed the document limit.");
@@ -856,12 +957,26 @@ export async function sanitizePdf(
         page.cleanup();
       }
     }
+    const renderAndPngMs = Date.now() - renderStartedAt;
+    const pdfEncodeStartedAt = Date.now();
     const pdf = Buffer.from(await output.save({ addDefaultPage: false, useObjectStreams: true }));
+    const pdfEncodeMs = Date.now() - pdfEncodeStartedAt;
     if (pdf.length > limits.maxOutputBytes) {
       throw new PacketEngineError("LIMIT_EXCEEDED", "Sanitized PDF exceeds the output byte limit.");
     }
     assertWithinDeadline(startedAt, limits);
-    return { pdf, pagePngs, pages, pageCount: sourcePageOrder.length, renderDpi: dpi };
+    return {
+      pdf,
+      pagePngs,
+      pages,
+      pageCount: sourcePageOrder.length,
+      renderDpi: dpi,
+      diagnostics: {
+        renderAndPngMs,
+        pdfEncodeMs,
+        totalMs: Date.now() - startedAt,
+      },
+    };
   } finally {
     await closeDocument(document);
   }
@@ -923,6 +1038,21 @@ export const packetEngine: PacketEngineAdapter = {
     return renderPdfPreviewInWorker(bytes, pageNumber, options);
   },
 
+  async renderRedactedPdfPreview({ bytes, pageNumber, pageDimensions, redactions, options }) {
+    const bounds = redactions.map((rectangle) =>
+      toNormalizedRect(rectangle, pageDimensions.width, pageDimensions.height),
+    );
+    const png = await runPacketEngineInWorker({
+      operation: "redactedPreview",
+      bytes,
+      pageNumber,
+      bounds,
+      expectedDimensions: pageDimensions,
+      options,
+    });
+    return Buffer.from(png as Uint8Array);
+  },
+
   async generateSanitizedPacket({ bytes, manufacturer, redactionsByPage, pageDimensions, pageOrder }) {
     // The service's stored selection is in PDF points (top-left origin); the
     // raster engine's public contract deliberately uses normalized bounds.
@@ -942,6 +1072,8 @@ export const packetEngine: PacketEngineAdapter = {
       return {
         pageNumber: Number(pageNumber),
         bounds: rectangles.map((rectangle) => toNormalizedRect(rectangle, page.width, page.height)),
+        expectedWidth: page.width,
+        expectedHeight: page.height,
       };
     });
     const sanitized = (await runPacketEngineInWorker({

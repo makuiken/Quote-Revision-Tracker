@@ -239,6 +239,53 @@ test("keeps approved manufacturer pages as unchanged trailing pages", async () =
   );
 });
 
+test("keeps interleaved source order and duplicate approved pages", async () => {
+  async function packetWithPages(labels: string[]): Promise<Uint8Array> {
+    const packet = await PDFDocument.create();
+    const font = await packet.embedFont(StandardFonts.Helvetica);
+    for (const label of labels) {
+      const page = packet.addPage([420, 595]);
+      page.drawText(label, { x: 24, y: 540, font, size: 18 });
+    }
+    return packet.save();
+  }
+
+  const sourceA = await packetWithPages(["SOURCE A PAGE 1", "SOURCE A PAGE 2"]);
+  const sourceB = await packetWithPages(["SOURCE B PAGE 1"]);
+  const document = await createSignedPacketDocument({
+    quote,
+    revisions: [],
+    approvedPacketPages: [
+      { pdfBytes: sourceA, pageNumber: 2 },
+      { pdfBytes: sourceB, pageNumber: 1 },
+      { pdfBytes: sourceA, pageNumber: 2 },
+      { pdfBytes: sourceA, pageNumber: 1 },
+      { pdfBytes: sourceB, pageNumber: 1 },
+    ],
+  });
+
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loaded = await pdfjs.getDocument({ data: document.bytes }).promise;
+  const trailingText: string[] = [];
+  for (
+    let pageNumber = loaded.numPages - 4;
+    pageNumber <= loaded.numPages;
+    pageNumber += 1
+  ) {
+    const content = await (await loaded.getPage(pageNumber)).getTextContent();
+    trailingText.push(
+      content.items.map((item) => ("str" in item ? item.str : "")).join(" "),
+    );
+  }
+  assert.deepEqual(trailingText, [
+    "SOURCE A PAGE 2",
+    "SOURCE B PAGE 1",
+    "SOURCE A PAGE 2",
+    "SOURCE A PAGE 1",
+    "SOURCE B PAGE 1",
+  ]);
+});
+
 test("embeds a drawn signature and Unicode auto-revision content", async () => {
   const document = await createSignedPacketDocument({
     quote: { ...quote, customerName: "José García" },

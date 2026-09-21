@@ -224,23 +224,46 @@ export class ObjectStorageService {
   async downloadObjectBytesBounded(
     objectPath: string,
     maxBytes: number,
+    options: { signal?: AbortSignal; deadlineAt?: number } = {},
   ): Promise<Buffer> {
-    const metadata = await this.getObjectEntityMetadata(objectPath);
+    if (options.signal?.aborted) throw options.signal.reason ?? new Error("Download cancelled.");
+    const remaining = options.deadlineAt === undefined
+      ? 30_000
+      : Math.max(1, Math.min(30_000, options.deadlineAt - Date.now()));
+    const metadata = await this.getObjectEntityMetadata(objectPath, remaining);
     if (metadata.size > maxBytes) throw new Error("Object exceeds the allowed size.");
     const file = await this.getObjectEntityFile(objectPath);
     const chunks: Buffer[] = [];
     let total = 0;
     const stream = file.createReadStream();
-    for await (const chunk of stream) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      total += buffer.length;
-      if (total > maxBytes) {
-        stream.destroy(new Error("Object exceeded the allowed size while downloading."));
-        throw new Error("Object exceeds the allowed size.");
+    const deadlineTimer = options.deadlineAt === undefined
+      ? undefined
+      : setTimeout(
+          () => stream.destroy(new Error("Object download deadline exceeded.")),
+          Math.max(0, options.deadlineAt - Date.now()),
+        );
+    deadlineTimer?.unref?.();
+    const onAbort = () => stream.destroy(
+      options.signal?.reason instanceof Error
+        ? options.signal.reason
+        : new Error("Object download cancelled."),
+    );
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      for await (const chunk of stream) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buffer.length;
+        if (total > maxBytes) {
+          stream.destroy(new Error("Object exceeded the allowed size while downloading."));
+          throw new Error("Object exceeds the allowed size.");
+        }
+        chunks.push(buffer);
       }
-      chunks.push(buffer);
+      return Buffer.concat(chunks, total);
+    } finally {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      options.signal?.removeEventListener("abort", onAbort);
     }
-    return Buffer.concat(chunks, total);
   }
 
   /**

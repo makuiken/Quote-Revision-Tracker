@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createCanvas } from "@napi-rs/canvas";
-import { PDFDocument, degrees } from "pdf-lib";
+import { PDFDocument, degrees, rgb } from "pdf-lib";
 
 import {
   classifyPacketPage,
@@ -9,7 +9,13 @@ import {
   findAdministrativeRegions,
   isNormalizedRect,
 } from "./profiles";
-import { analyzePdf, rasterBoundsForNormalizedRect, textLinesFromContent } from "./engine";
+import {
+  analyzePdf,
+  rasterBoundsForNormalizedRect,
+  renderRedactedPdfPreview,
+  sanitizePdf,
+  textLinesFromContent,
+} from "./engine";
 
 test("recognizes supplied-manufacturer layouts without treating product text as branding", () => {
   assert.equal(detectPacketProfile(undefined, "400 Series Andersen window"), "andersen");
@@ -180,4 +186,36 @@ test("raster redaction covers fractional right and bottom edge pixels", () => {
   context.fillStyle = "#ffffff";
   context.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
   assert.deepEqual([...context.getImageData(11, 11, 1, 1).data], [255, 255, 255, 255]);
+});
+
+test("rejects stale source-bound dimensions before sanitizing", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([612, 792]).drawText("private", { x: 30, y: 700 });
+  const bytes = Buffer.from(await document.save());
+  await assert.rejects(
+    sanitizePdf(bytes, {
+      pages: [{
+        pageNumber: 1,
+        bounds: [{ x: 0, y: 0, width: 0.2, height: 0.2 }],
+        expectedWidth: 600,
+        expectedHeight: 792,
+      }],
+    }),
+    /different source page dimensions/,
+  );
+});
+
+test("renders a direct redacted PNG without PDF assembly", async () => {
+  const document = await PDFDocument.create();
+  const page = document.addPage([144, 144]);
+  page.drawRectangle({ x: 0, y: 72, width: 72, height: 72, color: rgb(0, 0, 0) });
+  const bytes = Buffer.from(await document.save());
+  const png = await renderRedactedPdfPreview(
+    bytes,
+    1,
+    [{ x: 0, y: 0, width: 0.5, height: 0.5 }],
+    { width: 144, height: 144 },
+    { dpi: 72 },
+  );
+  assert.deepEqual(png.subarray(1, 4).toString("ascii"), "PNG");
 });

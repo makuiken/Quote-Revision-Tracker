@@ -20,6 +20,14 @@ export type PacketWorkerRequest =
       bytes: Uint8Array;
       pageNumber: number;
       options?: RenderPreviewOptions;
+    }
+  | {
+      operation: "redactedPreview";
+      bytes: Uint8Array;
+      pageNumber: number;
+      bounds: readonly NormalizedRect[];
+      expectedDimensions: { width: number; height: number };
+      options?: RenderPreviewOptions;
     };
 
 export type PacketWorkerResponse =

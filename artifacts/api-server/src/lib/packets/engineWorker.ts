@@ -1,6 +1,11 @@
 import { parentPort } from "node:worker_threads";
 
-import { analyzePdf, renderPdfPreview, sanitizePdf } from "./engine";
+import {
+  analyzePdf,
+  renderPdfPreview,
+  renderRedactedPdfPreview,
+  sanitizePdf,
+} from "./engine";
 import type { PacketWorkerRequest, PacketWorkerResponse } from "./workerProtocol";
 
 const port = parentPort;
@@ -25,6 +30,14 @@ port.on("message", async (request: PacketWorkerRequest) => {
       ? analyzePdf(Buffer.from(request.bytes), request.manufacturer)
       : request.operation === "preview"
         ? renderPdfPreview(Buffer.from(request.bytes), request.pageNumber, request.options)
+        : request.operation === "redactedPreview"
+          ? renderRedactedPdfPreview(
+              Buffer.from(request.bytes),
+              request.pageNumber,
+              request.bounds,
+              request.expectedDimensions,
+              request.options,
+            )
         : sanitizePdf(Buffer.from(request.bytes), request.selection));
     port.postMessage({ ok: true, result } satisfies PacketWorkerResponse);
   } catch (error) {

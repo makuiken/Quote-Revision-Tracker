@@ -485,12 +485,21 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     }
   };
   let newlyWrittenRenderPaths: string[] = [];
+  const stageStartedAt = Date.now();
+  const stageTimings: Record<string, number> = {};
+  let previousStageAt = stageStartedAt;
+  const finishStage = (stage: string): void => {
+    const now = Date.now();
+    stageTimings[stage] = now - previousStageAt;
+    previousStageAt = now;
+  };
 
   try {
     const source = await storage.downloadObjectBytesBounded(
       claimed.sourceObjectPath,
       MAX_PACKET_BYTES,
     );
+    finishStage("sourceDownloadMs");
     if (source.byteLength === 0 || source.byteLength > MAX_PACKET_BYTES) {
       throw new Error("Packet must be a non-empty PDF no larger than 40 MiB.");
     }
@@ -506,6 +515,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const analysis = await withHeartbeats(() =>
       packetEngine.analyzePdf(source, claimed.manufacturer),
     );
+    finishStage("analysisMs");
     if (!validAnalysis(analysis.pages)) {
       throw new Error("PDF analysis returned invalid or unsupported page geometry.");
     }
@@ -586,6 +596,15 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         pageCount: analysis.pages.length,
         processingStartedAt: null,
       });
+      logger.info(
+        {
+          packetId: claimed.id,
+          pageCount: analysis.pages.length,
+          totalMs: Date.now() - stageStartedAt,
+          stages: stageTimings,
+        },
+        "Packet analysis stage timings",
+      );
       return;
     }
 
@@ -602,8 +621,14 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
           claimed.manufacturer ??
           (detectedProfile === "unknown" ? null : detectedProfile),
         redactionsByPage,
+        pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({
+          pageNumber,
+          width,
+          height,
+        })),
       }),
     );
+    finishStage("sanitizeMs");
     if (
       sanitized.pages.length !== analysis.pages.length ||
       sanitized.pages.some((page, index) => page.pageNumber !== index + 1 || !page.pngBytes.length) ||
@@ -619,8 +644,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     );
     newlyWrittenRenderPaths = [pdfPath, ...pagePaths];
     await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
+    finishStage("pdfUploadMs");
     await heartbeat(true);
     await saveRenderedPages(sanitized.pages, pagePaths, heartbeat);
+    finishStage("pageUploadsMs");
     const hash = createHash("sha256").update(sanitized.pdfBytes).digest("hex");
     const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       status: "ready_for_approval",
@@ -640,6 +667,15 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         newlyWrittenRenderPaths,
       );
     }
+    logger.info(
+      {
+        packetId: claimed.id,
+        pageCount: sanitized.pages.length,
+        totalMs: Date.now() - stageStartedAt,
+        stages: stageTimings,
+      },
+      "Packet processing stage timings",
+    );
   } catch (error) {
     try {
       await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {

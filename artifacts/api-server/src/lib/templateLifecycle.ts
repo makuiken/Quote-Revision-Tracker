@@ -675,25 +675,16 @@ export async function renderTemplatePreview(
   }
   const redactions = value === undefined ? draft.manualRedactions ?? {} : validateManualRedactions(draft.analysis, value);
   const bytes = await bytesForDraft(draft);
-  const sanitized = await packetEngine.generateSanitizedPacket({
+  const dimensions = draft.analysis.find((candidate) => candidate.pageNumber === page)!;
+  const output = await packetEngine.renderRedactedPdfPreview({
     bytes,
-    manufacturer: draft.manufacturer,
-    pageDimensions: draft.analysis.map(({ pageNumber, width, height }) => ({
-      pageNumber,
-      width,
-      height,
-    })),
-    redactionsByPage: Object.fromEntries(
-      Object.entries(redactions).map(([key, rects]) => [
-        Number(key),
-        rects,
-      ]),
-    ),
-    pageOrder: [page],
+    pageNumber: page,
+    pageDimensions: dimensions,
+    redactions: redactions[String(page)] ?? [],
+    options: { dpi: 140 },
   });
-  const output = sanitized.pages[0]?.pngBytes;
-  if (!output) throw new TemplateLifecycleError("Preview rendering returned no page.", 422, "PREVIEW_FAILED");
-  return Buffer.from(output);
+  if (!output.length) throw new TemplateLifecycleError("Preview rendering returned no page.", 422, "PREVIEW_FAILED");
+  return output;
 }
 
 function saveString(value: unknown, field: string, maxLength: number): string {

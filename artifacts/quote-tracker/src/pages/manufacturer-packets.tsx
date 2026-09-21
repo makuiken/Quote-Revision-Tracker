@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useParams, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Upload, FileText, Loader2, AlertTriangle, CheckCircle, RotateCcw, ZoomIn, ZoomOut, Save, X, Trash2, FileImage, LayoutList } from "lucide-react";
@@ -52,6 +52,94 @@ export function canonicalManufacturer(value: string): string {
 export type TemplateFeedbackCode = "no_active_match" | "layout_incompatible";
 const PROCESSING_SLOW_AFTER_MS = 2 * 60 * 1000;
 const PROCESSING_POLL_STOP_AFTER_MS = 6 * 60 * 1000;
+const PREVIEW_FETCH_CONCURRENCY = 2;
+
+type PreviewQueueEntry = {
+  cancelled: boolean;
+  grant: () => void;
+};
+
+const previewFetchQueue: PreviewQueueEntry[] = [];
+let activePreviewFetches = 0;
+
+function drainPreviewFetchQueue() {
+  while (activePreviewFetches < PREVIEW_FETCH_CONCURRENCY && previewFetchQueue.length > 0) {
+    const next = previewFetchQueue.shift();
+    if (!next || next.cancelled) continue;
+    activePreviewFetches += 1;
+    next.grant();
+  }
+}
+
+function queuePreviewFetch(grant: () => void): () => void {
+  let granted = false;
+  const wrappedEntry: PreviewQueueEntry = {
+    cancelled: false,
+    grant: () => {
+      granted = true;
+      grant();
+    },
+  };
+  previewFetchQueue.push(wrappedEntry);
+  drainPreviewFetchQueue();
+
+  return () => {
+    if (wrappedEntry.cancelled) return;
+    wrappedEntry.cancelled = true;
+    if (granted) {
+      activePreviewFetches = Math.max(0, activePreviewFetches - 1);
+      drainPreviewFetchQueue();
+    }
+  };
+}
+
+function usePreviewFetchSlot(attempt: number) {
+  const [granted, setGranted] = useState(false);
+  const releaseRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    setGranted(false);
+    const release = queuePreviewFetch(() => setGranted(true));
+    releaseRef.current = release;
+    return () => {
+      release();
+      if (releaseRef.current === release) releaseRef.current = null;
+    };
+  }, [attempt]);
+
+  const release = useCallback(() => {
+    releaseRef.current?.();
+    releaseRef.current = null;
+    setGranted(false);
+  }, []);
+
+  return { granted, release };
+}
+
+function usePreviewVisibility<T extends HTMLElement>(allowed = true) {
+  const ref = useRef<T>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!allowed || !element) {
+      setVisible(false);
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { rootMargin: "160px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [allowed]);
+
+  return { ref, visible: allowed && visible };
+}
 
 function packetProcessingAgeMs(
   packet: Pick<ManufacturerPacket, "updatedAt">,
@@ -378,11 +466,14 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
 
         <div className="min-w-0 h-[800px]">
           <div className={activePacketId === 'manifest' ? "h-full" : "hidden"}>
-            <ManifestBuilder quoteId={quoteId} hasApprovals={hasApprovals} packets={packets} onOpenPacket={setActivePacketId} />
+            <ManifestBuilder quoteId={quoteId} hasApprovals={hasApprovals} packets={packets} onOpenPacket={setActivePacketId} isVisible={activePacketId === 'manifest'} />
           </div>
-          {activePacketId === 'manifest' ? null : activePacket ? (
-            <PacketDetails key={activePacket.id} quoteId={quoteId} packet={activePacket} hasApprovals={hasApprovals} />
-          ) : (
+          {packets.map((packet) => (
+            <div key={packet.id} className={activePacketId === packet.id ? "h-full" : "hidden"}>
+              <PacketDetails quoteId={quoteId} packet={packet} hasApprovals={hasApprovals} isVisible={activePacketId === packet.id} />
+            </div>
+          ))}
+          {activePacketId !== 'manifest' && !activePacket ? (
             <Card className="h-full flex items-center justify-center border-dashed bg-muted/50">
               <div className="text-center max-w-md mx-auto p-6">
                 <FileText className="w-12 h-12 text-muted-foreground/70 mx-auto mb-4" />
@@ -390,7 +481,7 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
                 <p className="text-sm text-muted-foreground font-medium">Select the customer document or an uploaded quote from the sidebar to continue.</p>
               </div>
             </Card>
-          )}
+          ) : null}
         </div>
       </div>
     </>
@@ -711,7 +802,7 @@ function UploadCard({
   );
 }
 
-function PacketDetails({ quoteId, packet, hasApprovals }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean }) {
+function PacketDetails({ quoteId, packet, hasApprovals, isVisible }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean, isVisible: boolean }) {
   const retry = useRetryManufacturerPacket();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -803,19 +894,37 @@ function PacketDetails({ quoteId, packet, hasApprovals }: { quoteId: number, pac
   }
 
   // needs_review, ready_for_approval, approved
-  return <PacketReview key={packet.id} quoteId={quoteId} packet={packet} hasApprovals={hasApprovals} />;
+  return <PacketReview quoteId={quoteId} packet={packet} hasApprovals={hasApprovals} isVisible={isVisible} />;
 }
 
-function PageThumbnail({ quoteId, packetId, pageNumber, type }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned' }) {
+function PageThumbnail({ quoteId, packetId, pageNumber, type, enabled = true }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned', enabled?: boolean }) {
+  const { ref, visible } = usePreviewVisibility<HTMLDivElement>(enabled);
+  return (
+    <div ref={ref} className="w-full h-full">
+      {visible ? (
+        <PageThumbnailRequest quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} type={type} />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-muted/50" aria-label={`Preview placeholder for page ${pageNumber}`}>
+          <FileImage className="w-4 h-4 text-muted-foreground/30" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PageThumbnailRequest({ quoteId, packetId, pageNumber, type }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned' }) {
+  const [attempt, setAttempt] = useState(0);
+  const { granted, release } = usePreviewFetchSlot(attempt);
   const sourceQuery = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
-    query: { enabled: type === 'source', queryKey: getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber) }
+    query: { enabled: granted && type === 'source', retry: false, queryKey: getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber) }
   });
   const cleanedQuery = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
-    query: { enabled: type === 'cleaned', queryKey: getGetManufacturerPacketPageQueryKey(quoteId, packetId, pageNumber, undefined) }
+    query: { enabled: granted && type === 'cleaned', retry: false, queryKey: getGetManufacturerPacketPageQueryKey(quoteId, packetId, pageNumber, undefined) }
   });
 
   const blob = type === 'source' ? sourceQuery.data : cleanedQuery.data;
   const isLoading = type === 'source' ? sourceQuery.isLoading : cleanedQuery.isLoading;
+  const isError = type === 'source' ? sourceQuery.isError : cleanedQuery.isError;
 
   const [url, setUrl] = useState<string | null>(null);
 
@@ -828,7 +937,20 @@ function PageThumbnail({ quoteId, packetId, pageNumber, type }: { quoteId: numbe
     return undefined;
   }, [blob]);
 
+  useEffect(() => {
+    if (granted && (blob || isError)) release();
+  }, [blob, granted, isError, release]);
+
+  if (!granted && !blob && !isError) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><FileImage className="w-4 h-4 text-muted-foreground/30" /></div>;
   if (isLoading) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" /></div>;
+  if (isError) return (
+    <div className="w-full h-full flex flex-col gap-1 items-center justify-center bg-muted/50">
+      <FileImage className="w-4 h-4 text-muted-foreground/40" />
+      <button type="button" className="text-[9px] font-bold text-primary hover:underline" onClick={() => setAttempt(value => value + 1)} data-testid={`button-retry-thumbnail-${packetId}-${pageNumber}`}>
+        Retry
+      </button>
+    </div>
+  );
   if (!url) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><FileImage className="w-4 h-4 text-muted-foreground/30" /></div>;
 
   return <img src={url} className="w-full h-full object-cover" alt={`Pg ${pageNumber}`} />;
@@ -854,7 +976,7 @@ function TemplateFeedbackNotice({
   );
 }
 
-function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean }) {
+function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean, isVisible: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const submitRedactions = useSetManufacturerPacketRedactions();
@@ -1045,7 +1167,7 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
               }`}
             >
               <div className="w-full aspect-[3/4] bg-card border border-border shadow-sm overflow-hidden flex items-center justify-center relative">
-                <PageThumbnail quoteId={quoteId} packetId={packet.id} pageNumber={a.pageNumber} type={viewMode} />
+                <PageThumbnail quoteId={quoteId} packetId={packet.id} pageNumber={a.pageNumber} type={viewMode} enabled={isVisible} />
                 {viewMode === 'source' && redactions[a.pageNumber.toString()]?.length > 0 && (
                   <div className="absolute top-0 right-0 bg-destructive text-destructive-foreground text-[8px] font-bold px-1 py-0.5 rounded-bl shadow-sm">
                     Redacted
@@ -1071,6 +1193,7 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
                 pageAnalyses={analysis}
                 pageAnalysis={currentPage}
                 redactions={pageRedactions}
+                 previewEnabled={isVisible}
                 onChange={(newRedactions) => {
                   setRedactions(prev => ({ ...prev, [currentPage.pageNumber.toString()]: newRedactions }));
                 }}
@@ -1105,7 +1228,7 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
               />
             )}
             {currentPage && viewMode === 'cleaned' && (
-               <SanitizedPagePreview quoteId={quoteId} packetId={packet.id} pageNumber={currentPage.pageNumber} />
+               <SanitizedPagePreview quoteId={quoteId} packetId={packet.id} pageNumber={currentPage.pageNumber} enabled={isVisible} />
             )}
           </div>
         </div>
@@ -1114,7 +1237,7 @@ function PacketReview({ quoteId, packet, hasApprovals }: { quoteId: number, pack
   );
 }
 
-function ManifestBuilder({ quoteId, hasApprovals, packets, onOpenPacket }: { quoteId: number, hasApprovals: boolean, packets: ManufacturerPacket[], onOpenPacket: (packetId: number) => void }) {
+function ManifestBuilder({ quoteId, hasApprovals, packets, onOpenPacket, isVisible }: { quoteId: number, hasApprovals: boolean, packets: ManufacturerPacket[], onOpenPacket: (packetId: number) => void, isVisible: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: manifest, isLoading } = useGetManufacturerPacketManifest(quoteId);
@@ -1253,7 +1376,7 @@ function ManifestBuilder({ quoteId, hasApprovals, packets, onOpenPacket }: { quo
 
                     <div className="w-12 h-16 shrink-0 border border-border bg-muted flex items-center justify-center overflow-hidden rounded relative">
                        {p && (p.status === 'ready_for_approval' || p.status === 'approved') ? (
-                         <PageThumbnail quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} type="cleaned" />
+                          <PageThumbnail quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} type="cleaned" enabled={isVisible} />
                        ) : (
                          <div className="flex flex-col items-center justify-center w-full h-full bg-amber-50">
                            <AlertTriangle className="w-4 h-4 text-amber-500 mb-1" />
@@ -1292,6 +1415,7 @@ function PageRedactionEditor({
   pageAnalyses,
   pageAnalysis,
   redactions,
+  previewEnabled,
   onChange,
   onApplyToPages
 }: {
@@ -1300,6 +1424,7 @@ function PageRedactionEditor({
   pageAnalyses: PacketPageAnalysis[],
   pageAnalysis: PacketPageAnalysis,
   redactions: PacketRect[],
+  previewEnabled: boolean,
   onChange: (r: PacketRect[]) => void,
   onApplyToPages: (r: PacketRect, targetPageNumbers: number[]) => void
 }) {
@@ -1311,18 +1436,6 @@ function PageRedactionEditor({
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [pendingApplyRect, setPendingApplyRect] = useState<PacketRect | null>(null);
   const [selectedApplyPages, setSelectedApplyPages] = useState<number[]>([]);
-
-  const { data: sourceBlob, isLoading: sourceLoading } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageAnalysis.pageNumber);
-  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (sourceBlob) {
-      const u = URL.createObjectURL(sourceBlob);
-      setSourceUrl(u);
-      return () => URL.revokeObjectURL(u);
-    }
-    return undefined;
-  }, [sourceBlob]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1485,13 +1598,12 @@ function PageRedactionEditor({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
-        {sourceUrl ? (
-          <img src={sourceUrl} alt={`Original manufacturer page ${pageAnalysis.pageNumber}`} className="absolute inset-0 w-full h-full pointer-events-none select-none object-contain bg-white" />
-        ) : sourceLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground bg-muted/30"><Loader2 className="w-8 h-8 animate-spin" /></div>
-        ) : (
-          <div className="absolute inset-0 bg-muted flex items-center justify-center text-muted-foreground font-medium">Missing source</div>
-        )}
+        <SourcePagePreview
+          quoteId={quoteId}
+          packetId={packetId}
+          pageNumber={pageAnalysis.pageNumber}
+          enabled={previewEnabled}
+        />
 
         {redactions.map((r, i) => (
           <div
@@ -1612,8 +1724,91 @@ function PageRedactionEditor({
   );
 }
 
-function SanitizedPagePreview({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
-  const { data: blob, isLoading, isError } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber);
+function SourcePagePreview({ quoteId, packetId, pageNumber, enabled }: { quoteId: number, packetId: number, pageNumber: number, enabled: boolean }) {
+  const { ref, visible } = usePreviewVisibility<HTMLDivElement>(enabled);
+  return (
+    <div ref={ref} className="absolute inset-0">
+      {visible ? (
+        <SourcePagePreviewRequest quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} />
+      ) : (
+        <div className="absolute inset-0 bg-muted flex items-center justify-center text-muted-foreground font-medium">
+          Preview loads when visible
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourcePagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
+  const [attempt, setAttempt] = useState(0);
+  const { granted, release } = usePreviewFetchSlot(attempt);
+  const { data: blob, isLoading, isError } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
+    query: {
+      enabled: granted,
+      retry: false,
+      queryKey: getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber),
+    },
+  });
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      setObjectUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    return undefined;
+  }, [blob]);
+
+  useEffect(() => {
+    if (granted && (blob || isError)) release();
+  }, [blob, granted, isError, release]);
+
+  if (!granted && !blob && !isError) {
+    return <div className="absolute inset-0 bg-muted flex items-center justify-center text-muted-foreground font-medium">Waiting to load preview…</div>;
+  }
+  if (isLoading) {
+    return <div className="absolute inset-0 flex items-center justify-center text-muted-foreground bg-muted/30"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+  }
+  if (isError || !objectUrl) {
+    return (
+      <div className="absolute inset-0 flex flex-col gap-3 items-center justify-center bg-muted text-muted-foreground font-medium">
+        <span>Source preview unavailable.</span>
+        <Button type="button" variant="outline" size="sm" onClick={() => setAttempt(value => value + 1)} data-testid={`button-retry-source-preview-${packetId}-${pageNumber}`}>
+          <RotateCcw className="w-4 h-4 mr-2" /> Retry preview
+        </Button>
+      </div>
+    );
+  }
+  return <img src={objectUrl} alt={`Original manufacturer page ${pageNumber}`} className="absolute inset-0 w-full h-full pointer-events-none select-none object-contain bg-white" />;
+}
+
+function SanitizedPagePreview({ quoteId, packetId, pageNumber, enabled }: { quoteId: number, packetId: number, pageNumber: number, enabled: boolean }) {
+  const { ref, visible } = usePreviewVisibility<HTMLDivElement>(enabled);
+  return (
+    <div ref={ref} className="w-full h-full">
+      {visible ? (
+        <SanitizedPagePreviewRequest quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} />
+      ) : (
+        <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full">
+          <FileImage className="w-8 h-8 mb-4 opacity-40" />
+          Preview loads when visible
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
+  const [attempt, setAttempt] = useState(0);
+  const { granted, release } = usePreviewFetchSlot(attempt);
+  const { data: blob, isLoading, isError } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
+    query: {
+      enabled: granted,
+      retry: false,
+      queryKey: getGetManufacturerPacketPageQueryKey(quoteId, packetId, pageNumber, undefined),
+    },
+  });
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
 
@@ -1626,12 +1821,26 @@ function SanitizedPagePreview({ quoteId, packetId, pageNumber }: { quoteId: numb
     return undefined;
   }, [blob]);
 
+  useEffect(() => {
+    if (granted && (blob || isError)) release();
+  }, [blob, granted, isError, release]);
+
+  if (!granted && !blob && !isError) {
+    return <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full"><FileImage className="w-8 h-8 mb-4 opacity-40" /> Waiting to load preview…</div>;
+  }
   if (isLoading) {
     return <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full"><Loader2 className="w-8 h-8 animate-spin mb-4" /> Loading cleaned page {pageNumber}...</div>;
   }
 
   if (isError || !objectUrl) {
-    return <div className="text-destructive font-bold p-8 w-full h-full flex items-center justify-center">Failed to load preview for page {pageNumber}. Save redactions first.</div>;
+    return (
+      <div className="text-destructive font-bold p-8 w-full h-full flex flex-col gap-4 items-center justify-center">
+        <span>Failed to load preview for page {pageNumber}. Save redactions first.</span>
+        <Button type="button" variant="outline" size="sm" onClick={() => setAttempt(value => value + 1)} data-testid={`button-retry-cleaned-preview-${packetId}-${pageNumber}`}>
+          <RotateCcw className="w-4 h-4 mr-2" /> Retry preview
+        </Button>
+      </div>
+    );
   }
 
   return (

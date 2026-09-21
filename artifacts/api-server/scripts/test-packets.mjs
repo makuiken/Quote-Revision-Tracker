@@ -10,6 +10,7 @@ try {
     entryPoints: [
       "src/lib/packets/engine.test.ts",
       "src/lib/packets/workerClient.test.ts",
+      "src/lib/packets/previewSingleflight.test.ts",
       "src/lib/packets/signoffDocument.test.ts",
       "src/lib/packets/recovery.test.ts",
       "src/lib/packets/documentBudget.test.ts",
@@ -52,6 +53,7 @@ try {
   const files = [
     "packets/engine.test.js",
     "packets/workerClient.test.js",
+    "packets/previewSingleflight.test.js",
     "packets/signoffDocument.test.js",
     "packets/recovery.test.js",
     "packets/documentBudget.test.js",

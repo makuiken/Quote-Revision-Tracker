@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, type PDFPage } from "pdf-lib";
 import type { Quote, Revision, Signoff } from "@workspace/db";
 import { renderSignoffDocumentHtmlPdf } from "./signoffDocumentHtml";
 
@@ -79,36 +79,74 @@ async function appendApprovedPages(
         "Approved packet manifest exceeds the 500-page document limit.",
       );
     }
-    const documents = new Map<Uint8Array, PDFDocument>();
+    type SourceBatch = {
+      bytes: Uint8Array;
+      outputIndices: number[];
+      pageIndices: number[];
+    };
+    const sourceBatches = new Map<Uint8Array, SourceBatch>();
     let totalSourceBytes = 0;
-    for (const selectedPage of input.approvedPacketPages) {
+    for (
+      let outputIndex = 0;
+      outputIndex < input.approvedPacketPages.length;
+      outputIndex += 1
+    ) {
       assertWithinDeadline();
-      let packet = documents.get(selectedPage.pdfBytes);
-      if (!packet) {
+      const selectedPage = input.approvedPacketPages[outputIndex]!;
+      let batch = sourceBatches.get(selectedPage.pdfBytes);
+      if (!batch) {
         totalSourceBytes += selectedPage.pdfBytes.byteLength;
         if (totalSourceBytes > MAX_COMBINED_PACKET_SOURCE_BYTES) {
           throw new Error(
             "Approved packet sources exceed the 100 MiB document limit.",
           );
         }
-        packet = await PDFDocument.load(selectedPage.pdfBytes, {
-          ignoreEncryption: false,
-        });
-        documents.set(selectedPage.pdfBytes, packet);
+        batch = {
+          bytes: selectedPage.pdfBytes,
+          outputIndices: [],
+          pageIndices: [],
+        };
+        sourceBatches.set(selectedPage.pdfBytes, batch);
       }
-      if (
-        !Number.isInteger(selectedPage.pageNumber) ||
-        selectedPage.pageNumber < 1 ||
-        selectedPage.pageNumber > packet.getPageCount()
-      ) {
-        throw new Error(
-          "Approved packet manifest contains an unavailable page.",
-        );
+      batch.outputIndices.push(outputIndex);
+      batch.pageIndices.push(selectedPage.pageNumber - 1);
+    }
+
+    // A single copyPages call per source lets pdf-lib reuse its object copier
+    // for shared fonts/images. Reassemble afterwards so interleaved sources and
+    // repeated page selections retain the manifest's exact order.
+    const copiedByOutputIndex = new Array<PDFPage>(
+      input.approvedPacketPages.length,
+    );
+    for (const batch of sourceBatches.values()) {
+      assertWithinDeadline();
+      const packet = await PDFDocument.load(batch.bytes, {
+        ignoreEncryption: false,
+      });
+      assertWithinDeadline();
+      const pageCount = packet.getPageCount();
+      for (const pageIndex of batch.pageIndices) {
+        if (
+          !Number.isInteger(pageIndex) ||
+          pageIndex < 0 ||
+          pageIndex >= pageCount
+        ) {
+          throw new Error(
+            "Approved packet manifest contains an unavailable page.",
+          );
+        }
       }
-      const [copied] = await pdf.copyPages(packet, [
-        selectedPage.pageNumber - 1,
-      ]);
-      pdf.addPage(copied!);
+      const copied = await pdf.copyPages(packet, batch.pageIndices);
+      assertWithinDeadline();
+      for (let batchIndex = 0; batchIndex < copied.length; batchIndex += 1) {
+        copiedByOutputIndex[batch.outputIndices[batchIndex]!] =
+          copied[batchIndex]!;
+      }
+    }
+
+    for (const copiedPage of copiedByOutputIndex) {
+      assertWithinDeadline();
+      pdf.addPage(copiedPage);
     }
     return;
   }
