@@ -9,6 +9,7 @@ import {
   type SignoffDocumentProps,
 } from "@workspace/signoff-document";
 import { pdfCapacityConfiguration } from "./capacity";
+import type { AdvisoryLockPool } from "./packetCapacity";
 
 const RENDER_TIMEOUT_MS = 60_000;
 const MAX_RENDERERS = 2;
@@ -47,12 +48,18 @@ function globalRendererSlotCount(): number {
   return pdfCapacityConfiguration().signoffSlots;
 }
 
-async function acquireGlobalRendererSlot(
+export async function acquireGlobalRendererSlot(
   deadline: number,
+  options: {
+    connectionPool?: AdvisoryLockPool;
+    bypassInTests?: boolean;
+  } = {},
 ): Promise<() => Promise<void>> {
   // Unit tests intentionally exercise the renderer without starting a
   // database. Production requests always use the advisory-lock path below.
-  if (process.env.NODE_ENV === "test") return async () => undefined;
+  if (process.env.NODE_ENV === "test" && options.bypassInTests !== false) {
+    return async () => undefined;
+  }
   const remaining = () => {
     const value = deadline - Date.now();
     if (value <= 0) {
@@ -62,13 +69,13 @@ async function acquireGlobalRendererSlot(
     }
     return value;
   };
-  const { pool } = await withTimeout(
+  const connectionPool = options.connectionPool ?? (await withTimeout(
     import("@workspace/db"),
     remaining(),
     "Signoff PDF renderer setup exceeded its time limit.",
-  );
+  )).pool;
   while (Date.now() < deadline) {
-    const clientPromise = pool.connect();
+    const clientPromise = connectionPool.connect();
     let client: Awaited<typeof clientPromise>;
     try {
       client = await withTimeout(
@@ -89,7 +96,7 @@ async function acquireGlobalRendererSlot(
         const key = GLOBAL_RENDERER_LOCK_BASE + slot;
         const queryTimeout = remaining();
         const result = await withTimeout(
-          client.query<{ acquired: boolean }>(
+          client.query(
             "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
             [key],
           ),

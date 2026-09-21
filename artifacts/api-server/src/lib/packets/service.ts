@@ -18,8 +18,10 @@ import { packetEngine } from "./engine";
 import {
   isAbandonedProcessingJob,
   nextRecoveryScanCursor,
+  refreshProcessingLease,
   recoveryAction,
 } from "./recovery";
+import { tryAcquirePacketWorkerSlot } from "./packetCapacity";
 import type { PacketPageAnalysis, RedactionRect } from "./types";
 import {
   canonicalManufacturer,
@@ -57,43 +59,15 @@ async function tryAcquireGlobalPacketWorkerSlot(): Promise<{
   release: () => Promise<void>;
   slot: number;
 } | null> {
-  const client = await pool.connect();
   const slotCount = globalPacketWorkerSlotCount();
   try {
-    for (let slot = 0; slot < slotCount; slot += 1) {
-      const lockKey = PACKET_WORKER_LOCK_BASE + slot;
-      const result = await client.query<{ acquired: boolean }>(
-        "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
-        [lockKey],
-      );
-      if (!result.rows[0]?.acquired) continue;
-
-      let released = false;
-      return {
-        slot,
-        release: async () => {
-          if (released) return;
-          released = true;
-          try {
-            await client.query(
-              "SELECT pg_advisory_unlock($1::bigint)",
-              [lockKey],
-            );
-            client.release();
-          } catch (error) {
-            // Never return a connection that might still own the advisory
-            // lock. Destroying it is safer than leaking a global slot.
-            client.release(error instanceof Error ? error : new Error(String(error)));
-            throw error;
-          }
-        },
-      };
-    }
-    client.release();
-    return null;
+    return await tryAcquirePacketWorkerSlot(
+      pool,
+      PACKET_WORKER_LOCK_BASE,
+      slotCount,
+    );
   } catch (error) {
     recordOperationalFailure("packet_processing");
-    client.release(error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
 }
@@ -477,7 +451,8 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
   const heartbeat = async (force = false): Promise<void> => {
     const now = Date.now();
     if (!force && now - lastHeartbeatAt < 60_000) return;
-    const stillOwned = await updateProcessingPacketWithRetry(
+    await refreshProcessingLease(
+      updateProcessingPacketWithRetry,
       claimed.quoteId,
       claimed.id,
       attemptToken,
@@ -486,9 +461,6 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         processingStartedAt: new Date(now),
       },
     );
-    if (!stillOwned) {
-      throw new Error("Packet processing attempt was superseded during persistence.");
-    }
     lastHeartbeatAt = now;
   };
   const withHeartbeats = async <T>(operation: () => Promise<T>): Promise<T> => {

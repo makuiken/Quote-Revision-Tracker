@@ -3,6 +3,23 @@ export interface RecoverablePacketState {
   processingStartedAt: Date | null;
 }
 
+export async function refreshProcessingLease<T>(
+  update: (
+    quoteId: number,
+    packetId: number,
+    attemptToken: string,
+    values: T,
+  ) => Promise<boolean>,
+  quoteId: number,
+  packetId: number,
+  attemptToken: string,
+  values: T,
+): Promise<void> {
+  if (!(await update(quoteId, packetId, attemptToken, values))) {
+    throw new Error("Packet processing attempt was superseded during persistence.");
+  }
+}
+
 // A worker is forcibly terminated after 90 seconds. Five minutes leaves ample
 // time for bounded storage/finalization retries without making staff wait
 // fifteen minutes after a replica exits.
