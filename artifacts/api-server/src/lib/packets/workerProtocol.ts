@@ -7,6 +7,8 @@ export const SANITIZED_BATCH_MERGE_LIMITS = {
   maxPages: 100,
 } as const;
 
+export type ExpectedBatchPageGeometry = { width: number; height: number }[][];
+
 export type PacketWorkerRequest =
   | {
       operation: "analyze";
@@ -22,6 +24,7 @@ export type PacketWorkerRequest =
       operation: "mergeSanitizedBatchFiles";
       inputPaths: string[];
       outputPath: string;
+      expectedBatchPageGeometry?: ExpectedBatchPageGeometry;
     }
   | {
       operation: "preview";

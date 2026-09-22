@@ -28,7 +28,11 @@ function serializeError(error: unknown): PacketWorkerResponse {
 port.on("message", async (request: PacketWorkerRequest) => {
   try {
     const result = await (request.operation === "mergeSanitizedBatchFiles"
-      ? mergePacketPdfFiles(request.inputPaths, request.outputPath)
+      ? mergePacketPdfFiles(
+          request.inputPaths,
+          request.outputPath,
+          request.expectedBatchPageGeometry,
+        )
       : request.operation === "analyze"
       ? analyzePdf(Buffer.from(request.bytes), request.manufacturer)
       : request.operation === "preview"

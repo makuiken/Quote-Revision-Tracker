@@ -8,13 +8,16 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { mergePacketPdfFiles, renderPdfPreview, sanitizePdf } from "./engine";
 import { SANITIZED_BATCH_MERGE_LIMITS } from "./workerProtocol";
 
-async function mergeForTest(batches: Uint8Array[]): Promise<Buffer> {
+async function mergeForTest(
+  batches: Uint8Array[],
+  expectedBatchPageGeometry?: { width: number; height: number }[][],
+): Promise<Buffer> {
   const directory = await mkdtemp(join(tmpdir(), "packet-merge-test-"));
   try {
     const paths = batches.map((_, index) => join(directory, `${index}.pdf`));
     for (const [index, bytes] of batches.entries()) await writeFile(paths[index]!, bytes);
     const output = join(directory, "merged.pdf");
-    await mergePacketPdfFiles(paths, output);
+    await mergePacketPdfFiles(paths, output, expectedBatchPageGeometry);
     return await readFile(output);
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
@@ -99,4 +102,35 @@ test("disk merge reads private batches in order, refuses overwrite and preserves
     await assert.rejects(mergePacketPdfFiles(Array(101).fill(paths[0]), join(directory, "overflow.pdf")),
       /Invalid private/);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("disk merge enforces analyzed page count and geometry for every batch", async () => {
+  const first = await PDFDocument.create();
+  first.addPage([80, 100]);
+  first.addPage([90, 110]);
+  const second = await PDFDocument.create();
+  second.addPage([120, 130]);
+  const batches = [await first.save(), await second.save()];
+  const expected = [
+    [{ width: 80, height: 100 }, { width: 90, height: 110 }],
+    [{ width: 120, height: 130 }],
+  ];
+
+  const merged = await PDFDocument.load(await mergeForTest(batches, expected));
+  assert.equal(merged.getPageCount(), 3);
+  await assert.rejects(
+    mergeForTest(batches, [[{ width: 80, height: 100 }], expected[1]!]),
+    /count or geometry/,
+  );
+  await assert.rejects(
+    mergeForTest(batches, [
+      [{ width: 81, height: 100 }, { width: 90, height: 110 }],
+      expected[1]!,
+    ]),
+    /count or geometry/,
+  );
+  await assert.rejects(
+    mergeForTest(batches, [expected[0]!]),
+    /Invalid expected batch page geometry/,
+  );
 });

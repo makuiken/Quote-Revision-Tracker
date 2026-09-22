@@ -1,5 +1,25 @@
 # Resumable PDF batch benchmark
 
+## Recovery and release limits
+
+Completed batches and source-validated analysis are saved in the database and
+private object storage. On a running API instance, the existing recovery scan
+can reclaim an expired processing lease and resume the saved prefix. Manual
+retry also preserves valid checkpoints; changing redactions invalidates the
+rendered prefix, not compatible source analysis.
+
+**There is no independent wake-up trigger.** An Autoscale instance that has
+stopped cannot run its own recovery timer. Recovery requires an instance to
+start again (for example, from a subsequent app request), and stale work waits
+for the lease expiry before reclamation. On 2026-09-22 the user declined adding
+an external scheduled trigger. No scheduler, deployment-type change, production
+schema write, or publication was performed for this implementation.
+
+The additive processing-state schema change is included in the publish-managed
+schema release contract. Development reconciliation and local tests do not
+establish production success: a separately authorized post-publish check is
+still required. Existing failed packets may require staff to select Retry.
+
 ## Scope
 
 This is a local, constrained benchmark of the packet engine worker. It is not a
@@ -73,6 +93,49 @@ MiB (about 46%) but took 9.233 seconds longer (about 64%) than the single-worker
 baseline. This is the expected throughput/memory tradeoff from repeated worker
 startup and per-batch source parsing. It is not evidence of production latency
 or memory behavior.
+
+## Journey coverage and remaining tests
+
+The development browser journey uploaded an actual 40-page PDF, displayed
+persisted progress, completed cleaned previews, and added the packet to the
+customer package. It found that the source editor misleadingly allowed edits
+after approval, which the API correctly rejected with 409. The frontend now
+makes approved packets read-only and explains that they must be removed from
+the package before editing. This guard was typechecked; its browser interaction
+was not rerun. Manifest removal, page ordering, and category controls were not
+changed.
+
+Separately, the real development service/database/object-storage integration
+harness passed with its own synthetic 40-page nonblank PDF:
+
+- Superseded the processing token after two durable batches (four pages).
+  The old attempt stopped without publishing further checkpoints.
+- Requeued the fixture and resumed through the real service. Previously saved
+  PDF/PNG paths and hashes remained unchanged; final output had exactly 40 pages.
+- Analysis ran once across the interrupted attempt, resume, and regeneration.
+- Changed redactions forced new render paths and different final PDF bytes.
+  The changed region rendered white, and the final PDF had no extracted text.
+- No partial packet became ready. The successful resume took 25.9 seconds
+  including storage, and regeneration took 26.4 seconds in this single local run.
+
+Reproduction: from the workspace root, run
+`NODE_ENV=development node artifacts/api-server/scripts/checkpoint-resume-development.mjs`.
+The harness refuses deployment execution and creates only its own fixture.
+Its fixture is archived and retained rather than deleting potentially referenced
+immutable objects. It injects lease-token loss; it does not kill an Autoscale
+instance, demonstrate autonomous wake-up, or prove lost-commit-ack reconciliation.
+
+These checks are deliberately independent and do not replace the following
+remaining tests:
+
+- a browser journey confirming the disabled Source Editor and removal guidance
+  for an approved/in-package packet, followed by manifest removal, regeneration,
+  and successful editing in `ready_for_approval`;
+- an API integration test confirming an approved packet's redaction request
+  remains rejected with 409 while removal and regeneration restore the allowed
+  edit transition;
+- a post-publish production check of schema reconciliation, private object-store
+  checkpoints, stale-lease recovery, and the complete 40-page customer package.
 
 ## Reproduce
 

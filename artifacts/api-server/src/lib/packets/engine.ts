@@ -6,6 +6,7 @@ import type { PacketEngine, PacketPageAnalysis as StoredPageAnalysis, PacketPage
 import { runPacketEngineInWorker } from "./workerClient";
 import {
   SANITIZED_BATCH_MERGE_LIMITS,
+  type ExpectedBatchPageGeometry,
 } from "./workerProtocol";
 
 import {
@@ -989,16 +990,39 @@ export async function sanitizePdf(
 }
 
 /** Server-generated private temp paths ONLY; caller verifies batch hashes. */
-export async function mergePacketPdfFilesInWorker(inputPaths: string[], outputPath: string): Promise<void> {
-  await runPacketEngineInWorker({ operation: "mergeSanitizedBatchFiles", inputPaths, outputPath });
+export async function mergePacketPdfFilesInWorker(
+  inputPaths: string[],
+  outputPath: string,
+  expectedBatchPageGeometry?: ExpectedBatchPageGeometry,
+): Promise<void> {
+  await runPacketEngineInWorker({
+    operation: "mergeSanitizedBatchFiles",
+    inputPaths,
+    outputPath,
+    expectedBatchPageGeometry,
+  });
 }
 
 /** Worker implementation. Each batch is read and released sequentially. */
-export async function mergePacketPdfFiles(inputPaths: string[], outputPath: string): Promise<void> {
+export async function mergePacketPdfFiles(
+  inputPaths: string[],
+  outputPath: string,
+  expectedBatchPageGeometry?: ExpectedBatchPageGeometry,
+): Promise<void> {
   if (!Array.isArray(inputPaths) || inputPaths.length < 1 ||
       inputPaths.length > SANITIZED_BATCH_MERGE_LIMITS.maxPages ||
       !isAbsolute(outputPath) || !inputPaths.every((path) => typeof path === "string" && isAbsolute(path))) {
     throw new PacketEngineError("INVALID_SELECTION", "Invalid private batch file paths.");
+  }
+  if (expectedBatchPageGeometry !== undefined &&
+      (expectedBatchPageGeometry.length !== inputPaths.length ||
+       expectedBatchPageGeometry.some((batch) =>
+         !Array.isArray(batch) || batch.length < 1 ||
+         batch.some((page) =>
+           !page || typeof page !== "object" ||
+           !Number.isFinite(page.width) || page.width <= 0 ||
+           !Number.isFinite(page.height) || page.height <= 0)))) {
+    throw new PacketEngineError("INVALID_SELECTION", "Invalid expected batch page geometry.");
   }
   const directory = await realpath(dirname(outputPath));
   const directoryStat = await lstat(directory);
@@ -1036,12 +1060,13 @@ export async function mergePacketPdfFiles(inputPaths: string[], outputPath: stri
       }
     }
   }
-  const { pdfBytes } = await mergeBatchDocuments(readBatches());
+  const { pdfBytes } = await mergeBatchDocuments(readBatches(), expectedBatchPageGeometry);
   await writeFile(outputPath, pdfBytes, { flag: "wx", mode: 0o600 });
 }
 
 async function mergeBatchDocuments(
   batches: AsyncIterable<Uint8Array>,
+  expectedBatchPageGeometry?: ExpectedBatchPageGeometry,
 ): Promise<{ pdfBytes: Uint8Array }> {
   const startedAt = Date.now();
   const output = await PDFDocument.create();
@@ -1054,6 +1079,11 @@ async function mergeBatchDocuments(
   output.setCreationDate(new Date(0));
   output.setModificationDate(new Date(0));
   let count = 0;
+  let batchIndex = 0;
+  const expectedTotal = expectedBatchPageGeometry?.reduce(
+    (total, batch) => total + batch.length,
+    0,
+  );
   for await (const bytes of batches) {
     assertWithinDeadline(startedAt, DEFAULT_PACKET_ENGINE_LIMITS);
     let batch: PDFDocument;
@@ -1066,10 +1096,29 @@ async function mergeBatchDocuments(
     if (pageCount < 1 || count + pageCount > SANITIZED_BATCH_MERGE_LIMITS.maxPages) {
       throw new PacketEngineError("LIMIT_EXCEEDED", "Sanitized batch page count exceeds the packet limit.");
     }
+    const expectedPages = expectedBatchPageGeometry?.[batchIndex];
+    if (expectedPages && (pageCount !== expectedPages.length ||
+        batch.getPages().some((page, index) =>
+          page.getWidth() !== expectedPages[index]!.width ||
+          page.getHeight() !== expectedPages[index]!.height))) {
+      throw new PacketEngineError(
+        "INVALID_PDF",
+        "Sanitized batch page count or geometry does not match the analyzed packet.",
+      );
+    }
     for (const page of await output.copyPages(batch, batch.getPageIndices())) {
       output.addPage(page);
     }
     count += pageCount;
+    batchIndex += 1;
+  }
+  if (expectedTotal !== undefined &&
+      (batchIndex !== expectedBatchPageGeometry!.length ||
+       count !== expectedTotal || output.getPageCount() !== expectedTotal)) {
+    throw new PacketEngineError(
+      "INVALID_PDF",
+      "Sanitized batch total page count does not match the analyzed packet.",
+    );
   }
   assertWithinDeadline(startedAt, DEFAULT_PACKET_ENGINE_LIMITS);
   const pdfBytes = await output.save({ addDefaultPage: false, useObjectStreams: true });

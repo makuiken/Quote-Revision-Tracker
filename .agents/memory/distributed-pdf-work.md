@@ -43,3 +43,9 @@ description: Cross-replica conventions for bounding packet processing and signof
 **Why:** Fast or deduplicated queries can finish before an effect observes a fetching state; requiring that intermediate observation can permanently exhaust preview slots.
 
 **How to apply:** Test cached, uncached, aborted, and regenerated previews separately, and retain the slot only while the admitted query is fetching.
+
+**Rule:** Do not equate durable checkpoints with autonomous execution on Autoscale.
+
+**Why:** A database row cannot wake a stopped instance. The user declined an external scheduled trigger on 2026-09-22; an independent execution service was not authorized.
+
+**How to apply:** Describe recovery as conditional on a running instance and lease expiry. Do not claim no-traffic eventual completion, or silently configure a scheduler or change the deployment type.

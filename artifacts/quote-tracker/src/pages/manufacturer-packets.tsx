@@ -1012,6 +1012,11 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
   const [viewMode, setViewMode] = useState<'source' | 'cleaned'>(
     packet.status === 'ready_for_approval' || packet.status === 'approved' ? 'cleaned' : 'source'
   );
+  const isApproved = packet.status === 'approved';
+
+  useEffect(() => {
+    if (isApproved) setViewMode('cleaned');
+  }, [isApproved]);
 
   const currentPage = analysis.find(a => a.pageNumber === currentPageNum);
   const pageRedactions = redactions[currentPageNum.toString()] || [];
@@ -1127,7 +1132,11 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
             )}
           </div>
           <p className="text-muted-foreground text-xs mt-0.5">
-            {viewMode === 'source' ? "Draw boxes over private details, then generate a clean preview." : "Review the cleaned preview before adding to the package."}
+            {isApproved
+              ? "This packet is in the customer package, so its redactions are read-only. Remove the packet from the customer package before editing redactions."
+              : viewMode === 'source'
+                ? "Draw boxes over private details, then generate a clean preview."
+                : "Review the cleaned preview before adding to the package."}
             {packet.appliedTemplate?.name && (
               <span className="text-green-700 ml-2 font-medium">
                 {viewMode === 'source' ? "Auto-prepopulated" : "Applied"} from “{packet.appliedTemplate.name}” ({packet.appliedTemplate.manufacturer} · {categoryLabel(packet.appliedTemplate.productType as QuoteCategoriesItem)}).
@@ -1147,8 +1156,10 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
         <div className="flex gap-3 items-center shrink-0 w-full md:w-auto justify-between md:justify-end">
           <div className="flex bg-muted p-1 rounded-md border border-border">
             <button
-              className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${viewMode === 'source' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${viewMode === 'source' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              disabled={isApproved}
               onClick={() => setViewMode('source')}
+              title={isApproved ? "Remove this packet from the customer package before editing redactions." : undefined}
             >
               Source Editor
             </button>
@@ -1161,7 +1172,7 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
             </button>
           </div>
 
-          {viewMode === 'source' ? (
+          {viewMode === 'source' && !isApproved ? (
             <div className="flex gap-2">
               <Button onClick={() => handleSaveRedactions()} disabled={submitRedactions.isPending} className="bg-foreground text-background hover:bg-foreground/90 h-9 font-bold">
                 {submitRedactions.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
@@ -1214,7 +1225,7 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
         {/* Main Editor / Preview Area */}
         <div className="flex-1 flex flex-col bg-muted/10 relative overflow-hidden">
           <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
-            {currentPage && viewMode === 'source' && (
+            {currentPage && viewMode === 'source' && !isApproved && (
               <PageRedactionEditor
                 key={`${packet.id}:${currentPage.pageNumber}`}
                 quoteId={quoteId}

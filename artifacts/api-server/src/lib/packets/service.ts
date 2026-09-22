@@ -106,7 +106,7 @@ export function serializePacket(packet: ManufacturerPacket) {
       stage: packet.status === "processing" ? "analysis" : packet.status,
       completedPages: 0,
       totalPages: packet.pageCount ?? 0,
-      ...(packet.status === "failed" ? { errorStage: "analysis" } : {}),
+      ...(packet.status === "failed" ? { errorStage: "unknown" } : {}),
     },
     createdAt: packet.createdAt,
     updatedAt: packet.updatedAt,
@@ -518,7 +518,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
   };
   let newlyWrittenRenderPaths: string[] = [];
   let processingState: PacketProcessingState | null = null;
-  let processingStage = "analysis";
+  let processingStage = "source_download";
   const persistState = async (): Promise<void> => {
     const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       processingState,
@@ -536,6 +536,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
   };
 
   try {
+    processingStage = "source_download";
     const source = await storage.downloadObjectBytesBounded(
       claimed.sourceObjectPath,
       MAX_PACKET_BYTES,
@@ -557,6 +558,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const previousState = readProcessingState(claimed.processingState);
     const cachedAnalysis = previousState?.analysisKey === analysisKey
       ? previousState.analysis : null;
+    processingStage = "analysis";
     const analysis = cachedAnalysis ?? await withHeartbeats(() =>
       packetEngine.analyzePdf(source, claimed.manufacturer),
     );
@@ -681,6 +683,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     await persistState();
     while (completed < analysis.pages.length) {
       const pageOrder = analysis.pages.slice(completed, completed + CHECKPOINT_BATCH_SIZE).map((page) => page.pageNumber);
+      processingStage = "rendering";
       const sanitized = await withHeartbeats(() => packetEngine.generateSanitizedPacket({
         bytes: source,
         manufacturer: claimed.manufacturer ?? (detectedProfile === "unknown" ? null : detectedProfile),
@@ -709,6 +712,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       newlyWrittenRenderPaths = [pdfPath, ...pagePaths];
       // Keep the prior durable state if this commit fails. Failure reporting
       // must not accidentally reference partially persisted output.
+      processingStage = "storage";
       processingState = await commitCheckpointBatch(nextState,
         () => withHeartbeats(async () => {
           await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
@@ -748,10 +752,17 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
           inputPaths.push(path);
         }
         const outputPath = join(directory, "merged.pdf");
-        await mergePacketPdfFilesInWorker(inputPaths, outputPath);
+        const expectedBatchPageGeometry = batches.map((batch) =>
+          batch.pageNumbers.map((pageNumber) => {
+            const page = analysis.pages[pageNumber - 1]!;
+            return { width: page.width, height: page.height };
+          }));
+        processingStage = "rendering";
+        await mergePacketPdfFilesInWorker(inputPaths, outputPath, expectedBatchPageGeometry);
         if ((await stat(outputPath)).size > MAX_CHECKPOINT_BYTES) throw new Error("Merged packet exceeds the output limit.");
         const bytes = await readFile(outputPath);
         if (!bytes.length) throw new Error("Merged packet is empty.");
+        processingStage = "storage";
         await storage.saveObjectEntityImmutable(pdfPath, bytes, "application/pdf");
         return createHash("sha256").update(bytes).digest("hex");
       } finally {
@@ -794,6 +805,18 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       "Packet processing stage timings",
     );
   } catch (error) {
+    logger.error(
+      {
+        err: error,
+        packetId: claimed.id,
+        stage: processingStage,
+        totalMs: Date.now() - stageStartedAt,
+        unfinishedPhaseMs: Date.now() - previousStageAt,
+        stages: stageTimings,
+        completedPages: processingState ? completedCheckpointPages(processingState) : 0,
+      },
+      "Packet processing failed",
+    );
     try {
       await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
         status: "failed",
