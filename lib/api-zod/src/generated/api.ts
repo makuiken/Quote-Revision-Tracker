@@ -2950,6 +2950,10 @@ export const listManufacturerPacketsResponseManualRedactionsItemReasonMax = 250;
 
 export const listManufacturerPacketsResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const listManufacturerPacketsResponseProcessingProgressCompletedPagesMin = 0;
+
+export const listManufacturerPacketsResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const ListManufacturerPacketsResponseItem = zod.object({
@@ -2989,6 +2993,12 @@ export const ListManufacturerPacketsResponseItem = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(listManufacturerPacketsResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(listManufacturerPacketsResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(listManufacturerPacketsResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3048,6 +3058,10 @@ export const requestManufacturerPacketUploadResponsePacketManualRedactionsItemRe
 
 export const requestManufacturerPacketUploadResponsePacketAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const requestManufacturerPacketUploadResponsePacketProcessingProgressCompletedPagesMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketProcessingProgressTotalPagesMin = 0;
+
 
 
 export const RequestManufacturerPacketUploadResponse = zod.object({
@@ -3088,6 +3102,12 @@ export const RequestManufacturerPacketUploadResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(requestManufacturerPacketUploadResponsePacketAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(requestManufacturerPacketUploadResponsePacketProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(requestManufacturerPacketUploadResponsePacketProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3204,6 +3224,10 @@ export const getManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
 
 export const getManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const getManufacturerPacketResponseProcessingProgressCompletedPagesMin = 0;
+
+export const getManufacturerPacketResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const GetManufacturerPacketResponse = zod.object({
@@ -3243,6 +3267,12 @@ export const GetManufacturerPacketResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(getManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(getManufacturerPacketResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(getManufacturerPacketResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3301,6 +3331,10 @@ export const setManufacturerPacketProductTypeResponseManualRedactionsItemReasonM
 
 export const setManufacturerPacketProductTypeResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const setManufacturerPacketProductTypeResponseProcessingProgressCompletedPagesMin = 0;
+
+export const setManufacturerPacketProductTypeResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const SetManufacturerPacketProductTypeResponse = zod.object({
@@ -3340,6 +3374,12 @@ export const SetManufacturerPacketProductTypeResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(setManufacturerPacketProductTypeResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(setManufacturerPacketProductTypeResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(setManufacturerPacketProductTypeResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3391,6 +3431,10 @@ export const setManufacturerPacketManufacturerResponseManualRedactionsItemReason
 
 export const setManufacturerPacketManufacturerResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const setManufacturerPacketManufacturerResponseProcessingProgressCompletedPagesMin = 0;
+
+export const setManufacturerPacketManufacturerResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const SetManufacturerPacketManufacturerResponse = zod.object({
@@ -3430,6 +3474,12 @@ export const SetManufacturerPacketManufacturerResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(setManufacturerPacketManufacturerResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(setManufacturerPacketManufacturerResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(setManufacturerPacketManufacturerResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3473,6 +3523,10 @@ export const completeManufacturerPacketUploadResponseManualRedactionsItemReasonM
 
 export const completeManufacturerPacketUploadResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const completeManufacturerPacketUploadResponseProcessingProgressCompletedPagesMin = 0;
+
+export const completeManufacturerPacketUploadResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const CompleteManufacturerPacketUploadResponse = zod.object({
@@ -3512,6 +3566,12 @@ export const CompleteManufacturerPacketUploadResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(completeManufacturerPacketUploadResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(completeManufacturerPacketUploadResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(completeManufacturerPacketUploadResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3579,6 +3639,10 @@ export const setManufacturerPacketRedactionsResponseManualRedactionsItemReasonMa
 
 export const setManufacturerPacketRedactionsResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const setManufacturerPacketRedactionsResponseProcessingProgressCompletedPagesMin = 0;
+
+export const setManufacturerPacketRedactionsResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const SetManufacturerPacketRedactionsResponse = zod.object({
@@ -3618,6 +3682,12 @@ export const SetManufacturerPacketRedactionsResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(setManufacturerPacketRedactionsResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(setManufacturerPacketRedactionsResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(setManufacturerPacketRedactionsResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3661,6 +3731,10 @@ export const approveManufacturerPacketResponseManualRedactionsItemReasonMax = 25
 
 export const approveManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const approveManufacturerPacketResponseProcessingProgressCompletedPagesMin = 0;
+
+export const approveManufacturerPacketResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const ApproveManufacturerPacketResponse = zod.object({
@@ -3700,6 +3774,12 @@ export const ApproveManufacturerPacketResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(approveManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(approveManufacturerPacketResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(approveManufacturerPacketResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()
@@ -3743,6 +3823,10 @@ export const retryManufacturerPacketResponseManualRedactionsItemReasonMax = 250;
 
 export const retryManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax = 32;
 
+export const retryManufacturerPacketResponseProcessingProgressCompletedPagesMin = 0;
+
+export const retryManufacturerPacketResponseProcessingProgressTotalPagesMin = 0;
+
 
 
 export const RetryManufacturerPacketResponse = zod.object({
@@ -3782,6 +3866,12 @@ export const RetryManufacturerPacketResponse = zod.object({
   "eligibleProductTypes": zod.array(zod.enum(['doors', 'interiorDoors', 'exteriorDoors', 'windows', 'trim', 'millwork'])).min(1).max(retryManufacturerPacketResponseAppliedTemplateOneEligibleProductTypesMax).optional()
 }),zod.null()]).optional(),
   "failureMessage": zod.string().nullish(),
+  "processingProgress": zod.object({
+  "stage": zod.string(),
+  "completedPages": zod.int().min(retryManufacturerPacketResponseProcessingProgressCompletedPagesMin),
+  "totalPages": zod.int().min(retryManufacturerPacketResponseProcessingProgressTotalPagesMin),
+  "errorStage": zod.string().nullish()
+}).optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "approvedAt": zod.coerce.date().nullish()

@@ -65,6 +65,7 @@ export * from './manufacturerRedactionTemplateUpdateInput';
 export * from './manufacturerTemplateSource';
 export * from './packetManufacturerInput';
 export * from './packetPageAnalysis';
+export * from './packetProcessingProgress';
 export * from './packetProductTypeInput';
 export * from './packetProductTypeInputProductType';
 export * from './packetRect';

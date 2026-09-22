@@ -182,6 +182,7 @@ const RECONCILIATION_STATEMENTS: string[] = [
   `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS detected_manufacturer text`,
   `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS declared_size integer NOT NULL DEFAULT 0`,
   `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS processing_attempt_token text`,
+  `ALTER TABLE manufacturer_packets ADD COLUMN IF NOT EXISTS processing_state jsonb`,
   // Product type is nullable only for explicitly legacy/unclassified packets.
   // New API writes require it and scoped approval creation rejects unclassified
   // pages rather than silently assigning a category.
@@ -436,6 +437,7 @@ const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
     "sanitized_pdf_object_path", "sanitized_pdf_sha256", "sanitized_page_object_paths",
     "analysis", "manual_redactions", "applied_redaction_template_id",
     "applied_redaction_template_name", "status", "page_count", "attempt_count",
+    "processing_state",
     "processing_attempt_token", "processing_started_at", "failure_message",
     "approved_at", "approved_by_id", "approved_by_name", "created_at", "updated_at",
   ],
@@ -656,6 +658,7 @@ const REQUIRED_COLUMN_CONTRACTS: readonly {
   { table: "manufacturer_packets", column: "attempt_count", type: "int4", nullable: false },
   { table: "manufacturer_packets", column: "processing_attempt_token", type: "text", nullable: true },
   { table: "manufacturer_packets", column: "processing_started_at", type: "timestamptz", nullable: true },
+  { table: "manufacturer_packets", column: "processing_state", type: "jsonb", nullable: true },
   { table: "manufacturer_packets", column: "sanitized_page_object_paths", type: "jsonb", nullable: true },
   { table: "scoped_approval_requests", column: "snapshot", type: "jsonb", nullable: false },
   { table: "scoped_approval_requests", column: "document_version", type: "text", nullable: false },

@@ -89,6 +89,7 @@ import {
   deduplicateTemplateOptions,
   expandTemplateOptions,
 } from "../lib/packets/templates";
+import { resetRenderCheckpoints } from "../lib/packets/checkpoints";
 
 const router: IRouter = Router();
 const storage = new ObjectStorageService();
@@ -222,6 +223,7 @@ router.patch(
             : {
                 productType,
                 status: "queued",
+                processingState: resetRenderCheckpoints(packet.processingState),
                 manualRedactions: null,
                 appliedRedactionTemplateId: null,
                 appliedRedactionTemplateName: null,
@@ -297,6 +299,7 @@ router.patch(
             : {
                 manufacturer,
                 status: "queued",
+                processingState: null,
                 manualRedactions: null,
                 appliedRedactionTemplateId: null,
                 appliedRedactionTemplateName: null,
@@ -911,6 +914,13 @@ router.patch(
       const [updated] = await tx.update(manufacturerPacketsTable).set({
         manualRedactions: body.data.redactionsByPage,
         status: "queued",
+        processingState: resetRenderCheckpoints(packet.processingState),
+        sanitizedPdfObjectPath: null,
+        sanitizedPdfSha256: null,
+        sanitizedPageObjectPaths: null,
+        processingAttemptToken: null,
+        processingStartedAt: null,
+        attemptCount: 0,
         failureMessage: null,
       }).where(eq(manufacturerPacketsTable.id, packet.id)).returning();
       return { kind: "ok" as const, packet: updated! };

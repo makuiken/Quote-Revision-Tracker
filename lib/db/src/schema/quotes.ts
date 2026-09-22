@@ -292,6 +292,7 @@ export const manufacturerPacketsTable = pgTable("manufacturer_packets", {
   pageCount: integer("page_count"),
   attemptCount: integer("attempt_count").notNull().default(0),
   processingAttemptToken: text("processing_attempt_token"),
+  processingState: jsonb("processing_state").$type<unknown>(),
   processingStartedAt: timestamp("processing_started_at", {
     withTimezone: true,
   }),

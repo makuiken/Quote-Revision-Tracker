@@ -87,6 +87,16 @@ export interface AppliedManufacturerRedactionTemplate {
   eligibleProductTypes?: QuoteProductType[];
 }
 
+export interface PacketProcessingProgress {
+  stage: string;
+  /** @minimum 0 */
+  completedPages: number;
+  /** @minimum 0 */
+  totalPages: number;
+  /** @nullable */
+  errorStage?: string | null;
+}
+
 export interface ManufacturerPacket {
   id: number;
   quoteId: number;
@@ -107,6 +117,7 @@ export interface ManufacturerPacket {
   appliedTemplate?: AppliedManufacturerRedactionTemplate | null;
   /** @nullable */
   failureMessage?: string | null;
+  processingProgress?: PacketProcessingProgress;
   createdAt: string;
   updatedAt: string;
   /** @nullable */

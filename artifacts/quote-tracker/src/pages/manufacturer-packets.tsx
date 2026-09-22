@@ -22,8 +22,10 @@ import {
   useSetManufacturerPacketRedactions,
   useRetryManufacturerPacket,
   useGetManufacturerPacketPage,
+  getManufacturerPacketPage,
   getGetManufacturerPacketPageQueryKey,
   useGetManufacturerPacketSourcePage,
+  getManufacturerPacketSourcePage,
   getGetManufacturerPacketSourcePageQueryKey,
   useGetManufacturerPacketManifest,
   getGetManufacturerPacketManifestQueryKey,
@@ -56,29 +58,6 @@ const PROCESSING_POLL_STOP_AFTER_MS = 6 * 60 * 1000;
 const PREVIEW_FETCH_CONCURRENCY = 2;
 const previewFetchScheduler = new PreviewFetchScheduler(PREVIEW_FETCH_CONCURRENCY);
 
-function usePreviewFetchSlot(attempt: number) {
-  const [granted, setGranted] = useState(false);
-  const releaseRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    setGranted(false);
-    const release = previewFetchScheduler.schedule(() => setGranted(true));
-    releaseRef.current = release;
-    return () => {
-      release();
-      if (releaseRef.current === release) releaseRef.current = null;
-    };
-  }, [attempt]);
-
-  const release = useCallback(() => {
-    releaseRef.current?.();
-    releaseRef.current = null;
-    setGranted(false);
-  }, []);
-
-  return { granted, release };
-}
-
 function usePreviewVisibility<T extends HTMLElement>(allowed = true) {
   const ref = useRef<T>(null);
   const [visible, setVisible] = useState(false);
@@ -93,9 +72,13 @@ function usePreviewVisibility<T extends HTMLElement>(allowed = true) {
       setVisible(true);
       return;
     }
+    let root = element.parentElement;
+    while (root && !/(auto|scroll)/.test(getComputedStyle(root).overflowY)) {
+      root = root.parentElement;
+    }
     const observer = new IntersectionObserver(
       ([entry]) => setVisible(entry.isIntersecting),
-      { rootMargin: "160px" },
+      { root, rootMargin: "160px" },
     );
     observer.observe(element);
     return () => observer.disconnect();
@@ -115,13 +98,28 @@ function packetProcessingAgeMs(
 export function packetProcessingPollInterval(
   packets: readonly ManufacturerPacket[] | undefined,
   now = Date.now(),
+  observations?: Map<number, { fingerprint: string; advancedAt: number }>,
 ): number | false {
   const pending = packets?.filter(
     (packet) => packet.status === "queued" || packet.status === "processing",
   ) ?? [];
   if (!pending.length) return false;
+  if (observations) {
+    const pendingIds = new Set(pending.map(packet => packet.id));
+    for (const id of observations.keys()) if (!pendingIds.has(id)) observations.delete(id);
+  }
   const youngestAge = Math.min(
-    ...pending.map((packet) => packetProcessingAgeMs(packet, now)),
+    ...pending.map((packet) => {
+      const age = packetProcessingAgeMs(packet, now);
+      if (!observations || !packet.processingProgress) return age;
+      const fingerprint = JSON.stringify(packet.processingProgress);
+      const previous = observations.get(packet.id);
+      const advancedAt = previous && previous.fingerprint !== fingerprint
+        ? now
+        : previous?.advancedAt ?? now - age;
+      observations.set(packet.id, { fingerprint, advancedAt });
+      return Math.min(age, Math.max(0, now - advancedAt));
+    }),
   );
   if (youngestAge >= PROCESSING_POLL_STOP_AFTER_MS) return false;
   return youngestAge >= PROCESSING_SLOW_AFTER_MS ? 15_000 : 2_000;
@@ -193,6 +191,7 @@ export default function ManufacturerPacketsPage() {
 function PacketsManager({ quoteId }: { quoteId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const progressObservations = useRef(new Map<number, { fingerprint: string; advancedAt: number }>());
   const {
     data: packetData = [],
     isLoading,
@@ -204,7 +203,7 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
       refetchOnMount: "always",
       refetchOnWindowFocus: true,
       refetchInterval: (query) =>
-        packetProcessingPollInterval(query.state.data),
+        packetProcessingPollInterval(query.state.data, Date.now(), progressObservations.current),
     }
   });
   const packets = packetData;
@@ -451,7 +450,7 @@ function PacketsManager({ quoteId }: { quoteId: number }) {
           </div>
           {packets.map((packet) => (
             <div key={packet.id} className={activePacketId === packet.id ? "h-full" : "hidden"}>
-              <PacketDetails quoteId={quoteId} packet={packet} hasApprovals={hasApprovals} isVisible={activePacketId === packet.id} />
+              <PacketDetails quoteId={quoteId} packet={packet} hasApprovals={hasApprovals} isVisible={activePacketId === packet.id} progressAdvancedAt={progressObservations.current.get(packet.id)?.advancedAt} />
             </div>
           ))}
           {activePacketId !== 'manifest' && !activePacket ? (
@@ -783,7 +782,7 @@ function UploadCard({
   );
 }
 
-function PacketDetails({ quoteId, packet, hasApprovals, isVisible }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean, isVisible: boolean }) {
+function PacketDetails({ quoteId, packet, hasApprovals, isVisible, progressAdvancedAt }: { quoteId: number, packet: ManufacturerPacket, hasApprovals: boolean, isVisible: boolean, progressAdvancedAt?: number }) {
   const retry = useRetryManufacturerPacket();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -801,7 +800,7 @@ function PacketDetails({ quoteId, packet, hasApprovals, isVisible }: { quoteId: 
   }
 
   if (packet.status === "queued" || packet.status === "processing") {
-    const processingAge = packetProcessingAgeMs(packet);
+    const processingAge = Math.min(packetProcessingAgeMs(packet), progressAdvancedAt === undefined ? Infinity : Math.max(0, Date.now() - progressAdvancedAt));
     const delayed = processingAge >= PROCESSING_SLOW_AFTER_MS;
     const pollingStopped = processingAge >= PROCESSING_POLL_STOP_AFTER_MS;
     return (
@@ -812,14 +811,24 @@ function PacketDetails({ quoteId, packet, hasApprovals, isVisible }: { quoteId: 
           <Loader2 className="w-10 h-10 animate-spin text-muted-foreground mb-4" />
         )}
         <h3 className="text-lg font-bold text-foreground mb-2">
-          {delayed ? "Processing is taking longer than expected" : "Analyzing Document..."}
+          {delayed ? "Processing is taking longer than expected" : ({
+            queued: "Queued for processing",
+            analyzing: "Analyzing document",
+            rendering: "Rendering cleaned pages",
+            finalizing: "Finalizing document",
+          }[packet.processingProgress?.stage ?? packet.status] ?? "Processing document")}
         </h3>
+        {packet.processingProgress && (
+          <p className="text-sm text-muted-foreground mb-2" data-testid={`status-processing-progress-${packet.id}`} role="status">
+            {packet.processingProgress.stage} — {packet.processingProgress.completedPages} of {packet.processingProgress.totalPages} pages completed
+          </p>
+        )}
         <p className="text-sm text-muted-foreground max-w-sm">
           {pollingStopped
             ? "Automatic status checks have stopped. Check again now; if processing failed, retry once or split this manufacturer quote into smaller PDFs."
             : delayed
               ? "The quote is still queued or processing. Status checks will continue at a reduced rate."
-              : "Extracting pages and detecting areas to redact. This usually takes a few moments."}
+              : "Pages will be available for review and approval only when processing finishes."}
         </p>
         {delayed && (
           <Button
@@ -851,6 +860,11 @@ function PacketDetails({ quoteId, packet, hasApprovals, isVisible }: { quoteId: 
           <p className="text-red-700 text-sm font-medium mb-6">
             {packet.failureMessage || "An unknown error occurred while analyzing the document."}
           </p>
+          {packet.processingProgress && (
+            <p className="text-red-700 text-sm mb-6" data-testid={`status-processing-error-${packet.id}`}>
+              Stopped during {packet.processingProgress.errorStage ?? packet.processingProgress.stage} — {packet.processingProgress.completedPages} of {packet.processingProgress.totalPages} pages completed. No partial document is available for approval.
+            </p>
+          )}
           <Button
             variant="outline"
             className="bg-card border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
@@ -895,22 +909,32 @@ function PageThumbnail({ quoteId, packetId, pageNumber, type, enabled = true, re
 
 function PageThumbnailRequest({ quoteId, packetId, pageNumber, type, revision }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned', revision?: string }) {
   const [attempt, setAttempt] = useState(0);
-  const { granted, release } = usePreviewFetchSlot(attempt);
   const cleanedQueryKey = useMemo(
     () => cleanedManufacturerPacketPreviewQueryKey(quoteId, packetId, pageNumber, revision ?? "unknown"),
     [packetId, pageNumber, quoteId, revision],
   );
   const sourceQuery = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
-    query: { enabled: granted && type === 'source', retry: false, queryKey: getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber) }
+    query: {
+      enabled: type === 'source', retry: false, staleTime: Infinity,
+      queryKey: [...getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber), attempt],
+      queryFn: ({ signal }) => previewFetchScheduler.run(
+        () => getManufacturerPacketSourcePage(quoteId, packetId, pageNumber, { signal }), signal,
+      ),
+    }
   });
   const cleanedQuery = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
-    query: { enabled: granted && type === 'cleaned', retry: false, queryKey: cleanedQueryKey }
+    query: {
+      enabled: type === 'cleaned', retry: false, staleTime: Infinity,
+      queryKey: [...cleanedQueryKey, attempt],
+      queryFn: ({ signal }) => previewFetchScheduler.run(
+        () => getManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, { signal }), signal,
+      ),
+    }
   });
 
   const blob = type === 'source' ? sourceQuery.data : cleanedQuery.data;
   const isLoading = type === 'source' ? sourceQuery.isLoading : cleanedQuery.isLoading;
   const isError = type === 'source' ? sourceQuery.isError : cleanedQuery.isError;
-  const isFetching = type === 'source' ? sourceQuery.isFetching : cleanedQuery.isFetching;
 
   const [url, setUrl] = useState<string | null>(null);
 
@@ -923,11 +947,6 @@ function PageThumbnailRequest({ quoteId, packetId, pageNumber, type, revision }:
     return undefined;
   }, [blob]);
 
-  useEffect(() => {
-    if (granted && !isFetching) release();
-  }, [granted, isFetching, release]);
-
-  if (!granted && !blob && !isError) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><FileImage className="w-4 h-4 text-muted-foreground/30" /></div>;
   if (isLoading) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" /></div>;
   if (isError) return (
     <div className="w-full h-full flex flex-col gap-1 items-center justify-center bg-muted/50">
@@ -1764,12 +1783,14 @@ function SourcePagePreview({ quoteId, packetId, pageNumber, enabled }: { quoteId
 
 function SourcePagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
   const [attempt, setAttempt] = useState(0);
-  const { granted, release } = usePreviewFetchSlot(attempt);
-  const { data: blob, isLoading, isError, isFetching } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
+  const { data: blob, isLoading, isError } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
     query: {
-      enabled: granted,
       retry: false,
-      queryKey: getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber),
+      staleTime: Infinity,
+      queryKey: [...getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber), attempt],
+      queryFn: ({ signal }) => previewFetchScheduler.run(
+        () => getManufacturerPacketSourcePage(quoteId, packetId, pageNumber, { signal }), signal,
+      ),
     },
   });
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -1783,13 +1804,6 @@ function SourcePagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: 
     return undefined;
   }, [blob]);
 
-  useEffect(() => {
-    if (granted && !isFetching) release();
-  }, [granted, isFetching, release]);
-
-  if (!granted && !blob && !isError) {
-    return <div className="absolute inset-0 bg-muted flex items-center justify-center text-muted-foreground font-medium">Waiting to load preview…</div>;
-  }
   if (isLoading) {
     return <div className="absolute inset-0 flex items-center justify-center text-muted-foreground bg-muted/30"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   }
@@ -1824,16 +1838,18 @@ function SanitizedPagePreview({ quoteId, packetId, pageNumber, enabled, revision
 
 function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber, revision }: { quoteId: number, packetId: number, pageNumber: number, revision: string }) {
   const [attempt, setAttempt] = useState(0);
-  const { granted, release } = usePreviewFetchSlot(attempt);
   const cleanedQueryKey = useMemo(
     () => cleanedManufacturerPacketPreviewQueryKey(quoteId, packetId, pageNumber, revision),
     [packetId, pageNumber, quoteId, revision],
   );
-  const { data: blob, isLoading, isError, isFetching } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
+  const { data: blob, isLoading, isError } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
     query: {
-      enabled: granted,
       retry: false,
-      queryKey: cleanedQueryKey,
+      staleTime: Infinity,
+      queryKey: [...cleanedQueryKey, attempt],
+      queryFn: ({ signal }) => previewFetchScheduler.run(
+        () => getManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, { signal }), signal,
+      ),
     },
   });
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -1848,13 +1864,6 @@ function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber, revision }
     return undefined;
   }, [blob]);
 
-  useEffect(() => {
-    if (granted && !isFetching) release();
-  }, [granted, isFetching, release]);
-
-  if (!granted && !blob && !isError) {
-    return <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full"><FileImage className="w-8 h-8 mb-4 opacity-40" /> Waiting to load preview…</div>;
-  }
   if (isLoading) {
     return <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full"><Loader2 className="w-8 h-8 animate-spin mb-4" /> Loading cleaned page {pageNumber}...</div>;
   }

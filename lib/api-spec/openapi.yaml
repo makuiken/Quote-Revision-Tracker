@@ -2241,10 +2241,20 @@ components:
             - $ref: "#/components/schemas/AppliedManufacturerRedactionTemplate"
             - type: "null"
         failureMessage: { type: ["string", "null"] }
+        processingProgress:
+          $ref: "#/components/schemas/PacketProcessingProgress"
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         approvedAt: { type: ["string", "null"], format: date-time }
       required: [id, quoteId, originalName, status, createdAt, updatedAt]
+    PacketProcessingProgress:
+      type: object
+      properties:
+        stage: { type: string }
+        completedPages: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        errorStage: { type: ["string", "null"] }
+      required: [stage, completedPages, totalPages]
     AppliedManufacturerRedactionTemplate:
       type: object
       properties:

@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   db,
@@ -14,7 +17,13 @@ import {
 import { ObjectStorageService } from "../objectStorage";
 import { logger } from "../logger";
 import { recordOperationalFailure } from "../operationalSignals";
-import { packetEngine } from "./engine";
+import { packetEngine, mergePacketPdfFilesInWorker } from "./engine";
+import {
+  analysisFingerprint, assertCompleteCheckpoints, assertDocumentBudget,
+  CHECKPOINT_BATCH_SIZE, commitCheckpointBatch, completedCheckpointPages, MAX_CHECKPOINT_BYTES,
+  readProcessingState, renderFingerprint, resumeRender,
+  type PacketProcessingState,
+} from "./checkpoints";
 import {
   isAbandonedProcessingJob,
   nextRecoveryScanCursor,
@@ -93,6 +102,12 @@ export function serializePacket(packet: ManufacturerPacket) {
         }
       : null,
     failureMessage: packet.failureMessage,
+    processingProgress: readProcessingState(packet.processingState)?.progress ?? {
+      stage: packet.status === "processing" ? "analysis" : packet.status,
+      completedPages: 0,
+      totalPages: packet.pageCount ?? 0,
+      ...(packet.status === "failed" ? { errorStage: "analysis" } : {}),
+    },
     createdAt: packet.createdAt,
     updatedAt: packet.updatedAt,
     approvedAt: packet.approvedAt,
@@ -171,12 +186,12 @@ function renderedPagePath(quoteId: number, packetId: number, pageNumber: number)
 
 function cleanError(error: unknown) {
   if (error instanceof PacketWorkerTimeoutError) {
-    return "PDF analysis timed out before it could finish. Retry once; if it fails again, split the manufacturer quote into smaller PDFs.";
+    return "PDF processing timed out. Retry to resume saved progress; if it fails again, split the manufacturer quote into smaller PDFs.";
   }
   if (error instanceof PacketWorkerError) {
     return error.code === "ERR_WORKER_OUT_OF_MEMORY"
-      ? "PDF analysis exceeded its memory limit. Split the manufacturer quote into smaller PDFs and upload them separately."
-      : `PDF analysis worker failed: ${error.message}`;
+      ? "PDF processing exceeded its memory limit. Split the manufacturer quote into smaller PDFs and upload them separately."
+      : `PDF processing worker failed: ${error.message}`;
   }
   const message = error instanceof Error ? error.message : "Unknown packet processing error";
   return message.slice(0, 500);
@@ -219,7 +234,7 @@ async function updateProcessingPacket(
       .for("update");
     if (!quote || quote.archivedAt) return false;
     const [packet] = await tx
-      .select({ id: manufacturerPacketsTable.id })
+      .select({ id: manufacturerPacketsTable.id, processingState: manufacturerPacketsTable.processingState })
       .from(manufacturerPacketsTable)
       .where(
         and(
@@ -231,6 +246,18 @@ async function updateProcessingPacket(
       )
       .for("update");
     if (!packet) return false;
+    // A write may commit even if its acknowledgement is lost. Failure updates
+    // preserve the actual durable checkpoint rather than a stale local copy.
+    if (values.status === "failed") {
+      const durableState = readProcessingState(packet.processingState);
+      const reportedState = readProcessingState(values.processingState);
+      values = { ...values, processingState: durableState ? {
+        ...durableState, progress: {
+          ...durableState.progress, stage: "failed",
+          errorStage: reportedState?.progress.errorStage ?? durableState.progress.stage,
+        },
+      } : null };
+    }
     await tx
       .update(manufacturerPacketsTable)
       .set(values)
@@ -311,6 +338,8 @@ async function cleanupUncommittedRenderObjects(
           or(
             eq(manufacturerPacketsTable.sanitizedPdfObjectPath, path),
             sql`${manufacturerPacketsTable.sanitizedPageObjectPaths} @> ${JSON.stringify([path])}::jsonb`,
+            sql`${manufacturerPacketsTable.processingState}->'batches' @> ${JSON.stringify([{ pdfPath: path }])}::jsonb`,
+            sql`${manufacturerPacketsTable.processingState}->'batches' @> ${JSON.stringify([{ pagePaths: [path] }])}::jsonb`,
           ),
         )
         .limit(1);
@@ -371,6 +400,7 @@ async function cleanupUncommittedRenderObjects(
  */
 export async function processPacket(
   packetId: number,
+  scheduleOnContention = true,
 ): Promise<"processed" | "contended"> {
   const slot = await tryAcquireGlobalPacketWorkerSlot();
   if (!slot) {
@@ -381,8 +411,10 @@ export async function processPacket(
       { packetId, globalSlotCount: globalPacketWorkerSlotCount() },
       "No global packet worker slot available; leaving packet queued",
     );
-    pendingPacketJobs.add(packetId);
-    schedulePacketQueueRetry();
+    if (scheduleOnContention) {
+      pendingPacketJobs.add(packetId);
+      schedulePacketQueueRetry();
+    }
     return "contended";
   }
 
@@ -485,6 +517,15 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     }
   };
   let newlyWrittenRenderPaths: string[] = [];
+  let processingState: PacketProcessingState | null = null;
+  let processingStage = "analysis";
+  const persistState = async (): Promise<void> => {
+    const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
+      processingState,
+      processingStartedAt: new Date(),
+    });
+    if (!committed) throw new Error("Packet processing lease was superseded.");
+  };
   const stageStartedAt = Date.now();
   const stageTimings: Record<string, number> = {};
   let previousStageAt = stageStartedAt;
@@ -512,7 +553,11 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       throw new Error("Uploaded file is not a valid PDF.");
     }
 
-    const analysis = await withHeartbeats(() =>
+    const analysisKey = analysisFingerprint(source, claimed.manufacturer);
+    const previousState = readProcessingState(claimed.processingState);
+    const cachedAnalysis = previousState?.analysisKey === analysisKey
+      ? previousState.analysis : null;
+    const analysis = cachedAnalysis ?? await withHeartbeats(() =>
       packetEngine.analyzePdf(source, claimed.manufacturer),
     );
     finishStage("analysisMs");
@@ -531,6 +576,12 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const detectedProfile = (
       analysis as typeof analysis & { profile: string }
     ).profile;
+    processingState = cachedAnalysis ? previousState! : {
+      version: 1, analysisKey, analysis: { pages: analysis.pages, profile: detectedProfile },
+      renderKey: null, batches: [],
+      progress: { stage: "analysis", completedPages: 0, totalPages: analysis.pages.length },
+    };
+    await persistState();
     const hasManualReview = claimed.manualRedactions !== null;
     if (!hasManualReview) {
       const [template] = claimed.manufacturer && claimed.productType
@@ -594,6 +645,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         detectedManufacturer:
           detectedProfile === "unknown" ? null : detectedProfile,
         pageCount: analysis.pages.length,
+        processingState: {
+          ...processingState,
+          progress: { stage: "needs_review", completedPages: 0, totalPages: analysis.pages.length },
+        },
         processingStartedAt: null,
       });
       logger.info(
@@ -616,54 +671,108 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       (count, rectangles) => count + rectangles.length,
       0,
     );
-    const sanitized = await withHeartbeats(() =>
-      packetEngine.generateSanitizedPacket({
+    // Enforce the original document-wide limits before splitting the work. A
+    // small batch must never become a way around the raster/output budget.
+    assertDocumentBudget(analysis.pages);
+    processingState = resumeRender(processingState, renderFingerprint(analysisKey, manual));
+    processingStage = "rendering";
+    let completed = completedCheckpointPages(processingState);
+    processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length };
+    await persistState();
+    while (completed < analysis.pages.length) {
+      const pageOrder = analysis.pages.slice(completed, completed + CHECKPOINT_BATCH_SIZE).map((page) => page.pageNumber);
+      const sanitized = await withHeartbeats(() => packetEngine.generateSanitizedPacket({
         bytes: source,
-        // Prefer the explicit manufacturer but pass a bounded deterministic
-        // detection result through to the engine when the upload did not name it.
-        manufacturer:
-          claimed.manufacturer ??
-          (detectedProfile === "unknown" ? null : detectedProfile),
+        manufacturer: claimed.manufacturer ?? (detectedProfile === "unknown" ? null : detectedProfile),
         redactionsByPage,
-        pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({
-          pageNumber,
-          width,
-          height,
-        })),
-      }),
-    );
-    finishStage("sanitizeMs");
-    if (
-      sanitized.pages.length !== analysis.pages.length ||
-      sanitized.pages.some((page, index) => page.pageNumber !== index + 1 || !page.pngBytes.length) ||
-      !sanitized.pdfBytes.length
-    ) {
-      throw new Error("PDF sanitization returned incomplete page output.");
+        pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({ pageNumber, width, height })),
+        pageOrder,
+      }));
+      if (sanitized.pages.length !== pageOrder.length ||
+          sanitized.pages.some((page, index) => page.pageNumber !== index + 1 || !page.pngBytes.length) ||
+          !sanitized.pdfBytes.length) {
+        throw new Error("PDF sanitization returned incomplete batch output.");
+      }
+      const pdfPath = renderedPdfPath(claimed.quoteId, claimed.id);
+      // Engine pageNumber is local output order, not the source page identity.
+      const pagePaths = pageOrder.map((pageNumber) => renderedPagePath(claimed.quoteId, claimed.id, pageNumber));
+      const nextState: PacketProcessingState = {
+        ...processingState,
+        batches: [...processingState.batches, {
+          pageNumbers: pageOrder, pdfPath, pagePaths,
+          pdfSha256: createHash("sha256").update(sanitized.pdfBytes).digest("hex"),
+          pdfBytes: sanitized.pdfBytes.length,
+          pngBytes: sanitized.pages.reduce((sum, page) => sum + page.pngBytes.length, 0),
+        }],
+        progress: { stage: "rendering", completedPages: completed + pageOrder.length, totalPages: analysis.pages.length },
+      };
+      newlyWrittenRenderPaths = [pdfPath, ...pagePaths];
+      // Keep the prior durable state if this commit fails. Failure reporting
+      // must not accidentally reference partially persisted output.
+      processingState = await commitCheckpointBatch(nextState,
+        () => withHeartbeats(async () => {
+          await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
+          await saveRenderedPages(sanitized.pages, pagePaths, heartbeat);
+        }),
+        (state) => updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
+          processingState: state, processingStartedAt: new Date(),
+        }),
+      );
+      newlyWrittenRenderPaths = [];
+      completed += pageOrder.length;
+      // Batch-local PNG/PDF buffers are released before invoking the next worker.
     }
-    await heartbeat(true);
-
+    finishStage("sanitizeMs");
+    assertCompleteCheckpoints(processingState);
+    processingStage = "finalizing";
+    processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length };
+    await persistState();
     const pdfPath = renderedPdfPath(claimed.quoteId, claimed.id);
-    const pagePaths = sanitized.pages.map((page) =>
-      renderedPagePath(claimed.quoteId, claimed.id, page.pageNumber),
-    );
-    newlyWrittenRenderPaths = [pdfPath, ...pagePaths];
-    await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
-    finishStage("pdfUploadMs");
-    await heartbeat(true);
-    await saveRenderedPages(sanitized.pages, pagePaths, heartbeat);
-    finishStage("pageUploadsMs");
-    const hash = createHash("sha256").update(sanitized.pdfBytes).digest("hex");
+    const pagePaths = processingState.batches.flatMap((batch) => batch.pagePaths);
+    const batches = processingState.batches;
+    newlyWrittenRenderPaths = [pdfPath];
+    const hash = await withHeartbeats(async () => {
+      const directory = await mkdtemp(join(tmpdir(), "packet-merge-"));
+      try {
+        const inputPaths: string[] = [];
+        // Only one compressed batch buffer is live during staging, never all
+        // packet pixels. Hash-check immutable checkpoints before final merge.
+        for (const [index, batch] of batches.entries()) {
+          const bytes = await storage.downloadObjectBytesBounded(batch.pdfPath, Math.min(batch.pdfBytes, MAX_CHECKPOINT_BYTES));
+          if (bytes.length !== batch.pdfBytes ||
+              createHash("sha256").update(bytes).digest("hex") !== batch.pdfSha256) {
+            throw new Error("Stored packet checkpoint failed integrity verification.");
+          }
+          const path = join(directory, `${index}.pdf`);
+          await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
+          inputPaths.push(path);
+        }
+        const outputPath = join(directory, "merged.pdf");
+        await mergePacketPdfFilesInWorker(inputPaths, outputPath);
+        if ((await stat(outputPath)).size > MAX_CHECKPOINT_BYTES) throw new Error("Merged packet exceeds the output limit.");
+        const bytes = await readFile(outputPath);
+        if (!bytes.length) throw new Error("Merged packet is empty.");
+        await storage.saveObjectEntityImmutable(pdfPath, bytes, "application/pdf");
+        return createHash("sha256").update(bytes).digest("hex");
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+    finishStage("finalizeMs");
     const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       status: "ready_for_approval",
       analysis: analysis.pages,
       detectedManufacturer:
         detectedProfile === "unknown" ? null : detectedProfile,
-      pageCount: sanitized.pages.length,
+      pageCount: analysis.pages.length,
       sanitizedPdfObjectPath: pdfPath,
       sanitizedPdfSha256: hash,
       sanitizedPageObjectPaths: pagePaths,
       processingStartedAt: null,
       failureMessage: null,
+      processingState: { ...processingState, progress: {
+        stage: "complete", completedPages: completed, totalPages: analysis.pages.length,
+      } },
     });
     if (!committed) {
       await cleanupUncommittedRenderObjects(
@@ -674,7 +783,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     logger.info(
       {
         packetId: claimed.id,
-        pageCount: sanitized.pages.length,
+        pageCount: analysis.pages.length,
         redactedPageCount: Object.values(redactionsByPage).filter(
           (rectangles) => rectangles.length > 0,
         ).length,
@@ -690,6 +799,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         status: "failed",
         processingStartedAt: null,
         failureMessage: cleanError(error),
+        ...(processingState ? { processingState: {
+          ...processingState,
+          progress: { ...processingState.progress, stage: "failed", errorStage: processingStage },
+        } } : {}),
       });
     } catch (updateError) {
       logger.error(
@@ -751,7 +864,11 @@ function drainPacketQueue() {
 }
 
 /** Requeue durable work after a process crash without ever touching archives. */
-export async function recoverPacketJobs(now = Date.now()): Promise<void> {
+export async function recoverPacketJobs(
+  now = Date.now(),
+  onQueued: (packetId: number) => void | Promise<void> = kickPacketProcessing,
+  maxPages = RECOVERY_MAX_PAGES,
+): Promise<void> {
   let cursor = recoveryScanCursor;
   let scanned = 0;
   let queued = 0;
@@ -761,7 +878,7 @@ export async function recoverPacketJobs(now = Date.now()): Promise<void> {
   // Use a stable id cursor rather than an unordered LIMIT. A bounded number
   // of pages keeps a large backlog from monopolizing the API process while
   // ensuring stale rows are eventually considered behind queued rows.
-  for (let page = 0; page < RECOVERY_MAX_PAGES; page += 1) {
+  for (let page = 0; page < Math.min(maxPages, RECOVERY_MAX_PAGES); page += 1) {
     const candidates = await db
       .select({ id: manufacturerPacketsTable.id })
       .from(manufacturerPacketsTable)
@@ -859,7 +976,7 @@ export async function recoverPacketJobs(now = Date.now()): Promise<void> {
       });
       if (outcome.kind === "queue") {
         queued += 1;
-        kickPacketProcessing(outcome.id);
+        await onQueued(outcome.id);
       } else if (outcome.kind === "failed") {
         failed += 1;
       } else {
@@ -884,6 +1001,18 @@ export async function recoverPacketJobs(now = Date.now()): Promise<void> {
 }
 
 let recoveryTimer: NodeJS.Timeout | undefined;
+
+/** For an authenticated scheduled caller: all dispatched work is awaited.
+ * One bounded scan, one processed packet per invocation, no idle-wake claim.
+ */
+export async function recoverAndProcessPacketJobs(): Promise<void> {
+  let dispatched = false;
+  await recoverPacketJobs(Date.now(), async (packetId) => {
+    if (dispatched) return;
+    dispatched = true;
+    await processPacket(packetId, false);
+  }, 1);
+}
 
 export function startPacketJobRecovery(): void {
   if (recoveryTimer) return;

@@ -200,7 +200,7 @@ export function runWorkerWithDeadline(
     };
     const onError = (error: Error) => finish(() => reject(error));
     const onExit = (code: number) => {
-      if (code !== 0) finish(() => reject(new PacketWorkerError(`Packet worker exited unexpectedly (${code}).`)));
+      finish(() => reject(new PacketWorkerError(`Packet worker exited without a result (${code}).`)));
     };
     const onAbort = () => finish(() => reject(new PacketWorkerAbortedError()));
     timeout = setTimeout(
@@ -217,7 +217,11 @@ export function runWorkerWithDeadline(
       onAbort();
       return;
     }
-    worker.postMessage(request, transferList);
+    try {
+      worker.postMessage(request, transferList);
+    } catch (error) {
+      finish(() => reject(error));
+    }
   });
 }
 
@@ -234,6 +238,12 @@ export function runPacketEngineInWorker(
 ): Promise<unknown> {
   const operation: string = request.operation;
   const preview = operation === "preview" || operation === "redactedPreview";
+  if (request.operation === "mergeSanitizedBatchFiles") {
+    options = { ...options, deadlineAt: Math.min(
+      options.deadlineAt ?? Infinity,
+      Date.now() + PACKET_ENGINE_WORKER_TIMEOUT_MS,
+    ) };
+  }
   return workerQueue.run(
     () => {
       if (options.signal?.aborted) throw new PacketWorkerAbortedError();
@@ -243,13 +253,16 @@ export function runPacketEngineInWorker(
       if (remaining <= 0) throw new PacketWorkerTimeoutError(0);
       // Copy only after admission. Queued callers retain their existing view
       // rather than doubling every large PDF in memory under backpressure.
-      const bytes = new Uint8Array(request.bytes);
-      const copiedRequest = { ...request, bytes } as PacketWorkerRequest;
+      if (request.operation === "mergeSanitizedBatchFiles") {
+        return runWorkerWithDeadline(spawnPacketWorker(), request, remaining, [], options.signal);
+      }
+      const copies = [new Uint8Array(request.bytes)];
+      const copiedRequest = { ...request, bytes: copies[0]! };
       return runWorkerWithDeadline(
         spawnPacketWorker(),
         copiedRequest,
         remaining,
-        [bytes.buffer as ArrayBuffer],
+        copies.map((bytes) => bytes.buffer as ArrayBuffer),
         options.signal,
       );
     },

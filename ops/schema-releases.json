@@ -11,6 +11,12 @@
       "summary": "Add auditable expiry, revocation, and rotation metadata for legacy and scoped signing links.",
       "contractHash": "3fa678ff13d094d6bc27ffa67ee2e2ba9c43b18e1ccbda211ffc44389767809e",
       "codeReference": "schema-contract:3fa678ff13d094d6bc27ffa67ee2e2ba9c43b18e1ccbda211ffc44389767809e"
+    },
+    {
+      "id": "2026-09-16-3ae91d21fd06",
+      "summary": "Add source-bound analysis and revision-bound resumable packet processing checkpoints.",
+      "contractHash": "3ae91d21fd063fef93138f39e853c3c7b2ecb9805f465727dde0dada2608385d",
+      "codeReference": "schema-contract:3ae91d21fd063fef93138f39e853c3c7b2ecb9805f465727dde0dada2608385d"
     }
   ]
 }

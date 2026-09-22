@@ -9,6 +9,7 @@ import type { AppliedManufacturerRedactionTemplate } from './appliedManufacturer
 import type { ManufacturerPacketManualRedactions } from './manufacturerPacketManualRedactions';
 import type { ManufacturerPacketProductType } from './manufacturerPacketProductType';
 import type { PacketPageAnalysis } from './packetPageAnalysis';
+import type { PacketProcessingProgress } from './packetProcessingProgress';
 import type { PacketStatus } from './packetStatus';
 
 export interface ManufacturerPacket {
@@ -31,6 +32,7 @@ export interface ManufacturerPacket {
   appliedTemplate?: AppliedManufacturerRedactionTemplate | null;
   /** @nullable */
   failureMessage?: string | null;
+  processingProgress?: PacketProcessingProgress;
   createdAt: Date;
   updatedAt: Date;
   /** @nullable */

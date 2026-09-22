@@ -9,11 +9,13 @@ try {
   await build({
     entryPoints: [
       "src/lib/packets/engine.test.ts",
+      "src/lib/packets/engine.batches.test.ts",
       "src/lib/packets/workerClient.test.ts",
       "src/lib/packets/previewSingleflight.test.ts",
       "src/lib/privateObjectHeaders.test.ts",
       "src/lib/packets/signoffDocument.test.ts",
       "src/lib/packets/recovery.test.ts",
+      "src/lib/packets/checkpoints.test.ts",
       "src/lib/packets/documentBudget.test.ts",
       "src/lib/packets/capacity.test.ts",
       "src/lib/packets/contention.test.ts",
@@ -52,7 +54,9 @@ try {
     join(outdir, "packets", "assets", "logo.png"),
   );
   const files = [
+    "packets/checkpoints.test.js",
     "packets/engine.test.js",
+    "packets/engine.batches.test.js",
     "packets/workerClient.test.js",
     "packets/previewSingleflight.test.js",
     "privateObjectHeaders.test.js",

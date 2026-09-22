@@ -1,5 +1,11 @@
 import type { NormalizedRect } from "./profiles";
-import type { RenderPreviewOptions } from "./engine";
+import type { RenderPreviewOptions, SanitizationSelection } from "./engine";
+
+export const SANITIZED_BATCH_MERGE_LIMITS = {
+  maxInputBytes: 100 * 1024 * 1024,
+  maxOutputBytes: 100 * 1024 * 1024,
+  maxPages: 100,
+} as const;
 
 export type PacketWorkerRequest =
   | {
@@ -10,10 +16,12 @@ export type PacketWorkerRequest =
   | {
       operation: "sanitize";
       bytes: Uint8Array;
-      selection: {
-        pages: ReadonlyArray<{ pageNumber: number; bounds: readonly NormalizedRect[] }>;
-        pageOrder?: readonly number[];
-      };
+      selection: SanitizationSelection;
+    }
+  | {
+      operation: "mergeSanitizedBatchFiles";
+      inputPaths: string[];
+      outputPath: string;
     }
   | {
       operation: "preview";

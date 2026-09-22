@@ -5,6 +5,7 @@ import {
   renderPdfPreview,
   renderRedactedPdfPreview,
   sanitizePdf,
+  mergePacketPdfFiles,
 } from "./engine";
 import type { PacketWorkerRequest, PacketWorkerResponse } from "./workerProtocol";
 
@@ -26,7 +27,9 @@ function serializeError(error: unknown): PacketWorkerResponse {
 
 port.on("message", async (request: PacketWorkerRequest) => {
   try {
-    const result = await (request.operation === "analyze"
+    const result = await (request.operation === "mergeSanitizedBatchFiles"
+      ? mergePacketPdfFiles(request.inputPaths, request.outputPath)
+      : request.operation === "analyze"
       ? analyzePdf(Buffer.from(request.bytes), request.manufacturer)
       : request.operation === "preview"
         ? renderPdfPreview(Buffer.from(request.bytes), request.pageNumber, request.options)

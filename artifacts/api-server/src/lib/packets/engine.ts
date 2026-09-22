@@ -1,6 +1,12 @@
 import { PDFDocument } from "pdf-lib";
+import { open, lstat, realpath, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
 import type { PacketEngine, PacketPageAnalysis as StoredPageAnalysis, PacketPageType as StoredPageType, RedactionRect } from "./types";
 import { runPacketEngineInWorker } from "./workerClient";
+import {
+  SANITIZED_BATCH_MERGE_LIMITS,
+} from "./workerProtocol";
 
 import {
   classifyPacketPage,
@@ -980,6 +986,98 @@ export async function sanitizePdf(
   } finally {
     await closeDocument(document);
   }
+}
+
+/** Server-generated private temp paths ONLY; caller verifies batch hashes. */
+export async function mergePacketPdfFilesInWorker(inputPaths: string[], outputPath: string): Promise<void> {
+  await runPacketEngineInWorker({ operation: "mergeSanitizedBatchFiles", inputPaths, outputPath });
+}
+
+/** Worker implementation. Each batch is read and released sequentially. */
+export async function mergePacketPdfFiles(inputPaths: string[], outputPath: string): Promise<void> {
+  if (!Array.isArray(inputPaths) || inputPaths.length < 1 ||
+      inputPaths.length > SANITIZED_BATCH_MERGE_LIMITS.maxPages ||
+      !isAbsolute(outputPath) || !inputPaths.every((path) => typeof path === "string" && isAbsolute(path))) {
+    throw new PacketEngineError("INVALID_SELECTION", "Invalid private batch file paths.");
+  }
+  const directory = await realpath(dirname(outputPath));
+  const directoryStat = await lstat(directory);
+  if (!directoryStat.isDirectory() || (directoryStat.mode & 0o077) !== 0) {
+    throw new PacketEngineError("INVALID_SELECTION", "Batch files require a private temporary directory.");
+  }
+  let totalBytes = 0;
+  for (const path of inputPaths) {
+    const stat = await lstat(path);
+    if (await realpath(dirname(path)) !== directory || !stat.isFile() || stat.isSymbolicLink()) {
+      throw new PacketEngineError("INVALID_SELECTION", "Batch files must be regular files in the private output directory.");
+    }
+    totalBytes += stat.size;
+    if (stat.size < 5 || totalBytes > SANITIZED_BATCH_MERGE_LIMITS.maxInputBytes) {
+      throw new PacketEngineError("LIMIT_EXCEEDED", "Batch files exceed the aggregate input byte limit.");
+    }
+  }
+  async function* readBatches() {
+    let readBytes = 0;
+    for (const path of inputPaths) {
+      const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const stat = await handle.stat();
+        readBytes += stat.size;
+        if (!stat.isFile() || stat.size < 5 || readBytes > SANITIZED_BATCH_MERGE_LIMITS.maxInputBytes) {
+          throw new PacketEngineError("LIMIT_EXCEEDED", "Batch files exceed the aggregate input byte limit.");
+        }
+        const bytes = await handle.readFile();
+        if (bytes.length !== stat.size || !bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+          throw new PacketEngineError("INVALID_PDF", "Sanitized batch is invalid or changed during finalization.");
+        }
+        yield bytes;
+      } finally {
+        await handle.close();
+      }
+    }
+  }
+  const { pdfBytes } = await mergeBatchDocuments(readBatches());
+  await writeFile(outputPath, pdfBytes, { flag: "wx", mode: 0o600 });
+}
+
+async function mergeBatchDocuments(
+  batches: AsyncIterable<Uint8Array>,
+): Promise<{ pdfBytes: Uint8Array }> {
+  const startedAt = Date.now();
+  const output = await PDFDocument.create();
+  output.setTitle("");
+  output.setAuthor("");
+  output.setSubject("");
+  output.setKeywords([]);
+  output.setProducer("");
+  output.setCreator("");
+  output.setCreationDate(new Date(0));
+  output.setModificationDate(new Date(0));
+  let count = 0;
+  for await (const bytes of batches) {
+    assertWithinDeadline(startedAt, DEFAULT_PACKET_ENGINE_LIMITS);
+    let batch: PDFDocument;
+    try {
+      batch = await PDFDocument.load(bytes, { updateMetadata: false, throwOnInvalidObject: true });
+    } catch {
+      throw new PacketEngineError("INVALID_PDF", "Sanitized batch could not be parsed safely.");
+    }
+    const pageCount = batch.getPageCount();
+    if (pageCount < 1 || count + pageCount > SANITIZED_BATCH_MERGE_LIMITS.maxPages) {
+      throw new PacketEngineError("LIMIT_EXCEEDED", "Sanitized batch page count exceeds the packet limit.");
+    }
+    for (const page of await output.copyPages(batch, batch.getPageIndices())) {
+      output.addPage(page);
+    }
+    count += pageCount;
+  }
+  assertWithinDeadline(startedAt, DEFAULT_PACKET_ENGINE_LIMITS);
+  const pdfBytes = await output.save({ addDefaultPage: false, useObjectStreams: true });
+  if (pdfBytes.byteLength > SANITIZED_BATCH_MERGE_LIMITS.maxOutputBytes) {
+    throw new PacketEngineError("LIMIT_EXCEEDED", "Merged PDF exceeds the output byte limit.");
+  }
+  assertWithinDeadline(startedAt, DEFAULT_PACKET_ENGINE_LIMITS);
+  return { pdfBytes };
 }
 
 function toStoredPageType(pageType: PacketPageType): StoredPageType {

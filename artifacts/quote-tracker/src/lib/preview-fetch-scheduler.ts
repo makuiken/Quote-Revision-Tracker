@@ -39,6 +39,36 @@ export class PreviewFetchScheduler {
     return this.active;
   }
 
+  // Admission belongs to the actual request promise, never a React effect or
+  // query observer. Unmount/abort must not free a slot before fetch settles.
+  run<T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let started = false;
+      const abort = () => {
+        if (started) return;
+        cancel();
+        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      };
+      if (signal?.aborted) {
+        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      const cancel = this.schedule(() => {
+        started = true;
+        // Defer invocation so the release callback is initialized even when
+        // admission is synchronous or the request throws synchronously.
+        Promise.resolve().then(() => {
+          if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+          return request();
+        }).then(resolve, reject).finally(() => {
+          signal?.removeEventListener("abort", abort);
+          cancel();
+        });
+      });
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+
   get queuedCount() {
     return this.queue.filter((entry) => !entry.cancelled).length;
   }

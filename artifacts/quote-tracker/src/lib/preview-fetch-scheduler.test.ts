@@ -42,6 +42,53 @@ test("cancelled queued preview is never admitted", () => {
   assert.deepEqual(granted, [1, 3]);
 });
 
+test("forty network promises never exceed two concurrent requests", async () => {
+  const scheduler = new PreviewFetchScheduler(2);
+  let active = 0;
+  let maximum = 0;
+  await Promise.all(Array.from({ length: 40 }, () => scheduler.run(async () => {
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise(resolve => setTimeout(resolve, 1));
+    active--;
+  })));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(maximum, 2);
+  assert.equal(scheduler.activeCount, 0);
+});
+
+test("active cancellation holds its slot until the network promise settles", async () => {
+  const scheduler = new PreviewFetchScheduler(1);
+  const controller = new AbortController();
+  let finish!: () => void;
+  let nextStarted = false;
+  const first = scheduler.run(() => new Promise<void>(resolve => { finish = resolve; }), controller.signal);
+  await Promise.resolve();
+  const second = scheduler.run(async () => { nextStarted = true; });
+  controller.abort();
+  await Promise.resolve();
+  assert.equal(nextStarted, false);
+  assert.equal(scheduler.activeCount, 1);
+  finish();
+  await Promise.all([first, second]);
+  assert.equal(nextStarted, true);
+});
+
+test("queued cancellation never starts a network request; failures release slots", async () => {
+  const scheduler = new PreviewFetchScheduler(1);
+  let finish!: () => void;
+  const first = scheduler.run(() => new Promise<void>(resolve => { finish = resolve; }));
+  await Promise.resolve();
+  const controller = new AbortController();
+  const cancelled = scheduler.run(async () => assert.fail("must not start"), controller.signal);
+  const rejected = assert.rejects(cancelled, { name: "AbortError" });
+  controller.abort();
+  finish();
+  await Promise.all([first, rejected]);
+  await assert.rejects(scheduler.run(() => { throw new Error("network failure"); }), /network failure/);
+  assert.equal(await scheduler.run(async () => "cached or settled"), "cached or settled");
+});
+
 test("redaction geometry uses pointer-up coordinates and page bounds", () => {
   assert.deepEqual(
     redactionFromDrag(
