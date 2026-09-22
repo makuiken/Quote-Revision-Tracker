@@ -554,6 +554,23 @@ test.describe("manufacturer packet API contract", () => {
       { packetId: second.packet.id, pageNumber: 1, pageOrder: 3 },
       { packetId: second.packet.id, pageNumber: 2, pageOrder: 4 },
     ]);
+    await expect(page.getByRole("button", { name: "Source Editor", exact: true })).toBeDisabled();
+
+    // Keep the editor-isolation fixture outside the customer package. Approved
+    // packets are intentionally read-only until removed from the manifest.
+    const blankReviewFilename = "synthetic-empty-review-state.pdf";
+    const blankReview = await uploadAndQueuePacket(api, quoteId, {
+      name: blankReviewFilename,
+      bytes: await createSyntheticPdf(["EMPTY REVIEW FIELD"]),
+      manufacturer: "Marvin",
+      productType: "windows",
+    });
+    const blankReviewCleanup = await api.patch(
+      apiPath(`/quotes/${quoteId}/manufacturer-packets/${blankReview.packet.id}/redactions`),
+      { data: { redactionsByPage: {} } },
+    );
+    expect(blankReviewCleanup.status()).toBe(202);
+    await waitForPacket(api, quoteId, blankReview.packet.id, "ready_for_approval");
 
     // Two reviewable PDFs with identical dimensions must retain distinct boxes.
     const thirdFilename = "synthetic-review-state-isolation.pdf";
@@ -575,7 +592,7 @@ test.describe("manufacturer packet API contract", () => {
       .getByRole("button", { name: "Source Editor", exact: true })
       .click();
     await expect(page.locator("[data-rect-index]:visible")).toHaveCount(1);
-    await packetListEntry(page, secondFilename).click();
+    await packetListEntry(page, blankReviewFilename).click();
     await page
       .getByRole("button", { name: "Source Editor", exact: true })
       .click();

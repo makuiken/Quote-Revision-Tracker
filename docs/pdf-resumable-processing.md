@@ -101,9 +101,12 @@ persisted progress, completed cleaned previews, and added the packet to the
 customer package. It found that the source editor misleadingly allowed edits
 after approval, which the API correctly rejected with 409. The frontend now
 makes approved packets read-only and explains that they must be removed from
-the package before editing. This guard was typechecked; its browser interaction
-was not rerun. Manifest removal, page ordering, and category controls were not
-changed.
+the package before editing. The existing E2E test was updated to assert that
+approved packets disable Source Editor and to use a separate unapproved fixture
+for editor-state isolation. That focused test passed, including package ordering,
+stale-signature invalidation, and signed-snapshot download. The other 49 tests
+passed in the preceding full validation run. Manifest removal, page ordering,
+and category controls were not changed.
 
 Separately, the real development service/database/object-storage integration
 harness passed with its own synthetic 40-page nonblank PDF:
@@ -128,9 +131,8 @@ instance, demonstrate autonomous wake-up, or prove lost-commit-ack reconciliatio
 These checks are deliberately independent and do not replace the following
 remaining tests:
 
-- a browser journey confirming the disabled Source Editor and removal guidance
-  for an approved/in-package packet, followed by manifest removal, regeneration,
-  and successful editing in `ready_for_approval`;
+- a browser journey through manifest removal, regeneration, and successful
+  editing of the previously approved packet in `ready_for_approval`;
 - an API integration test confirming an approved packet's redaction request
   remains rejected with 409 while removal and regeneration restore the allowed
   edit transition;
