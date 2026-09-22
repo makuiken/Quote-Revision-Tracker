@@ -57,6 +57,7 @@ import {
   type AuthedRequest,
 } from "../middlewares/requireAuth";
 import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
+import { applyPrivateObjectHeaders } from "../lib/privateObjectHeaders";
 import {
   getPacket,
   kickPacketProcessing,
@@ -158,7 +159,7 @@ async function streamPrivateObject(
   const file = await storage.getObjectEntityFile(objectPath);
   const response = await storage.downloadObject(file, 0);
   res.status(response.status);
-  response.headers.forEach((value, key) => res.setHeader(key, value));
+  applyPrivateObjectHeaders(response.headers, res);
   if (response.body) {
     Readable.fromWeb(response.body as ReadableStream<Uint8Array>).pipe(res);
   } else {

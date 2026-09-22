@@ -612,6 +612,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const redactionsByPage = Object.fromEntries(
       Object.entries(manual).map(([page, rectangles]) => [Number(page), rectangles]),
     );
+    const redactionCount = Object.values(redactionsByPage).reduce(
+      (count, rectangles) => count + rectangles.length,
+      0,
+    );
     const sanitized = await withHeartbeats(() =>
       packetEngine.generateSanitizedPacket({
         bytes: source,
@@ -671,6 +675,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       {
         packetId: claimed.id,
         pageCount: sanitized.pages.length,
+        redactedPageCount: Object.values(redactionsByPage).filter(
+          (rectangles) => rectangles.length > 0,
+        ).length,
+        redactionCount,
         totalMs: Date.now() - stageStartedAt,
         stages: stageTimings,
       },

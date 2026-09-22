@@ -69,11 +69,15 @@ export async function acquireGlobalRendererSlot(
     }
     return value;
   };
-  const connectionPool = options.connectionPool ?? (await withTimeout(
-    import("@workspace/db"),
-    remaining(),
-    "Signoff PDF renderer setup exceeded its time limit.",
-  )).pool;
+  const connectionPool =
+    options.connectionPool ??
+    (
+      await withTimeout(
+        import("@workspace/db"),
+        remaining(),
+        "Signoff PDF renderer setup exceeded its time limit.",
+      )
+    ).pool;
   while (Date.now() < deadline) {
     const clientPromise = connectionPool.connect();
     let client: Awaited<typeof clientPromise>;
@@ -96,10 +100,9 @@ export async function acquireGlobalRendererSlot(
         const key = GLOBAL_RENDERER_LOCK_BASE + slot;
         const queryTimeout = remaining();
         const result = await withTimeout(
-          client.query(
-            "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
-            [key],
-          ),
+          client.query("SELECT pg_try_advisory_lock($1::bigint) AS acquired", [
+            key,
+          ]),
           queryTimeout,
           "Signoff PDF renderer capacity query exceeded its time limit.",
         );
@@ -134,7 +137,8 @@ export async function acquireGlobalRendererSlot(
 }
 
 async function acquireRenderer(deadline: number): Promise<() => void> {
-  while (activeRenderers >= MAX_RENDERERS) {
+  const localLimit = Math.min(MAX_RENDERERS, globalRendererSlotCount());
+  while (activeRenderers >= localLimit) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       throw new Error(
@@ -171,6 +175,36 @@ async function acquireRenderer(deadline: number): Promise<() => void> {
     released = true;
     activeRenderers -= 1;
     rendererWaiters.shift()?.();
+  };
+}
+
+export async function acquireSignoffDocumentCapacity(
+  deadline: number,
+  options: {
+    connectionPool?: AdvisoryLockPool;
+    bypassInTests?: boolean;
+  } = {},
+): Promise<() => Promise<void>> {
+  // Bound same-instance waiters before they touch the database pool. Every
+  // entry path uses local-then-global ordering, so a build never waits for
+  // local admission while retaining an advisory-lock connection.
+  const releaseLocal = await acquireRenderer(deadline);
+  let releaseGlobal: (() => Promise<void>) | undefined;
+  try {
+    releaseGlobal = await acquireGlobalRendererSlot(deadline, options);
+  } catch (error) {
+    releaseLocal();
+    throw error;
+  }
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    try {
+      await releaseGlobal?.();
+    } finally {
+      releaseLocal();
+    }
   };
 }
 
@@ -240,14 +274,22 @@ async function standaloneHtml(
 
 export async function renderSignoffDocumentHtmlPdf(
   props: Omit<SignoffDocumentProps, "logoSrc">,
+  options: {
+    /** The caller owns local and global slots through remaining assembly. */
+    assemblyCapacityHeld?: boolean;
+    deadline?: number;
+  } = {},
 ): Promise<Uint8Array> {
-  const deadline = Date.now() + RENDER_TIMEOUT_MS;
-  const releaseRenderer = await acquireRenderer(deadline);
-  let releaseGlobalRenderer: (() => Promise<void>) | undefined;
+  const deadline = options.deadline ?? Date.now() + RENDER_TIMEOUT_MS;
+  let releaseCapacity: (() => Promise<void>) | undefined;
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   try {
-    releaseGlobalRenderer = await acquireGlobalRendererSlot(deadline);
+    // The full-document caller retains both local and distributed admission
+    // through page assembly. Standalone calls acquire the same pair here.
+    if (!options.assemblyCapacityHeld) {
+      releaseCapacity = await acquireSignoffDocumentCapacity(deadline);
+    }
     const remaining = () => {
       const value = deadline - Date.now();
       if (value <= 0) {
@@ -329,9 +371,8 @@ export async function renderSignoffDocumentHtmlPdf(
     if (browser) {
       await closeWithDeadline(() => browser!.close());
     }
-    if (releaseGlobalRenderer) {
-      await releaseGlobalRenderer().catch(() => undefined);
+    if (releaseCapacity) {
+      await releaseCapacity().catch(() => undefined);
     }
-    releaseRenderer();
   }
 }

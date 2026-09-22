@@ -31,3 +31,15 @@ description: Cross-replica conventions for bounding packet processing and signof
 **Why:** Customer-controlled document and signature content reaches the renderer. Blocking network traffic alone does not isolate it from server files and credentials. Sandboxed system Chromium was verified in this environment.
 
 **How to apply:** Treat sandbox launch failures as explicit failures, never silently add `--no-sandbox`. Keep rendering deadlines inclusive of queue acquisition and cleanup.
+
+**Rule:** Treat private page API URLs as mutable aliases even when their backing storage objects are immutable.
+
+**Why:** A regenerated redaction can point the same API URL at new bytes; React Query invalidation alone cannot defeat an HTTP cache serving the old sensitive image.
+
+**How to apply:** Prevent HTTP caching on mutable private aliases and isolate client cache entries by render revision. Validate a changed redaction over nonblank content, since blank-area redactions can legitimately produce identical bytes.
+
+**Rule:** Preview admission must release on settled cache hits as well as completed network requests.
+
+**Why:** Fast or deduplicated queries can finish before an effect observes a fetching state; requiring that intermediate observation can permanently exhaust preview slots.
+
+**How to apply:** Test cached, uncached, aborted, and regenerated previews separately, and retain the slot only while the admitted query is fetching.

@@ -45,3 +45,29 @@ test("last subscriber cancellation aborts shared preview work", async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(underlyingAborted, true);
 });
+
+test("immediate resubscribe after last cancellation starts a fresh flight", async () => {
+  const flights = new PreviewSingleflight<string>();
+  const firstController = new AbortController();
+  let calls = 0;
+  const first = flights.subscribe(
+    "page",
+    ({ signal }) => new Promise<string>((_resolve, reject) => {
+      calls++;
+      signal.addEventListener("abort", () => reject(new Error("old flight aborted")), { once: true });
+    }),
+    { signal: firstController.signal, deadlineAt: Date.now() + 5_000 },
+  );
+  firstController.abort();
+  const second = flights.subscribe(
+    "page",
+    async () => {
+      calls++;
+      return "fresh";
+    },
+    { deadlineAt: Date.now() + 5_000 },
+  );
+  await assert.rejects(first, PacketWorkerAbortedError);
+  assert.equal(await second, "fresh");
+  assert.equal(calls, 2);
+});

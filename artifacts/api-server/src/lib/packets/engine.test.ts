@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createCanvas } from "@napi-rs/canvas";
 import { PDFDocument, degrees, rgb } from "pdf-lib";
@@ -218,4 +219,29 @@ test("renders a direct redacted PNG without PDF assembly", async () => {
     { dpi: 72 },
   );
   assert.deepEqual(png.subarray(1, 4).toString("ascii"), "PNG");
+});
+
+test("redactions change both flattened page and PDF bytes", async () => {
+  const document = await PDFDocument.create();
+  const page = document.addPage([144, 144]);
+  page.drawRectangle({ x: 0, y: 72, width: 72, height: 72, color: rgb(0, 0, 0) });
+  const bytes = Buffer.from(await document.save());
+  const options = { dpi: 72 } as const;
+  const clean = await sanitizePdf(bytes, { pages: [] }, options);
+  const redacted = await sanitizePdf(
+    bytes,
+    {
+      pages: [{
+        pageNumber: 1,
+        bounds: [{ x: 0, y: 0, width: 0.5, height: 0.5 }],
+        expectedWidth: 144,
+        expectedHeight: 144,
+      }],
+    },
+    options,
+  );
+  const hash = (value: Uint8Array) =>
+    createHash("sha256").update(value).digest("hex");
+  assert.notEqual(hash(clean.pages[0]!.pngBytes), hash(redacted.pages[0]!.pngBytes));
+  assert.notEqual(hash(clean.pdf), hash(redacted.pdf));
 });

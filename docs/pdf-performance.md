@@ -14,10 +14,41 @@ The existing limits remain the safety boundary: at most 500 selected pages,
 deadline. This optimization does not alter source PDFs, redaction, page
 selection, version hashes, signatures, or stored evidence.
 
+Every direct unsigned, scoped, legacy, or signed build acquires the shared
+PostgreSQL advisory capacity slot before Chromium rendering and retains it
+through `pdf-lib` page copying, serialization, and hashing. The renderer is
+told that its caller owns the slot, so it does not acquire the same capacity
+class again on another pooled connection. Standalone renderer calls acquire
+the same local-then-global capacity pair, keeping one lock order and avoiding
+nested capacity deadlocks. Local admission bounds how many same-instance
+waiters can touch the database pool; global waiters release unsuccessful
+database checkouts before polling again.
+
 Unsigned documents already use the version-addressed immutable object cache in
 `routes/quotes.ts`. Cache misses are coordinated by a database lease and a
 small per-instance build cap. This change consumes that cache as-is; it does
 not change cache keys, invalidation, or evidence semantics.
+
+## Local engine benchmark
+
+These numbers are from the local engine report only. They are not production or
+Autoscale measurements:
+
+- The 160 DPI baseline completed in 13.962 seconds. After the engine changes,
+  the 160 DPI cold run completed in 14.029 seconds and the warm run in 13.033
+  seconds.
+- In the measured 160 DPI run, PNG rendering/encoding took 9.192 seconds and
+  PDF encoding took 3.834 seconds.
+- The lower-resolution comparisons completed in 8.586 seconds at 120 DPI and
+  11.545 seconds at 140 DPI. The implementation retained 160 DPI to preserve
+  fine-print and technical-drawing readability.
+- Direct image preview generation reduced the measured preview path from 593
+  milliseconds to 238 milliseconds.
+
+The cold 160 DPI result is effectively unchanged from the baseline; no overall
+cold sanitization speedup is claimed. The warm and direct-preview results are
+useful local observations, but require representative production verification
+before making capacity or latency claims.
 
 ## Autoscale operating assumptions
 

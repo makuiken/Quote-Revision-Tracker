@@ -32,6 +32,7 @@ export class PreviewSingleflight<T> {
     if (!flight) {
       const controller = new AbortController();
       const deadlineAt = options.deadlineAt;
+      let createdFlight!: Flight<T>;
       const deadlineTimer = setTimeout(
         () => controller.abort(new PacketWorkerTimeoutError(Math.max(0, deadlineAt - Date.now()))),
         Math.max(0, deadlineAt - Date.now()),
@@ -48,12 +49,12 @@ export class PreviewSingleflight<T> {
         })
         .finally(() => {
           clearTimeout(deadlineTimer);
-          this.flights.delete(key);
+          if (this.flights.get(key) === createdFlight) this.flights.delete(key);
         });
       // A subscriber attaches below in the same turn, but suppress a transient
       // unhandled rejection if work fails synchronously.
       void promise.catch(() => undefined);
-      flight = { controller, promise, subscribers: 0 };
+      flight = createdFlight = { controller, promise, subscribers: 0 };
       this.flights.set(key, flight);
     }
     flight.subscribers++;
@@ -69,7 +70,17 @@ export class PreviewSingleflight<T> {
         clearTimeout(timer);
         options.signal?.removeEventListener("abort", onAbort);
         flight.subscribers--;
-        if (flight.subscribers === 0) flight.controller.abort();
+        if (flight.subscribers === 0) {
+          // Make a subsequent request create fresh work immediately rather
+          // than subscribing to the now-aborted promise while it settles.
+          for (const [key, current] of this.flights) {
+            if (current === flight) {
+              this.flights.delete(key);
+              break;
+            }
+          }
+          flight.controller.abort();
+        }
         callback();
       };
       const onAbort = () => finish(() => reject(new PacketWorkerAbortedError()));

@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { PDFDocument, type PDFPage } from "pdf-lib";
 import type { Quote, Revision, Signoff } from "@workspace/db";
-import { renderSignoffDocumentHtmlPdf } from "./signoffDocumentHtml";
+import type { AdvisoryLockPool } from "./packetCapacity";
+import {
+  acquireSignoffDocumentCapacity,
+  renderSignoffDocumentHtmlPdf,
+} from "./signoffDocumentHtml";
 
 const MAX_COMBINED_PACKET_PAGES = 500;
 const MAX_COMBINED_PACKET_SOURCE_BYTES = 100 * 1024 * 1024;
@@ -186,6 +190,22 @@ type SignoffDocumentInput = {
   documentDate?: Date;
 };
 
+export async function withSignoffDocumentAssemblyCapacity<T>(
+  deadline: number,
+  operation: () => Promise<T>,
+  options: {
+    connectionPool?: AdvisoryLockPool;
+    bypassInTests?: boolean;
+  } = {},
+): Promise<T> {
+  const release = await acquireSignoffDocumentCapacity(deadline, options);
+  try {
+    return await operation();
+  } finally {
+    await release().catch(() => undefined);
+  }
+}
+
 /**
  * Render the same React presentation used by SignoffDocument in an offline
  * Chromium page, then append captured manufacturer pages without rewriting
@@ -215,19 +235,25 @@ export async function createSignedPacketDocument(
     input.approvedPacketPages?.length || input.approvedPacketPdf,
   );
 
-  const htmlPdf = await renderSignoffDocumentHtmlPdf({
-    quote: input.quote,
-    revisions: input.revisions,
-    signoff,
-    hasManifest,
-    productTypes: input.scope?.included,
-    notIncludedProductTypes: input.scope?.notIncluded,
-    preparedAt: documentDate.toISOString(),
-  });
-  assertWithinDeadline();
+  return withSignoffDocumentAssemblyCapacity(deadline, async () => {
+    const htmlPdf = await renderSignoffDocumentHtmlPdf(
+      {
+        quote: input.quote,
+        revisions: input.revisions,
+        signoff,
+        hasManifest,
+        productTypes: input.scope?.included,
+        notIncludedProductTypes: input.scope?.notIncluded,
+        preparedAt: documentDate.toISOString(),
+      },
+      { assemblyCapacityHeld: true, deadline },
+    );
+    assertWithinDeadline();
 
-  const pdf = await PDFDocument.load(htmlPdf, { ignoreEncryption: false });
-  await appendApprovedPages(pdf, input, assertWithinDeadline);
-  const bytes = await pdf.save();
-  return { bytes, sha256: sha256(bytes) };
+    const pdf = await PDFDocument.load(htmlPdf, { ignoreEncryption: false });
+    await appendApprovedPages(pdf, input, assertWithinDeadline);
+    const bytes = await pdf.save();
+    assertWithinDeadline();
+    return { bytes, sha256: sha256(bytes) };
+  });
 }

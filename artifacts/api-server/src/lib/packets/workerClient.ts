@@ -115,10 +115,20 @@ export function createBoundedWorkerQueue(
           start: () => {
             started = true;
             cleanupWait();
-            void job().then(resolve, reject).finally(() => {
-              active--;
-              drain();
-            });
+            void Promise.resolve()
+              .then(job)
+              .then(
+                (value) => {
+                  active--;
+                  drain();
+                  resolve(value);
+                },
+                (error: unknown) => {
+                  active--;
+                  drain();
+                  reject(error);
+                },
+              );
           },
         };
 

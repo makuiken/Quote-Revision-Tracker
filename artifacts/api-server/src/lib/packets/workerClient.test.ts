@@ -134,3 +134,28 @@ test("active worker abort waits for termination before queue slot is released", 
   await second;
   assert.equal(secondStarted, true);
 });
+
+test("a synchronously throwing job releases its semaphore slot", async () => {
+  const queue = createBoundedWorkerQueue(1, 1);
+  const failed = queue.run(() => {
+    throw new Error("sync failure");
+  });
+  const next = queue.run(async () => "admitted");
+  await assert.rejects(failed, /sync failure/);
+  assert.equal(await next, "admitted");
+  assert.equal(queue.activeCount, 0);
+});
+
+test("an admission deadline removes queued work and frees normal capacity", async () => {
+  const queue = createBoundedWorkerQueue(1, 1);
+  let release!: () => void;
+  const active = queue.run(() => new Promise<void>((resolve) => { release = resolve; }));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const expired = queue.run(async () => undefined, "normal", { deadlineAt: Date.now() + 10 });
+  await assert.rejects(expired, PacketWorkerTimeoutError);
+  assert.equal(queue.pendingCount, 0);
+  const replacement = queue.run(async () => "replacement");
+  release();
+  await active;
+  assert.equal(await replacement, "replacement");
+});

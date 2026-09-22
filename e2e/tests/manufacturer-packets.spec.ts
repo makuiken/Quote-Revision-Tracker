@@ -1,4 +1,5 @@
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
+import { createHash } from "node:crypto";
 import pg from "pg";
 import {
   expect,
@@ -11,6 +12,10 @@ import {
   StandardFonts,
   rgb,
 } from "../../artifacts/api-server/node_modules/pdf-lib/cjs/index.js";
+import {
+  createCanvas,
+  loadImage,
+} from "../../artifacts/api-server/node_modules/@napi-rs/canvas/index.js";
 import { TEST_USER_EMAIL } from "../test-user";
 
 /**
@@ -244,10 +249,14 @@ test.describe("manufacturer packet API contract", () => {
     const token = await createShareToken(api, quoteId);
 
     const firstFilename = "synthetic-first-manufacturer-packet.pdf";
-    const firstBytes = await createSyntheticPdf([
-      "FIRST PACKET ADMIN HEADER",
-      "FIRST PACKET PRODUCT SPECIFICATION",
-    ]);
+    const firstPageSizes = [
+      [576, 756],
+      [576, 756],
+    ] as const;
+    const firstBytes = await createSyntheticPdf(
+      ["FIRST PACKET ADMIN HEADER", "FIRST PACKET PRODUCT SPECIFICATION"],
+      firstPageSizes,
+    );
     const first = await uploadAndQueuePacket(api, quoteId, {
       name: firstFilename,
       bytes: firstBytes,
@@ -446,9 +455,32 @@ test.describe("manufacturer packet API contract", () => {
     const signedBytes = await internalSigned.body();
     expect(signedBytes.subarray(0, 5).toString()).toBe("%PDF-");
     const signedPdf = await PDFDocument.load(signedBytes);
-    // Quote/specifications, revisions, terms, signature, and the two packet
-    // pages are all part of the downloadable immutable snapshot.
-    expect(signedPdf.getPageCount()).toBeGreaterThan(4);
+    // The signoff HTML can legitimately repaginate as its presentation
+    // changes. Verify the evidence contract instead: every raster-flattened
+    // packet page is present at the tail in exact manifest/source order.
+    const signedPageSizes = signedPdf.getPages().map((page) => page.getSize());
+    expect(signedPageSizes.slice(-firstPageSizes.length)).toEqual(
+      firstPageSizes.map(([width, height]) => ({ width, height })),
+    );
+    expect(
+      signedPageSizes.filter(({ width, height }) =>
+        firstPageSizes.some(
+          ([sourceWidth, sourceHeight]) =>
+            width === sourceWidth && height === sourceHeight,
+        ),
+      ),
+    ).toHaveLength(firstPageSizes.length);
+    const expectedPacketPixelHashes = await Promise.all(
+      firstSanitizedPages.map(async (response) =>
+        pngPixelHash(await response.body()),
+      ),
+    );
+    expect(
+      await pdfPagePixelHashes(signedBytes, [
+        signedPdf.getPageCount() - 1,
+        signedPdf.getPageCount(),
+      ]),
+    ).toEqual(expectedPacketPixelHashes);
 
     const publicSigned = await api.get(
       apiPath(`/public/signoff/${token}/document`),
@@ -1001,13 +1033,17 @@ async function createShareToken(
   return body.token;
 }
 
-async function createSyntheticPdf(lines: readonly string[]): Promise<Buffer> {
+async function createSyntheticPdf(
+  lines: readonly string[],
+  pageSizes: ReadonlyArray<readonly [number, number]> = [],
+): Promise<Buffer> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
   document.setTitle("Synthetic packet fixture");
   document.setAuthor("Automated API regression test");
   for (const [index, line] of lines.entries()) {
-    const page = document.addPage([612, 792]);
+    const [width, height] = pageSizes[index] ?? [612, 792];
+    const page = document.addPage([width, height]);
     page.drawText("SYNTHETIC MANUFACTURER PACKET", {
       x: 36,
       y: 744,
@@ -1036,6 +1072,58 @@ async function createSyntheticPdf(lines: readonly string[]): Promise<Buffer> {
     });
   }
   return Buffer.from(await document.save());
+}
+
+function rawPixelHash(
+  context: ReturnType<typeof createCanvas>["getContext"] extends (
+    type: "2d",
+  ) => infer Context
+    ? Context
+    : never,
+  width: number,
+  height: number,
+): string {
+  return createHash("sha256")
+    .update(context.getImageData(0, 0, width, height).data)
+    .digest("hex");
+}
+
+async function pngPixelHash(bytes: Uint8Array): Promise<string> {
+  const image = await loadImage(Buffer.from(bytes));
+  const canvas = createCanvas(image.width, image.height);
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0);
+  return rawPixelHash(context, image.width, image.height);
+}
+
+async function pdfPagePixelHashes(
+  bytes: Uint8Array,
+  pageNumbers: readonly number[],
+): Promise<string[]> {
+  const pdfjs = await import(
+    "../../artifacts/api-server/node_modules/pdfjs-dist/legacy/build/pdf.mjs"
+  );
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes) });
+  const loaded = await loadingTask.promise;
+  const hashes: string[] = [];
+  for (const pageNumber of pageNumbers) {
+    const page = await loaded.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 160 / 72, rotation: 0 });
+    const width = Math.ceil(viewport.width);
+    const height = Math.ceil(viewport.height);
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    await page.render({
+      canvas: null,
+      canvasContext: context as unknown as CanvasRenderingContext2D,
+      viewport,
+    }).promise;
+    hashes.push(rawPixelHash(context, width, height));
+  }
+  await loadingTask.destroy();
+  return hashes;
 }
 
 async function requestPacketUpload(

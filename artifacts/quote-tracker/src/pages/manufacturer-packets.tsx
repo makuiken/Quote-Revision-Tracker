@@ -42,6 +42,7 @@ import {
   type Quote
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
+import { PreviewFetchScheduler, redactionFromDrag } from "@/lib/preview-fetch-scheduler";
 
 type ProductType = QuoteCategoriesItem;
 
@@ -53,45 +54,7 @@ export type TemplateFeedbackCode = "no_active_match" | "layout_incompatible";
 const PROCESSING_SLOW_AFTER_MS = 2 * 60 * 1000;
 const PROCESSING_POLL_STOP_AFTER_MS = 6 * 60 * 1000;
 const PREVIEW_FETCH_CONCURRENCY = 2;
-
-type PreviewQueueEntry = {
-  cancelled: boolean;
-  grant: () => void;
-};
-
-const previewFetchQueue: PreviewQueueEntry[] = [];
-let activePreviewFetches = 0;
-
-function drainPreviewFetchQueue() {
-  while (activePreviewFetches < PREVIEW_FETCH_CONCURRENCY && previewFetchQueue.length > 0) {
-    const next = previewFetchQueue.shift();
-    if (!next || next.cancelled) continue;
-    activePreviewFetches += 1;
-    next.grant();
-  }
-}
-
-function queuePreviewFetch(grant: () => void): () => void {
-  let granted = false;
-  const wrappedEntry: PreviewQueueEntry = {
-    cancelled: false,
-    grant: () => {
-      granted = true;
-      grant();
-    },
-  };
-  previewFetchQueue.push(wrappedEntry);
-  drainPreviewFetchQueue();
-
-  return () => {
-    if (wrappedEntry.cancelled) return;
-    wrappedEntry.cancelled = true;
-    if (granted) {
-      activePreviewFetches = Math.max(0, activePreviewFetches - 1);
-      drainPreviewFetchQueue();
-    }
-  };
-}
+const previewFetchScheduler = new PreviewFetchScheduler(PREVIEW_FETCH_CONCURRENCY);
 
 function usePreviewFetchSlot(attempt: number) {
   const [granted, setGranted] = useState(false);
@@ -99,7 +62,7 @@ function usePreviewFetchSlot(attempt: number) {
 
   useEffect(() => {
     setGranted(false);
-    const release = queuePreviewFetch(() => setGranted(true));
+    const release = previewFetchScheduler.schedule(() => setGranted(true));
     releaseRef.current = release;
     return () => {
       release();
@@ -187,6 +150,24 @@ export function deduplicateManufacturerOptions(
     seen.add(key);
     return true;
   });
+}
+
+export function cleanedManufacturerPacketPreviewQueryKey(
+  quoteId: number,
+  packetId: number,
+  pageNumber: number,
+  revision: string,
+) {
+  return [
+    ...getGetManufacturerPacketPageQueryKey(
+      quoteId,
+      packetId,
+      pageNumber,
+      undefined,
+    ),
+    "revision",
+    revision,
+  ] as const;
 }
 
 export default function ManufacturerPacketsPage() {
@@ -897,12 +878,12 @@ function PacketDetails({ quoteId, packet, hasApprovals, isVisible }: { quoteId: 
   return <PacketReview quoteId={quoteId} packet={packet} hasApprovals={hasApprovals} isVisible={isVisible} />;
 }
 
-function PageThumbnail({ quoteId, packetId, pageNumber, type, enabled = true }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned', enabled?: boolean }) {
+function PageThumbnail({ quoteId, packetId, pageNumber, type, enabled = true, revision }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned', enabled?: boolean, revision?: string }) {
   const { ref, visible } = usePreviewVisibility<HTMLDivElement>(enabled);
   return (
     <div ref={ref} className="w-full h-full">
       {visible ? (
-        <PageThumbnailRequest quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} type={type} />
+        <PageThumbnailRequest key={`${type}:${revision ?? "source"}`} quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} type={type} revision={revision} />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-muted/50" aria-label={`Preview placeholder for page ${pageNumber}`}>
           <FileImage className="w-4 h-4 text-muted-foreground/30" />
@@ -912,19 +893,24 @@ function PageThumbnail({ quoteId, packetId, pageNumber, type, enabled = true }: 
   );
 }
 
-function PageThumbnailRequest({ quoteId, packetId, pageNumber, type }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned' }) {
+function PageThumbnailRequest({ quoteId, packetId, pageNumber, type, revision }: { quoteId: number, packetId: number, pageNumber: number, type: 'source'|'cleaned', revision?: string }) {
   const [attempt, setAttempt] = useState(0);
   const { granted, release } = usePreviewFetchSlot(attempt);
+  const cleanedQueryKey = useMemo(
+    () => cleanedManufacturerPacketPreviewQueryKey(quoteId, packetId, pageNumber, revision ?? "unknown"),
+    [packetId, pageNumber, quoteId, revision],
+  );
   const sourceQuery = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
     query: { enabled: granted && type === 'source', retry: false, queryKey: getGetManufacturerPacketSourcePageQueryKey(quoteId, packetId, pageNumber) }
   });
   const cleanedQuery = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
-    query: { enabled: granted && type === 'cleaned', retry: false, queryKey: getGetManufacturerPacketPageQueryKey(quoteId, packetId, pageNumber, undefined) }
+    query: { enabled: granted && type === 'cleaned', retry: false, queryKey: cleanedQueryKey }
   });
 
   const blob = type === 'source' ? sourceQuery.data : cleanedQuery.data;
   const isLoading = type === 'source' ? sourceQuery.isLoading : cleanedQuery.isLoading;
   const isError = type === 'source' ? sourceQuery.isError : cleanedQuery.isError;
+  const isFetching = type === 'source' ? sourceQuery.isFetching : cleanedQuery.isFetching;
 
   const [url, setUrl] = useState<string | null>(null);
 
@@ -938,8 +924,8 @@ function PageThumbnailRequest({ quoteId, packetId, pageNumber, type }: { quoteId
   }, [blob]);
 
   useEffect(() => {
-    if (granted && (blob || isError)) release();
-  }, [blob, granted, isError, release]);
+    if (granted && !isFetching) release();
+  }, [granted, isFetching, release]);
 
   if (!granted && !blob && !isError) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><FileImage className="w-4 h-4 text-muted-foreground/30" /></div>;
   if (isLoading) return <div className="w-full h-full flex items-center justify-center bg-muted/50"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" /></div>;
@@ -994,6 +980,14 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
     else analysis.forEach(a => { init[a.pageNumber.toString()] = [...a.suggestedRects]; });
     return init;
   });
+  const redactionsRef = useRef(redactions);
+  const updateRedactions = useCallback((
+    next: Record<string, PacketRect[]> | ((current: Record<string, PacketRect[]>) => Record<string, PacketRect[]>),
+  ) => {
+    const resolved = typeof next === "function" ? next(redactionsRef.current) : next;
+    redactionsRef.current = resolved;
+    setRedactions(resolved);
+  }, []);
 
   const [currentPageNum, setCurrentPageNum] = useState<number>(analysis[0]?.pageNumber || 1);
   const [viewMode, setViewMode] = useState<'source' | 'cleaned'>(
@@ -1007,13 +1001,29 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
   const templateFeedback = parseTemplateFeedback(packet.failureMessage);
 
   const handleSaveRedactions = async (): Promise<boolean> => {
+    const submittedRedactions = Object.fromEntries(
+      Object.entries(redactionsRef.current).map(([page, rectangles]) => [
+        page,
+        rectangles.map((rectangle) => ({ ...rectangle })),
+      ]),
+    );
     return new Promise((resolve) => {
       submitRedactions.mutate({
         id: quoteId,
         packetId: packet.id,
-        data: { redactionsByPage: redactions }
+        data: { redactionsByPage: submittedRedactions }
       }, {
         onSuccess: () => {
+          analysis.forEach((page) => {
+            queryClient.removeQueries({
+              queryKey: getGetManufacturerPacketPageQueryKey(
+                quoteId,
+                packet.id,
+                page.pageNumber,
+                undefined,
+              ),
+            });
+          });
           toast({ title: "Redactions submitted", description: "The clean preview is being generated." });
           queryClient.invalidateQueries({ queryKey: getListManufacturerPacketsQueryKey(quoteId) });
           setViewMode('cleaned');
@@ -1167,7 +1177,7 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
               }`}
             >
               <div className="w-full aspect-[3/4] bg-card border border-border shadow-sm overflow-hidden flex items-center justify-center relative">
-                <PageThumbnail quoteId={quoteId} packetId={packet.id} pageNumber={a.pageNumber} type={viewMode} enabled={isVisible} />
+                <PageThumbnail quoteId={quoteId} packetId={packet.id} pageNumber={a.pageNumber} type={viewMode} enabled={isVisible} revision={String(packet.updatedAt)} />
                 {viewMode === 'source' && redactions[a.pageNumber.toString()]?.length > 0 && (
                   <div className="absolute top-0 right-0 bg-destructive text-destructive-foreground text-[8px] font-bold px-1 py-0.5 rounded-bl shadow-sm">
                     Redacted
@@ -1195,7 +1205,7 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
                 redactions={pageRedactions}
                  previewEnabled={isVisible}
                 onChange={(newRedactions) => {
-                  setRedactions(prev => ({ ...prev, [currentPage.pageNumber.toString()]: newRedactions }));
+                   updateRedactions(prev => ({ ...prev, [currentPage.pageNumber.toString()]: newRedactions }));
                 }}
                 onApplyToPages={(rect, targetPageNumbers) => {
                   const newMap = { ...redactions };
@@ -1217,7 +1227,7 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
                       }
                     }
                   });
-                  setRedactions(newMap);
+                  updateRedactions(newMap);
                   toast({
                     title: "Redaction applied",
                     description: appliedCount === 1
@@ -1228,7 +1238,7 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
               />
             )}
             {currentPage && viewMode === 'cleaned' && (
-               <SanitizedPagePreview quoteId={quoteId} packetId={packet.id} pageNumber={currentPage.pageNumber} enabled={isVisible} />
+               <SanitizedPagePreview quoteId={quoteId} packetId={packet.id} pageNumber={currentPage.pageNumber} enabled={isVisible} revision={String(packet.updatedAt)} />
             )}
           </div>
         </div>
@@ -1376,7 +1386,7 @@ function ManifestBuilder({ quoteId, hasApprovals, packets, onOpenPacket, isVisib
 
                     <div className="w-12 h-16 shrink-0 border border-border bg-muted flex items-center justify-center overflow-hidden rounded relative">
                        {p && (p.status === 'ready_for_approval' || p.status === 'approved') ? (
-                          <PageThumbnail quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} type="cleaned" enabled={isVisible} />
+                          <PageThumbnail quoteId={quoteId} packetId={entry.packetId} pageNumber={entry.pageNumber} type="cleaned" enabled={isVisible} revision={String(p.updatedAt)} />
                        ) : (
                          <div className="flex flex-col items-center justify-center w-full h-full bg-amber-50">
                            <AlertTriangle className="w-4 h-4 text-amber-500 mb-1" />
@@ -1556,16 +1566,22 @@ function PageRedactionEditor({
     }
 
     if (drawing) {
-      const w = Math.abs(drawing.currX - drawing.startX);
-      const h = Math.abs(drawing.currY - drawing.startY);
-      if (w > 10 && h > 10) {
-        const newRect = {
-          x: Math.min(drawing.startX, drawing.currX),
-          y: Math.min(drawing.startY, drawing.currY),
-          width: w,
-          height: h,
-          reason: "Manual Redaction"
-        };
+      // Use the pointer-up coordinates directly. Some browsers and automation
+      // drivers do not dispatch a final pointermove before pointerup.
+      const bounds = e.currentTarget.getBoundingClientRect();
+      const newRect = redactionFromDrag(
+        { x: drawing.startX, y: drawing.startY },
+        {
+          x: (e.clientX - bounds.left) / scale,
+          y: (e.clientY - bounds.top) / scale,
+        },
+        { width: pageAnalysis.width, height: pageAnalysis.height },
+        // Treat a short screen-space movement as a drag at every zoom level.
+        // A document-unit threshold made the same gesture fail on small pages
+        // that had been scaled up to fit the editor.
+        4 / scale,
+      );
+      if (newRect) {
         onChange([...redactions, newRect]);
       }
       setDrawing(null);
@@ -1588,6 +1604,13 @@ function PageRedactionEditor({
           </TooltipTrigger>
           <TooltipContent>Zoom in</TooltipContent>
         </Tooltip>
+        <div
+          className="flex items-center border-l border-border pl-2 pr-1 text-xs font-semibold text-muted-foreground"
+          data-testid={`text-redaction-count-${packetId}-${pageAnalysis.pageNumber}`}
+          aria-live="polite"
+        >
+          {redactions.length} {redactions.length === 1 ? "redaction" : "redactions"}
+        </div>
       </div>
 
       <div
@@ -1742,7 +1765,7 @@ function SourcePagePreview({ quoteId, packetId, pageNumber, enabled }: { quoteId
 function SourcePagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
   const [attempt, setAttempt] = useState(0);
   const { granted, release } = usePreviewFetchSlot(attempt);
-  const { data: blob, isLoading, isError } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
+  const { data: blob, isLoading, isError, isFetching } = useGetManufacturerPacketSourcePage(quoteId, packetId, pageNumber, {
     query: {
       enabled: granted,
       retry: false,
@@ -1761,8 +1784,8 @@ function SourcePagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: 
   }, [blob]);
 
   useEffect(() => {
-    if (granted && (blob || isError)) release();
-  }, [blob, granted, isError, release]);
+    if (granted && !isFetching) release();
+  }, [granted, isFetching, release]);
 
   if (!granted && !blob && !isError) {
     return <div className="absolute inset-0 bg-muted flex items-center justify-center text-muted-foreground font-medium">Waiting to load preview…</div>;
@@ -1783,12 +1806,12 @@ function SourcePagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: 
   return <img src={objectUrl} alt={`Original manufacturer page ${pageNumber}`} className="absolute inset-0 w-full h-full pointer-events-none select-none object-contain bg-white" />;
 }
 
-function SanitizedPagePreview({ quoteId, packetId, pageNumber, enabled }: { quoteId: number, packetId: number, pageNumber: number, enabled: boolean }) {
+function SanitizedPagePreview({ quoteId, packetId, pageNumber, enabled, revision }: { quoteId: number, packetId: number, pageNumber: number, enabled: boolean, revision: string }) {
   const { ref, visible } = usePreviewVisibility<HTMLDivElement>(enabled);
   return (
     <div ref={ref} className="w-full h-full">
       {visible ? (
-        <SanitizedPagePreviewRequest quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} />
+        <SanitizedPagePreviewRequest key={revision} quoteId={quoteId} packetId={packetId} pageNumber={pageNumber} revision={revision} />
       ) : (
         <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full">
           <FileImage className="w-8 h-8 mb-4 opacity-40" />
@@ -1799,14 +1822,18 @@ function SanitizedPagePreview({ quoteId, packetId, pageNumber, enabled }: { quot
   );
 }
 
-function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteId: number, packetId: number, pageNumber: number }) {
+function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber, revision }: { quoteId: number, packetId: number, pageNumber: number, revision: string }) {
   const [attempt, setAttempt] = useState(0);
   const { granted, release } = usePreviewFetchSlot(attempt);
-  const { data: blob, isLoading, isError } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
+  const cleanedQueryKey = useMemo(
+    () => cleanedManufacturerPacketPreviewQueryKey(quoteId, packetId, pageNumber, revision),
+    [packetId, pageNumber, quoteId, revision],
+  );
+  const { data: blob, isLoading, isError, isFetching } = useGetManufacturerPacketPage(quoteId, packetId, pageNumber, undefined, {
     query: {
       enabled: granted,
       retry: false,
-      queryKey: getGetManufacturerPacketPageQueryKey(quoteId, packetId, pageNumber, undefined),
+      queryKey: cleanedQueryKey,
     },
   });
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -1822,8 +1849,8 @@ function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber }: { quoteI
   }, [blob]);
 
   useEffect(() => {
-    if (granted && (blob || isError)) release();
-  }, [blob, granted, isError, release]);
+    if (granted && !isFetching) release();
+  }, [granted, isFetching, release]);
 
   if (!granted && !blob && !isError) {
     return <div className="flex flex-col items-center justify-center p-12 text-muted-foreground w-full h-full"><FileImage className="w-8 h-8 mb-4 opacity-40" /> Waiting to load preview…</div>;

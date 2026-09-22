@@ -28,7 +28,10 @@ import test from "node:test";
 import { PDFDict, PDFDocument, PDFName, StandardFonts } from "pdf-lib";
 import type { Quote } from "@workspace/db";
 
-import { createSignedPacketDocument } from "./signoffDocument";
+import {
+  createSignedPacketDocument,
+  withSignoffDocumentAssemblyCapacity,
+} from "./signoffDocument";
 
 const quote = {
   id: 1,
@@ -39,6 +42,83 @@ const quote = {
   categories: [],
   specs: {},
 } as unknown as Quote;
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+test("queues concurrent whole-document assembly behind the global bound", async () => {
+  const heldLocks = new Set<number>();
+  let checkedOut = 0;
+  let peakCheckedOut = 0;
+  const fakePool = {
+    async connect() {
+      checkedOut += 1;
+      peakCheckedOut = Math.max(peakCheckedOut, checkedOut);
+      let released = false;
+      return {
+        async query(sql: string, values: number[]) {
+          const key = values[0]!;
+          if (sql.includes("try_advisory")) {
+            const acquired = !heldLocks.has(key);
+            if (acquired) heldLocks.add(key);
+            return { rows: [{ acquired }] };
+          }
+          heldLocks.delete(key);
+          return { rows: [{}] };
+        },
+        release() {
+          if (!released) checkedOut -= 1;
+          released = true;
+        },
+      };
+    },
+  };
+  const firstGate = deferred();
+  let activeAssemblies = 0;
+  let peakAssemblies = 0;
+  const order: string[] = [];
+  const runAssembly = (name: string, gate?: Promise<void>) =>
+    withSignoffDocumentAssemblyCapacity(
+      Date.now() + 2_000,
+      async () => {
+        activeAssemblies += 1;
+        peakAssemblies = Math.max(peakAssemblies, activeAssemblies);
+        order.push(`${name}:start`);
+        if (gate) await gate;
+        order.push(`${name}:end`);
+        activeAssemblies -= 1;
+      },
+      { connectionPool: fakePool, bypassInTests: false },
+    );
+
+  const first = runAssembly("first", firstGate.promise);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const second = runAssembly("second");
+  const third = runAssembly("third");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  assert.equal(activeAssemblies, 1);
+  assert.equal(peakAssemblies, 1);
+  // Waiters release unsuccessful connection attempts instead of retaining the
+  // pool while the heavy assembly slot is occupied.
+  assert.equal(checkedOut, 1);
+  assert.ok(peakCheckedOut <= 2);
+
+  firstGate.resolve();
+  await Promise.all([first, second, third]);
+  assert.equal(peakAssemblies, 1);
+  assert.equal(checkedOut, 0);
+  assert.deepEqual(order.slice(0, 2), ["first:start", "first:end"]);
+  assert.ok(order.indexOf("second:start") > order.indexOf("first:end"));
+  assert.ok(order.indexOf("third:start") > order.indexOf("first:end"));
+  assert.ok(order.indexOf("second:end") > order.indexOf("second:start"));
+  assert.ok(order.indexOf("third:end") > order.indexOf("third:start"));
+});
 
 test("rejects an oversized manifest before parsing repeated packet PDFs", async () => {
   const entries = Array.from({ length: 501 }, () => ({
@@ -264,6 +344,20 @@ test("keeps interleaved source order and duplicate approved pages", async () => 
     ],
   });
 
+  const parsed = await PDFDocument.load(document.bytes);
+  const copiedPacketPages = parsed
+    .getPages()
+    .filter((page) => page.getWidth() === 420 && page.getHeight() === 595);
+  assert.equal(
+    copiedPacketPages.length,
+    5,
+    "every manifest occurrence must create a trailing page",
+  );
+  assert.equal(
+    new Set(copiedPacketPages.map((page) => page.ref.toString())).size,
+    5,
+    "duplicate selections must retain independent page-tree references",
+  );
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loaded = await pdfjs.getDocument({ data: document.bytes }).promise;
   const trailingText: string[] = [];
