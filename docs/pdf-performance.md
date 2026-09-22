@@ -31,6 +31,10 @@ not change cache keys, invalidation, or evidence semantics.
 
 ## Local engine benchmark
 
+For the subsequent encoding comparison, independent forensic checks, and the
+decision to retain the current production policy, see
+[Secure PDF encoding evaluation](pdf-encoding-evaluation.md).
+
 These numbers are from the local engine report only. They are not production or
 Autoscale measurements:
 

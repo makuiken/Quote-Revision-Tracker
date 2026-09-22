@@ -1,0 +1,110 @@
+[
+  {
+    "dpi": 72,
+    "name": "pdf-lib-png-baseline",
+    "bytes": 3930,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 72,
+    "name": "rgb-flate-level-1",
+    "bytes": 5052,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 72,
+    "name": "rgb-flate-level-6",
+    "bytes": 3939,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 72,
+    "name": "jpeg-quality-95",
+    "bytes": 7044,
+    "lossless": false,
+    "exactPixels": false,
+    "popplerChecked": true,
+    "redactionPixelsPass": false
+  },
+  {
+    "dpi": 140,
+    "name": "pdf-lib-png-baseline",
+    "bytes": 7990,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 140,
+    "name": "rgb-flate-level-1",
+    "bytes": 12062,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 140,
+    "name": "rgb-flate-level-6",
+    "bytes": 7999,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 140,
+    "name": "jpeg-quality-95",
+    "bytes": 15300,
+    "lossless": false,
+    "exactPixels": false,
+    "popplerChecked": true,
+    "redactionPixelsPass": false
+  },
+  {
+    "dpi": 160,
+    "name": "pdf-lib-png-baseline",
+    "bytes": 8910,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 160,
+    "name": "rgb-flate-level-1",
+    "bytes": 14041,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 160,
+    "name": "rgb-flate-level-6",
+    "bytes": 8919,
+    "lossless": true,
+    "exactPixels": true,
+    "popplerChecked": true,
+    "redactionPixelsPass": true
+  },
+  {
+    "dpi": 160,
+    "name": "jpeg-quality-95",
+    "bytes": 17551,
+    "lossless": false,
+    "exactPixels": false,
+    "popplerChecked": true,
+    "redactionPixelsPass": false
+  }
+]

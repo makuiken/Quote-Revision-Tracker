@@ -1,0 +1,396 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T13:31:29.069Z",
+  "runtime": {
+    "node": "v24.13.0",
+    "platform": "linux",
+    "arch": "x64",
+    "timedRuns": 3
+  },
+  "method": {
+    "referenceApi": "sanitizePdf",
+    "policyBaseline": "160 dpi + pdf-lib embedPng",
+    "candidateInputs": "reference sanitized pagePngs; Flate/JPEG include separately reported PNG decode",
+    "securityBoundary": "raster-only; no source page copy or overlay"
+  },
+  "representative": [
+    {
+      "sampleId": "A",
+      "manufacturer": "Andersen",
+      "content": "fine print / product drawings",
+      "sourceSha256": "2fa03b96c7288b9ac82a402a47188d7d4c4503312bcfed9b5b2fa88c79c27e1d",
+      "dpi": 160,
+      "pageCount": 3,
+      "pixels": 7180800,
+      "reference": {
+        "sanitizeWallMs": 1731.5,
+        "renderAndPngMs": 975,
+        "originalPdfEncodeMs": 412,
+        "originalTotalMs": 1730,
+        "originalBytes": 746846,
+        "pagePngBytes": 1070429
+      },
+      "extraPngDecodeMs": 182,
+      "candidates": {
+        "png": {
+          "timesMs": [
+            1125.2,
+            698.4,
+            679.7
+          ],
+          "medianMs": 698.4,
+          "bytes": 746846
+        },
+        "rgbFlate1": {
+          "timesMs": [
+            68.3,
+            72.1,
+            66.8
+          ],
+          "medianMs": 68.3,
+          "bytes": 859958
+        },
+        "rgbFlate6": {
+          "timesMs": [
+            141,
+            135.3,
+            145.3
+          ],
+          "medianMs": 141,
+          "bytes": 746861
+        },
+        "jpeg95": {
+          "timesMs": [
+            534.4,
+            616.9,
+            390.2
+          ],
+          "medianMs": 534.4,
+          "bytes": 1030017
+        }
+      },
+      "estimatedEndToEndMedianMs": {
+        "png": 1673.4,
+        "rgbFlate1": 1225.3,
+        "rgbFlate6": 1298,
+        "jpeg95": 1691.4
+      }
+    },
+    {
+      "sampleId": "B",
+      "manufacturer": "Marvin",
+      "content": "fine print / product drawings",
+      "sourceSha256": "391b41910f13d44900b2ca88acdc7dd883c7efa8b05c361c6a31966b890e96c8",
+      "dpi": 160,
+      "pageCount": 3,
+      "pixels": 7180800,
+      "reference": {
+        "sanitizeWallMs": 1135.5,
+        "renderAndPngMs": 797,
+        "originalPdfEncodeMs": 329,
+        "originalTotalMs": 1134,
+        "originalBytes": 625871,
+        "pagePngBytes": 812178
+      },
+      "extraPngDecodeMs": 78,
+      "candidates": {
+        "png": {
+          "timesMs": [
+            648.2,
+            586.5,
+            573.7
+          ],
+          "medianMs": 586.5,
+          "bytes": 625871
+        },
+        "rgbFlate1": {
+          "timesMs": [
+            56,
+            57.9,
+            62
+          ],
+          "medianMs": 57.9,
+          "bytes": 704112
+        },
+        "rgbFlate6": {
+          "timesMs": [
+            117.3,
+            114.3,
+            112.6
+          ],
+          "medianMs": 114.3,
+          "bytes": 625886
+        },
+        "jpeg95": {
+          "timesMs": [
+            273.3,
+            278.6,
+            230.4
+          ],
+          "medianMs": 273.3,
+          "bytes": 640068
+        }
+      },
+      "estimatedEndToEndMedianMs": {
+        "png": 1383.5,
+        "rgbFlate1": 932.9,
+        "rgbFlate6": 989.3,
+        "jpeg95": 1148.3
+      }
+    },
+    {
+      "sampleId": "C",
+      "manufacturer": "Reeb",
+      "content": "fine print / product drawings",
+      "sourceSha256": "8a29dbf2f55b94f4d359b462e7b4afb273148e663898e7264d6cdc912c73647f",
+      "dpi": 160,
+      "pageCount": 3,
+      "pixels": 7180800,
+      "reference": {
+        "sanitizeWallMs": 7967.6,
+        "renderAndPngMs": 7602,
+        "originalPdfEncodeMs": 354,
+        "originalTotalMs": 7965,
+        "originalBytes": 686573,
+        "pagePngBytes": 926253
+      },
+      "extraPngDecodeMs": 82.3,
+      "candidates": {
+        "png": {
+          "timesMs": [
+            652.6,
+            654.5,
+            608.7
+          ],
+          "medianMs": 652.6,
+          "bytes": 686573
+        },
+        "rgbFlate1": {
+          "timesMs": [
+            59.7,
+            77.4,
+            67.9
+          ],
+          "medianMs": 67.9,
+          "bytes": 793856
+        },
+        "rgbFlate6": {
+          "timesMs": [
+            131.9,
+            134.3,
+            134.9
+          ],
+          "medianMs": 134.3,
+          "bytes": 686588
+        },
+        "jpeg95": {
+          "timesMs": [
+            220.3,
+            563.2,
+            486.4
+          ],
+          "medianMs": 486.4,
+          "bytes": 881945
+        }
+      },
+      "estimatedEndToEndMedianMs": {
+        "png": 8254.6,
+        "rgbFlate1": 7752.2,
+        "rgbFlate6": 7818.6,
+        "jpeg95": 8170.7
+      }
+    },
+    {
+      "sampleId": "D",
+      "manufacturer": "Hallmark",
+      "content": "fine print / product drawings",
+      "sourceSha256": "b35f99e579b8856471636c14612fb1d1097fb3e41079cec32db839cbfeec1470",
+      "dpi": 160,
+      "pageCount": 3,
+      "pixels": 7180800,
+      "reference": {
+        "sanitizeWallMs": 1492.7,
+        "renderAndPngMs": 1176,
+        "originalPdfEncodeMs": 308,
+        "originalTotalMs": 1491,
+        "originalBytes": 514883,
+        "pagePngBytes": 671412
+      },
+      "extraPngDecodeMs": 72.6,
+      "candidates": {
+        "png": {
+          "timesMs": [
+            599.6,
+            581.6,
+            591.1
+          ],
+          "medianMs": 591.1,
+          "bytes": 514883
+        },
+        "rgbFlate1": {
+          "timesMs": [
+            57.2,
+            53.3,
+            54.7
+          ],
+          "medianMs": 54.7,
+          "bytes": 620593
+        },
+        "rgbFlate6": {
+          "timesMs": [
+            117.8,
+            106.3,
+            114
+          ],
+          "medianMs": 114,
+          "bytes": 514898
+        },
+        "jpeg95": {
+          "timesMs": [
+            154.7,
+            159.5,
+            358.1
+          ],
+          "medianMs": 159.5,
+          "bytes": 721657
+        }
+      },
+      "estimatedEndToEndMedianMs": {
+        "png": 1767.1,
+        "rgbFlate1": 1303.3,
+        "rgbFlate6": 1362.6,
+        "jpeg95": 1408.1
+      }
+    }
+  ],
+  "workload40": {
+    "dpi160": {
+      "sampleId": "W40",
+      "manufacturer": "Marvin/GRT",
+      "content": "40-page product quote with drawings and terms",
+      "sourceSha256": "0fa8743fea925db2b4afaf7de57f0fc61c37e93ec9812a84365b8e58993fc0d3",
+      "dpi": 160,
+      "pageCount": 40,
+      "pixels": 95744000,
+      "reference": {
+        "sanitizeWallMs": 15944.3,
+        "renderAndPngMs": 11369,
+        "originalPdfEncodeMs": 4567,
+        "originalTotalMs": 15942,
+        "originalBytes": 9365885,
+        "pagePngBytes": 12940219
+      },
+      "extraPngDecodeMs": 1974,
+      "candidates": {
+        "png": {
+          "timesMs": [
+            8910.7,
+            8263.4,
+            7977.1
+          ],
+          "medianMs": 8263.4,
+          "bytes": 9365885
+        },
+        "rgbFlate1": {
+          "timesMs": [
+            972,
+            798.8,
+            907.4
+          ],
+          "medianMs": 907.4,
+          "bytes": 10819224
+        },
+        "rgbFlate6": {
+          "timesMs": [
+            1745.8,
+            1733.3,
+            1660.3
+          ],
+          "medianMs": 1733.3,
+          "bytes": 9365971
+        },
+        "jpeg95": {
+          "timesMs": [
+            3845.5,
+            2385.9,
+            2523
+          ],
+          "medianMs": 2523,
+          "bytes": 14539746
+        }
+      },
+      "estimatedEndToEndMedianMs": {
+        "png": 19632.4,
+        "rgbFlate1": 14250.4,
+        "rgbFlate6": 15076.3,
+        "jpeg95": 15866
+      }
+    },
+    "dpi140": {
+      "sampleId": "W40",
+      "manufacturer": "Marvin/GRT",
+      "content": "40-page product quote with drawings and terms",
+      "sourceSha256": "0fa8743fea925db2b4afaf7de57f0fc61c37e93ec9812a84365b8e58993fc0d3",
+      "dpi": 140,
+      "pageCount": 40,
+      "pixels": 73304000,
+      "reference": {
+        "sanitizeWallMs": 13984.2,
+        "renderAndPngMs": 10212,
+        "originalPdfEncodeMs": 3763,
+        "originalTotalMs": 13983,
+        "originalBytes": 8659232,
+        "pagePngBytes": 11947013
+      },
+      "extraPngDecodeMs": 1666.8,
+      "candidates": {
+        "png": {
+          "timesMs": [
+            8154.2,
+            8546.2,
+            7274.4
+          ],
+          "medianMs": 8154.2,
+          "bytes": 8659232
+        },
+        "rgbFlate1": {
+          "timesMs": [
+            790.9,
+            647.3,
+            751.7
+          ],
+          "medianMs": 751.7,
+          "bytes": 9628161
+        },
+        "rgbFlate6": {
+          "timesMs": [
+            1512.7,
+            1355.9,
+            1328.6
+          ],
+          "medianMs": 1355.9,
+          "bytes": 8659313
+        },
+        "jpeg95": {
+          "timesMs": [
+            3053.9,
+            1707,
+            1752.8
+          ],
+          "medianMs": 1752.8,
+          "bytes": 11742231
+        }
+      },
+      "estimatedEndToEndMedianMs": {
+        "png": 18366.2,
+        "rgbFlate1": 12630.5,
+        "rgbFlate6": 13234.7,
+        "jpeg95": 13631.6
+      }
+    }
+  },
+  "artifacts": {
+    "sensitiveOutputDirectory": "/tmp/pdf-encoding-benchmark",
+    "contactSheet": "/tmp/pdf-encoding-benchmark/visual-comparison-contact-sheet.png"
+  }
+}

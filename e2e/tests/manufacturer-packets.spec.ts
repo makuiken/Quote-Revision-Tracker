@@ -326,7 +326,7 @@ test.describe("manufacturer packet API contract", () => {
       .click();
     await expect(page.getByAltText("Original manufacturer page 1")).toBeVisible();
     await expect(page.getByAltText("Original manufacturer page 1")).toHaveJSProperty("complete", true);
-    const editor = page.locator('[data-rect-index]').first();
+    const editor = page.locator('[data-rect-index]:visible').first();
     await expect(editor).toBeVisible();
     const editorBox = await editor.boundingBox();
     if (!editorBox) throw new Error("Redaction rectangle is not laid out");
@@ -363,7 +363,9 @@ test.describe("manufacturer packet API contract", () => {
     }).click();
     await expect(page.getByText("Redaction added to 1 selected page.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Pg 2", exact: true }).click();
-    await expect(page.locator("[data-rect-index]")).toHaveCount(1);
+    // Inactive packet panels stay mounted to preserve unsaved edits.
+    // Assert isolation in the active editor, not across hidden panels.
+    await expect(page.locator("[data-rect-index]:visible")).toHaveCount(1);
 
     // Delete the copied redaction through the visible, keyboard-accessible
     // action button and verify that the original page remains unchanged.
@@ -373,9 +375,9 @@ test.describe("manufacturer packet API contract", () => {
     });
     await expect(removeRedaction).toBeVisible();
     await removeRedaction.click();
-    await expect(page.locator("[data-rect-index]")).toHaveCount(0);
+    await expect(page.locator("[data-rect-index]:visible")).toHaveCount(0);
     await page.getByRole("button", { name: "Pg 1", exact: true }).click();
-    await expect(page.locator("[data-rect-index]")).toHaveCount(1);
+    await expect(page.locator("[data-rect-index]:visible")).toHaveCount(1);
 
     await page.screenshot({ path: `test-results/manufacturer-packet-source-${quoteId}.png`, fullPage: true });
 
@@ -572,17 +574,17 @@ test.describe("manufacturer packet API contract", () => {
     await page
       .getByRole("button", { name: "Source Editor", exact: true })
       .click();
-    await expect(page.locator("[data-rect-index]")).toHaveCount(1);
+    await expect(page.locator("[data-rect-index]:visible")).toHaveCount(1);
     await packetListEntry(page, secondFilename).click();
     await page
       .getByRole("button", { name: "Source Editor", exact: true })
       .click();
-    await expect(page.locator("[data-rect-index]")).toHaveCount(0);
+    await expect(page.locator("[data-rect-index]:visible")).toHaveCount(0);
     await packetListEntry(page, thirdFilename).click();
     await page
       .getByRole("button", { name: "Source Editor", exact: true })
       .click();
-    await expect(page.locator("[data-rect-index]")).toHaveCount(1);
+    await expect(page.locator("[data-rect-index]:visible")).toHaveCount(1);
 
     const publishedVersion = beforeSigning.documentVersion;
     const manifest = await api.put(
