@@ -2,7 +2,7 @@
 
 ## Implementation
 
-The sanitizer opens one PDF.js document in one worker and reuses it for sequential page renders. Each finished page is persisted as an immutable checkpoint before starting the next page. Existing two-page checkpoints remain resumable, since raster policy and source/redaction fingerprints have not changed.
+The sanitizer opens one PDF.js document in one worker and reuses it for sequential page renders. Each finished page is persisted as an immutable checkpoint. The bounded pipeline may render one next page during persistence when memory admission permits, but never publishes it before the previous page. Existing two-page checkpoints remain resumable, since raster policy and source/redaction fingerprints have not changed. See `pdf-pipeline-efficiencies.md` for the newer network-inclusive measurements and limitations.
 
 The worker still uses 160-DPI PNG rasterization, opaque pixel redaction, and fresh image-only PDFs. Worker concurrency and V8 resource limits are unchanged. A command has a hard 90-second deadline, idle time is limited to 90 seconds, and the worker session has a 15-minute lifetime. Progress messages cannot extend a command deadline. Page buffers are released between commands; cumulative output and pixel budgets remain enforced.
 

@@ -17,6 +17,7 @@ try {
       "src/lib/packets/signoffDocument.test.ts",
       "src/lib/packets/recovery.test.ts",
       "src/lib/packets/checkpoints.test.ts",
+      "src/lib/packets/pipeline.test.ts",
       "src/lib/packets/documentBudget.test.ts",
       "src/lib/packets/capacity.test.ts",
       "src/lib/packets/contention.test.ts",
@@ -65,6 +66,7 @@ try {
   );
   const files = [
     "packets/checkpoints.test.js",
+    "packets/pipeline.test.js",
     "packets/engine.test.js",
     "packets/engine.batches.test.js",
     "packets/engine.session.test.js",

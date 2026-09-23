@@ -1,7 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
 import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   db,
@@ -18,6 +16,7 @@ import { ObjectStorageService } from "../objectStorage";
 import { logger } from "../logger";
 import { recordOperationalFailure } from "../operationalSignals";
 import { packetEngine, mergePacketPdfFilesInWorker, withPacketSanitizationSession } from "./engine";
+import { admitPageOverlap, LocalCheckpointStage, runPagePipeline, settleUploads } from "./pipeline";
 import {
   analysisFingerprint, assertCompleteCheckpoints, assertDocumentBudget,
   commitCheckpointBatch, completedCheckpointPages, MAX_CHECKPOINT_BYTES,
@@ -301,31 +300,6 @@ async function updateProcessingPacketWithRetry(
   throw lastError;
 }
 
-async function saveRenderedPages(
-  pages: Array<{ pngBytes: Uint8Array }>,
-  paths: string[],
-  heartbeat: () => Promise<void>,
-): Promise<void> {
-  const concurrency = 2;
-  for (let index = 0; index < pages.length; index += concurrency) {
-    const batch = pages.slice(index, index + concurrency);
-    const writes = await Promise.allSettled(
-      batch.map((page, offset) =>
-        storage.saveObjectEntityImmutable(
-          paths[index + offset]!,
-          page.pngBytes,
-          "image/png",
-        ),
-      ),
-    );
-    const failedWrite = writes.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failedWrite) throw failedWrite.reason;
-    await heartbeat();
-  }
-}
-
 /**
  * A render is written before its durable packet reference because object
  * storage cannot participate in the database transaction. On a lost/aborted
@@ -519,11 +493,15 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     timer.unref?.();
     try {
       const result = await operation();
+      clearInterval(timer);
       await heartbeatChain;
       if (heartbeatFailure) throw heartbeatFailure;
       return result;
     } finally {
       clearInterval(timer);
+      // The chain records heartbeat errors instead of rejecting, so settling
+      // it cannot replace the original operation error on the failure path.
+      await heartbeatChain;
     }
   };
   let newlyWrittenRenderPaths: string[] = [];
@@ -531,6 +509,9 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
   let processingStage = "source_download";
   let activeSourcePage: number | undefined;
   let sessionFailure: { stage: string; sourcePage?: number } | undefined;
+  let renderSnapshot: { stage: string; sourcePage?: number } = { stage: "worker_queue" };
+  let persistenceFailure: { error: unknown; stage: string; sourcePage?: number } | undefined;
+  const localCheckpoints = new LocalCheckpointStage(MAX_CHECKPOINT_BYTES);
   const persistState = async (): Promise<void> => {
     const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       processingState,
@@ -712,15 +693,33 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       redactionsByPage,
       pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({ pageNumber, width, height })),
     }, async (session) => {
-    while (completed < analysis.pages.length) {
+    await runPagePipeline({
+      start: completed,
+      end: analysis.pages.length,
+      render: async (index) => {
+        renderSnapshot = { stage: "rendering", sourcePage: analysis.pages[index]!.pageNumber };
+        const renderStartedAt = Date.now();
+        const sanitized = await timed("batchWorkerMs", () => session.generateBatch([analysis.pages[index]!.pageNumber]));
+        return { sanitized, renderStartedAt, workerMs: Date.now() - renderStartedAt };
+      },
+      admit: ({ sanitized }, index) => {
+        const pixels = (page: PacketPageAnalysis) =>
+          Math.ceil(page.width * 160 / 72) * Math.ceil(page.height * 160 / 72);
+        return admitPageOverlap({
+          currentPixels: pixels(analysis.pages[index]!),
+          nextPixels: pixels(analysis.pages[index + 1]!),
+          retainedBytes: sanitized.pdfBytes.length + sanitized.pages.reduce((sum, page) => sum + page.pngBytes.length, 0),
+          rss: process.memoryUsage().rss,
+        });
+      },
+      persist: async ({ sanitized, renderStartedAt, workerMs }, index) => {
+      try {
       // One-page commits are valid under the existing two-page maximum and
       // preserve each finished page before a later slow page can time out.
-      const pageOrder = [analysis.pages[completed]!.pageNumber];
+      const pageOrder = [analysis.pages[index]!.pageNumber];
       activeSourcePage = pageOrder[0];
       processingStage = "rendering";
-      const batchStartedAt = Date.now();
       const timingsBeforeBatch = { ...stageTimings };
-      const sanitized = await timed("batchWorkerMs", () => session.generateBatch(pageOrder));
       if (sanitized.pages.length !== pageOrder.length ||
           sanitized.pages.some((page, index) => page.pageNumber !== index + 1 || !page.pngBytes.length) ||
           !sanitized.pdfBytes.length) {
@@ -751,8 +750,12 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       processingStage = "storage";
       processingState = await commitCheckpointBatch(nextState,
         () => timed("batchStorageMs", async () => {
-          await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
-          await saveRenderedPages(sanitized.pages, pagePaths, heartbeat);
+          await settleUploads([
+            () => storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf"),
+            ...sanitized.pages.map((page, index) => () =>
+              storage.saveObjectEntityImmutable(pagePaths[index]!, page.pngBytes, "image/png")),
+          ]);
+          await heartbeat();
         }),
         (state) => {
           processingStage = "checkpoint_commit";
@@ -764,20 +767,34 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       );
       newlyWrittenRenderPaths = [];
       completed += pageOrder.length;
+      try {
+        await localCheckpoints.put(nextState.batches[nextState.batches.length - 1]!, sanitized.pdfBytes);
+      } catch (error) {
+        // Only operational disk failures may bypass this optimization. The
+        // checkpoint is already durable; final merge can redownload and retry
+        // staging. Integrity/budget errors remain explicit hard failures.
+        if (!(error as NodeJS.ErrnoException).code) throw error;
+        logger.warn({ err: error, packetId: claimed.id, sourcePage: activeSourcePage },
+          "Local checkpoint staging failed; final merge will download the durable checkpoint");
+      }
       logger.info({ packetId: claimed.id, sourcePage: activeSourcePage, completedPages: completed,
-        totalPages: analysis.pages.length, batchMs: Date.now() - batchStartedAt,
-        timings: Object.fromEntries(
-          ["batchWorkerMs", "batchRegistrationMs", "batchStorageMs", "batchCommitMs"]
-            .map((key) => [key, (stageTimings[key] ?? 0) - (timingsBeforeBatch[key] ?? 0)])),
+        totalPages: analysis.pages.length, batchMs: Date.now() - renderStartedAt,
+        timings: { batchWorkerMs: workerMs, ...Object.fromEntries(
+          ["batchRegistrationMs", "batchStorageMs", "batchCommitMs"]
+            .map((key) => [key, (stageTimings[key] ?? 0) - (timingsBeforeBatch[key] ?? 0)])) },
       }, "Packet page checkpoint committed");
       activeSourcePage = undefined;
-      // Batch-local PNG/PDF buffers are released before invoking the next worker.
-    }
+      } catch (error) {
+        persistenceFailure = { error, stage: processingStage, sourcePage: activeSourcePage };
+        throw error;
+      }
+      },
+    });
     }, {
       onProgress(progress) {
         if (progress.phase !== "idle") {
-          processingStage = `render_${progress.phase}`;
-          if (progress.pageNumber !== undefined) activeSourcePage = progress.pageNumber;
+          renderSnapshot = { stage: `render_${progress.phase}`,
+            sourcePage: progress.pageNumber ?? renderSnapshot.sourcePage };
         }
         logger.info({ packetId: claimed.id, phase: progress.phase, sourcePage: progress.pageNumber,
           elapsedMs: progress.elapsedMs, workerRss: progress.rss, completedPages: completed,
@@ -787,8 +804,9 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         // Capture diagnostics immediately, but do not publish a failed state
         // until the session awaits any in-flight storage/fenced commit.
         sessionFailure = {
-          stage: error instanceof PacketWorkerQueueWaitError ? "worker_queue" : processingStage,
-          sourcePage: activeSourcePage,
+          stage: error instanceof PacketWorkerQueueWaitError ? "worker_queue"
+            : persistenceFailure?.error === error ? persistenceFailure.stage : renderSnapshot.stage,
+          sourcePage: persistenceFailure?.error === error ? persistenceFailure.sourcePage : renderSnapshot.sourcePage,
         };
         logger.warn({ packetId: claimed.id, stage: sessionFailure.stage,
           sourcePage: sessionFailure.sourcePage, workerPhase: progress?.phase,
@@ -806,22 +824,15 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const batches = processingState.batches;
     newlyWrittenRenderPaths = [pdfPath];
     const hash = await withHeartbeats(async () => {
-      const directory = await mkdtemp(join(tmpdir(), "packet-merge-"));
       try {
         const inputPaths: string[] = [];
         // Only one compressed batch buffer is live during staging, never all
         // packet pixels. Hash-check immutable checkpoints before final merge.
-        for (const [index, batch] of batches.entries()) {
-          const bytes = await storage.downloadObjectBytesBounded(batch.pdfPath, Math.min(batch.pdfBytes, MAX_CHECKPOINT_BYTES));
-          if (bytes.length !== batch.pdfBytes ||
-              createHash("sha256").update(bytes).digest("hex") !== batch.pdfSha256) {
-            throw new Error("Stored packet checkpoint failed integrity verification.");
-          }
-          const path = join(directory, `${index}.pdf`);
-          await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
-          inputPaths.push(path);
+        for (const batch of batches) {
+          inputPaths.push(await localCheckpoints.resolve(batch, () =>
+            storage.downloadObjectBytesBounded(batch.pdfPath, Math.min(batch.pdfBytes, MAX_CHECKPOINT_BYTES))));
         }
-        const outputPath = join(directory, "merged.pdf");
+        const outputPath = await localCheckpoints.outputPath();
         const expectedBatchPageGeometry = batches.map((batch) =>
           batch.pageNumbers.map((pageNumber) => {
             const page = analysis.pages[pageNumber - 1]!;
@@ -837,7 +848,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         await timed("finalStorageMs", () => storage.saveObjectEntityImmutable(pdfPath, bytes, "application/pdf"));
         return createHash("sha256").update(bytes).digest("hex");
       } finally {
-        await rm(directory, { recursive: true, force: true });
+        await localCheckpoints.close();
       }
     });
     finishStage("finalizeMs");
@@ -880,6 +891,13 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const failureStage = error instanceof PacketWorkerQueueWaitError
       ? "worker_queue" : sessionFailure?.stage ?? processingStage;
     const failureSourcePage = sessionFailure ? sessionFailure.sourcePage : activeSourcePage;
+    let failureCompletedPages: number | null = null;
+    try {
+      failureCompletedPages = processingState ? completedCheckpointPages(processingState) : 0;
+    } catch {
+      // Invalid checkpoint state may itself be the original failure. Diagnostics
+      // must not rethrow validation and skip the fenced failure update/cleanup.
+    }
     logger.error(
       {
         err: error,
@@ -889,7 +907,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         totalMs: Date.now() - stageStartedAt,
         unfinishedPhaseMs: Date.now() - previousStageAt,
         stages: stageTimings,
-        completedPages: processingState ? completedCheckpointPages(processingState) : 0,
+        completedPages: failureCompletedPages,
       },
       "Packet processing failed",
     );
@@ -916,6 +934,8 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       claimed.id,
       newlyWrittenRenderPaths,
     );
+  } finally {
+    await localCheckpoints.close();
   }
 }
 

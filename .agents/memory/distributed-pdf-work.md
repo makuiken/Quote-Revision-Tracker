@@ -67,3 +67,9 @@ description: Cross-replica conventions for bounding packet processing and signof
 **Why:** The failing production document completed locally even with one-CPU affinity and unchanged worker limits. A faster local median does not establish the production failure's cause, resource parity, or end-to-end storage performance.
 
 **How to apply:** Include storage/commit costs before claiming end-to-end gains, report sample size and tail behavior, and require authorized production verification before calling an incident resolved.
+
+**Rule:** Overlapping render and persistence needs operation-local timing and separate failure attribution.
+
+**Why:** A shared phase variable or global timing delta can attribute the next page's render to the current checkpoint, and summed phase durations can exceed actual wall time when work overlaps.
+
+**How to apply:** Carry page identity and duration with each render result; retain independent persistence and render failure snapshots. Compare full wall-clock completion, not sums of overlapping stages.

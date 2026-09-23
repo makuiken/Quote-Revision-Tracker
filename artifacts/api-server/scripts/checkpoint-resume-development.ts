@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { and, eq } from "drizzle-orm";
-import { db, pool, quotesTable, manufacturerPacketsTable as packets } from "@workspace/db";
+import { db, pool, quotesTable, manufacturerPacketsTable as packets, packetCheckpointObjectsTable as checkpointObjects } from "@workspace/db";
 import { processPacket, packetSourcePath } from "../src/lib/packets/service";
 import { ObjectStorageService } from "../src/lib/objectStorage";
 import { packetEngine, renderPdfPreviewInWorker } from "../src/lib/packets/engine";
@@ -264,6 +264,20 @@ try {
     oldRenderPathsNotReused: true });
 } finally {
   await running?.catch(() => {});
+  // All own writers have settled. Capture the durable registry before deleting
+  // the packet: polling cannot observe uploaded-but-uncommitted checkpoints.
+  if (packetId !== undefined) {
+    const registered = await db.select({ path: checkpointObjects.objectPath })
+      .from(checkpointObjects).where(eq(checkpointObjects.packetId, packetId));
+    registered.forEach(({ path }) => createdObjectPaths.add(path));
+    const [remaining] = await db.select().from(packets)
+      .where(and(eq(packets.id, packetId), eq(packets.quoteId, quoteId!)));
+    if (remaining) {
+      if (remaining.sourceObjectPath) createdObjectPaths.add(remaining.sourceObjectPath);
+      if (remaining.sanitizedPdfObjectPath) createdObjectPaths.add(remaining.sanitizedPdfObjectPath);
+      remaining.sanitizedPageObjectPaths?.forEach((path) => createdObjectPaths.add(path));
+    }
+  }
   if (quoteId !== undefined) {
     await db.delete(quotesTable).where(and(eq(quotesTable.id, quoteId), eq(quotesTable.createdById, tag)));
   }
@@ -280,6 +294,16 @@ try {
   evidence("cleanup", { databaseFixtureDeleted: quoteId !== undefined, deletedObjects,
     cleanupFailures: cleanupFailures.length });
   assert.equal(cleanupFailures.length, 0, "Could not remove every ephemeral fixture object");
+  if (packetId !== undefined) {
+    await db.delete(checkpointObjects).where(eq(checkpointObjects.packetId, packetId));
+    assert.equal((await db.select().from(checkpointObjects)
+      .where(eq(checkpointObjects.packetId, packetId))).length, 0);
+    assert.equal((await db.select().from(packets).where(eq(packets.id, packetId))).length, 0);
+  }
+  if (quoteId !== undefined) {
+    assert.equal((await db.select().from(quotesTable).where(eq(quotesTable.id, quoteId))).length, 0);
+  }
+  evidence("cleanupVerified", { packetId, quoteId, ownRegistryRowsRemoved: true });
   packetEngine.analyzePdf = originalAnalyze;
   await pool.end();
 }
