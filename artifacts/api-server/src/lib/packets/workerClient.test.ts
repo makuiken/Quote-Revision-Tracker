@@ -8,6 +8,7 @@ import {
   PacketWorkerAbortedError,
   PacketWorkerQueueFullError,
   PacketWorkerTimeoutError,
+  PacketWorkerQueueWaitError,
   createBoundedWorkerQueue,
   runWorkerWithDeadline,
 } from "./workerClient";
@@ -106,7 +107,7 @@ test("queue wait deadline expires without starting stale work", async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   await assert.rejects(
     queue.run(async () => { started = true; }, "normal", { deadlineAt: Date.now() + 10 }),
-    PacketWorkerTimeoutError,
+    PacketWorkerQueueWaitError,
   );
   assert.equal(started, false);
   release();
@@ -152,7 +153,7 @@ test("an admission deadline removes queued work and frees normal capacity", asyn
   const active = queue.run(() => new Promise<void>((resolve) => { release = resolve; }));
   await new Promise<void>((resolve) => setImmediate(resolve));
   const expired = queue.run(async () => undefined, "normal", { deadlineAt: Date.now() + 10 });
-  await assert.rejects(expired, PacketWorkerTimeoutError);
+  await assert.rejects(expired, PacketWorkerQueueWaitError);
   assert.equal(queue.pendingCount, 0);
   const replacement = queue.run(async () => "replacement");
   release();

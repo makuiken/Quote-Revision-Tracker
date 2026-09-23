@@ -1,3 +1,6 @@
+/** Shared by mandatory packet work and optional cold preview rendering. */
+export const PACKET_WORKER_LOCK_BASE = 7_472_657_400;
+
 export interface AdvisoryLockClient {
   query(
     sql: string,

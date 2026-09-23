@@ -9,6 +9,19 @@ export const SANITIZED_BATCH_MERGE_LIMITS = {
 
 export type ExpectedBatchPageGeometry = { width: number; height: number }[][];
 
+export type PacketSessionProgress = {
+  phase: "startup" | "open" | "preflight" | "page" | "draw" | "png" | "embed" | "save" | "idle";
+  pageNumber?: number;
+  elapsedMs?: number;
+  rss: number;
+};
+export type PacketSessionRequest =
+  | { operation: "sessionOpen"; bytes: Uint8Array; selection: SanitizationSelection }
+  | { operation: "sessionBatch"; pageOrder: number[] };
+export type PacketSessionResponse =
+  | { progress: PacketSessionProgress }
+  | PacketWorkerResponse;
+
 export type PacketWorkerRequest =
   | {
       operation: "analyze";

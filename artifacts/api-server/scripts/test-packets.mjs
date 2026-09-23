@@ -10,6 +10,7 @@ try {
     entryPoints: [
       "src/lib/packets/engine.test.ts",
       "src/lib/packets/engine.batches.test.ts",
+      "src/lib/packets/engine.session.test.ts",
       "src/lib/packets/workerClient.test.ts",
       "src/lib/packets/previewSingleflight.test.ts",
       "src/lib/privateObjectHeaders.test.ts",
@@ -46,6 +47,15 @@ try {
       "@workspace/db",
     ],
   });
+  await build({
+    entryPoints: ["src/lib/packets/engineWorker.ts"],
+    outfile: join(outdir, "packets", "packets-engine-worker.mjs"),
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    packages: "external",
+  });
   // Bundled packet modules retain their `src/lib/packets` relative layout;
   // signoffDocument resolves embedded fonts adjacent to that output folder.
   await cp("assets", join(outdir, "packets", "assets"), { recursive: true });
@@ -57,6 +67,7 @@ try {
     "packets/checkpoints.test.js",
     "packets/engine.test.js",
     "packets/engine.batches.test.js",
+    "packets/engine.session.test.js",
     "packets/workerClient.test.js",
     "packets/previewSingleflight.test.js",
     "privateObjectHeaders.test.js",

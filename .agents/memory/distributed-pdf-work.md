@@ -55,3 +55,15 @@ description: Cross-replica conventions for bounding packet processing and signof
 **Why:** A database row cannot wake a stopped instance. The user declined an external scheduled trigger on 2026-09-22; an independent execution service was not authorized.
 
 **How to apply:** Describe recovery as conditional on a running instance and lease expiry. Do not claim no-traffic eventual completion, or silently configure a scheduler or change the deployment type.
+
+**Rule:** A persistent renderer failure must terminate computation immediately but wait for outstanding checkpoint writes before returning to service cleanup.
+
+**Why:** Racing a fatal worker promise against the persistence callback can otherwise report failure while storage writes are still creating objects. Worker termination cannot cancel those writes.
+
+**How to apply:** Keep capacity owned until both worker termination and callback settlement; never race cleanup against the callback. Separate renderer lifetime limits from uncancellable persistence settlement.
+
+**Rule:** Use exact-source, full-path measurements to judge PDF performance; document local-resource uncertainty explicitly.
+
+**Why:** The failing production document completed locally even with one-CPU affinity and unchanged worker limits. A faster local median does not establish the production failure's cause, resource parity, or end-to-end storage performance.
+
+**How to apply:** Include storage/commit costs before claiming end-to-end gains, report sample size and tail behavior, and require authorized production verification before calling an incident resolved.

@@ -3,7 +3,7 @@ import { open, lstat, realpath, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import type { PacketEngine, PacketPageAnalysis as StoredPageAnalysis, PacketPageType as StoredPageType, RedactionRect } from "./types";
-import { runPacketEngineInWorker } from "./workerClient";
+import { runPacketEngineInWorker, runPacketSanitizationSession, type PacketSessionOptions } from "./workerClient";
 import {
   SANITIZED_BATCH_MERGE_LIMITS,
   type ExpectedBatchPageGeometry,
@@ -644,6 +644,7 @@ async function renderPage(
   dpi: number,
   limits: PacketEngineLimits,
   redactions: readonly NormalizedRect[] = [],
+  progress?: (phase: "draw" | "png", elapsedMs: number) => void,
 ): Promise<{ png: Buffer; width: number; height: number }> {
   const { canvas } = await loadLibraries();
   const scale = dpi / POINTS_PER_INCH;
@@ -664,7 +665,10 @@ async function renderPage(
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, pixelWidth, pixelHeight);
   try {
+    const drawStarted = Date.now();
+    progress?.("draw", 0);
     await page.render({ canvasContext: context, viewport }).promise;
+    progress?.("draw", Date.now() - drawStarted);
   } catch (error) {
     throw new PacketEngineError(
       "RENDER_FAILED",
@@ -680,7 +684,11 @@ async function renderPage(
     const bounds = rasterBoundsForNormalizedRect(rect, pixelWidth, pixelHeight);
     context.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
   }
-  return { png: output.toBuffer("image/png"), width: pixelWidth, height: pixelHeight };
+  const pngStarted = Date.now();
+  progress?.("png", 0);
+  const png = output.toBuffer("image/png");
+  progress?.("png", Date.now() - pngStarted);
+  return { png, width: pixelWidth, height: pixelHeight };
 }
 
 /**
@@ -916,6 +924,22 @@ export async function sanitizePdf(
   const dpi = assertRenderDpi(options.dpi ?? DEFAULT_RENDER_DPI, limits);
   const document = await openDocument(bytes, limits);
   try {
+    return await sanitizeDocument(document, selection, dpi, limits, startedAt);
+  } finally {
+    await closeDocument(document);
+  }
+}
+
+async function sanitizeDocument(
+  document: PdfJsDocument,
+  selection: SanitizationSelection,
+  dpi: number,
+  limits: PacketEngineLimits,
+  startedAt: number,
+  budget = { pixels: 0, bytes: 0 },
+  progress?: (phase: import("./workerProtocol").PacketSessionProgress["phase"], pageNumber?: number, elapsedMs?: number) => void,
+): Promise<SanitizedPacket> {
+  try {
     const selected = selectionMap(selection, document.numPages, limits);
     const sourcePageOrder = selectedPageOrder(selection.pageOrder, document.numPages);
     const output = await PDFDocument.create();
@@ -931,21 +955,25 @@ export async function sanitizePdf(
 
     const pagePngs: Buffer[] = [];
     const pages: SanitizedPacket["pages"] = [];
-    let totalPixels = 0;
     const renderStartedAt = Date.now();
     for (const [outputPageIndex, sourcePageNumber] of sourcePageOrder.entries()) {
+      progress?.("page", sourcePageNumber);
       assertWithinDeadline(startedAt, limits);
       const page = await document.getPage(sourcePageNumber);
       try {
         const dimensions = dimensionsFor(page, limits);
         const pageSelection = selected.get(sourcePageNumber);
         assertExpectedDimensions(pageSelection, dimensions);
-        const rendered = await renderPage(page, dpi, limits, pageSelection?.bounds ?? []);
-        totalPixels += rendered.width * rendered.height;
-        if (totalPixels > limits.maxTotalPixels) {
+        const rendered = await renderPage(page, dpi, limits, pageSelection?.bounds ?? [],
+          (phase, elapsed) => progress?.(phase, sourcePageNumber, elapsed));
+        budget.pixels += rendered.width * rendered.height;
+        if (budget.pixels > limits.maxTotalPixels) {
           throw new PacketEngineError("LIMIT_EXCEEDED", "Packet raster pixels exceed the document limit.");
         }
+        const embedStarted = Date.now();
+        progress?.("embed", sourcePageNumber);
         const embedded = await output.embedPng(rendered.png);
+        progress?.("embed", sourcePageNumber, Date.now() - embedStarted);
         const outputPage = output.addPage([dimensions.width, dimensions.height]);
         outputPage.drawImage(embedded, {
           x: 0,
@@ -966,9 +994,12 @@ export async function sanitizePdf(
     }
     const renderAndPngMs = Date.now() - renderStartedAt;
     const pdfEncodeStartedAt = Date.now();
+    progress?.("save");
     const pdf = Buffer.from(await output.save({ addDefaultPage: false, useObjectStreams: true }));
     const pdfEncodeMs = Date.now() - pdfEncodeStartedAt;
-    if (pdf.length > limits.maxOutputBytes) {
+    progress?.("save", undefined, pdfEncodeMs);
+    budget.bytes += pdf.length;
+    if (budget.bytes > limits.maxOutputBytes) {
       throw new PacketEngineError("LIMIT_EXCEEDED", "Sanitized PDF exceeds the output byte limit.");
     }
     assertWithinDeadline(startedAt, limits);
@@ -984,9 +1015,99 @@ export async function sanitizePdf(
         totalMs: Date.now() - startedAt,
       },
     };
-  } finally {
+  } finally { /* Document ownership belongs to the caller. */ }
+}
+
+/** Worker-only document owner. Geometry is checked before any batch is emitted. */
+export async function openSanitizationDocumentSession(
+  bytes: Buffer,
+  selection: SanitizationSelection,
+  progress?: (phase: import("./workerProtocol").PacketSessionProgress["phase"], pageNumber?: number, elapsedMs?: number) => void,
+) {
+  const limits = resolveLimits();
+  assertPdfBytes(bytes, limits);
+  const started = Date.now();
+  progress?.("open");
+  const document = await openDocument(bytes, limits);
+  const used = new Set<number>();
+  const budget = { pixels: 0, bytes: 0 };
+  let closed = false;
+  let busy = false;
+  try {
+    progress?.("open", undefined, Date.now() - started);
+    const selected = selectionMap(selection, document.numPages, limits);
+    if (!selected.size) throw new PacketEngineError("INVALID_SELECTION", "Session requires page geometry.");
+    let pixels = 0;
+    for (const [pageNumber, expected] of selected) {
+      progress?.("preflight", pageNumber);
+      const page = await document.getPage(pageNumber);
+      try {
+        if (expected.expectedWidth === undefined || expected.expectedHeight === undefined)
+          throw new PacketEngineError("INVALID_SELECTION", "Session requires source-bound geometry.");
+        assertExpectedDimensions(expected, dimensionsFor(page, limits));
+        const viewport = page.getViewport({ scale: DEFAULT_RENDER_DPI / POINTS_PER_INCH, rotation: 0 });
+        const pagePixels = Math.ceil(viewport.width) * Math.ceil(viewport.height);
+        pixels += pagePixels;
+        if (pagePixels > limits.maxPixelsPerPage || pixels > limits.maxTotalPixels)
+          throw new PacketEngineError("LIMIT_EXCEEDED", "Session raster pixels exceed the document limit.");
+        assertWithinDeadline(started, limits);
+      } finally { page.cleanup(); }
+    }
+    return {
+      async generateBatch(pageOrder: number[]) {
+        if (closed || busy) throw new PacketEngineError("INVALID_SELECTION", "Session is closed or busy.");
+        selectedPageOrder(pageOrder, document.numPages);
+        if (pageOrder.some((page) => !selected.has(page) || used.has(page)))
+          throw new PacketEngineError("INVALID_SELECTION", "Session source page is unavailable or already consumed.");
+        busy = true;
+        pageOrder.forEach((page) => used.add(page));
+        try {
+          return await sanitizeDocument(document, { ...selection, pageOrder }, DEFAULT_RENDER_DPI, limits, Date.now(), budget, progress);
+        } finally { busy = false; }
+      },
+      async close() { if (!closed) { closed = true; await closeDocument(document); } },
+    };
+  } catch (error) {
     await closeDocument(document);
+    throw error;
   }
+}
+
+export type PacketSanitizationSessionInput = {
+  bytes: Uint8Array;
+  pageDimensions: readonly Pick<StoredPageAnalysis, "pageNumber" | "width" | "height">[];
+  redactionsByPage: Record<number, RedactionRect[]>;
+};
+export type PacketSanitizationSession = {
+  generateBatch(pageOrder: number[]): ReturnType<PacketEngine["generateSanitizedPacket"]>;
+};
+
+/**
+ * One fixed source, one worker slot, sequential disjoint batches. Numbers in
+ * results are batch-local. Await persistence inside callback before next batch.
+ * Bounds: 90s command/idle and 15m total, including callback checkpoint waits.
+ */
+export function withPacketSanitizationSession<T>(
+  input: PacketSanitizationSessionInput,
+  callback: (session: PacketSanitizationSession) => Promise<T>,
+  options: PacketSessionOptions = {},
+): Promise<T> {
+  const allowed = new Set(input.pageDimensions.map((page) => page.pageNumber));
+  if (Object.keys(input.redactionsByPage).some((page) => !allowed.has(Number(page))))
+    return Promise.reject(new PacketEngineError("INVALID_SELECTION", "Redactions reference unavailable session geometry."));
+  const pages = input.pageDimensions.map((page) => ({
+    pageNumber: page.pageNumber,
+    expectedWidth: page.width,
+    expectedHeight: page.height,
+    bounds: (input.redactionsByPage[page.pageNumber] ?? []).map((rect) => toNormalizedRect(rect, page.width, page.height)),
+  }));
+  return runPacketSanitizationSession({ operation: "sessionOpen", bytes: input.bytes, selection: { pages } },
+    (generate) => callback({
+      async generateBatch(order) {
+        const result = await generate(order) as SanitizedPacket;
+        return { pdfBytes: result.pdf, pages: result.pages };
+      },
+    }), options);
 }
 
 /** Server-generated private temp paths ONLY; caller verifies batch hashes. */

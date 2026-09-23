@@ -1,6 +1,7 @@
 import { Worker } from "node:worker_threads";
 
 import type { PacketWorkerRequest, PacketWorkerResponse } from "./workerProtocol";
+import type { PacketSessionRequest, PacketSessionResponse, PacketSessionProgress } from "./workerProtocol";
 
 export const MAX_PACKET_ENGINE_WORKERS = 1;
 export const MAX_PENDING_PREVIEW_JOBS = 4;
@@ -46,6 +47,17 @@ export class PacketWorkerError extends Error {
 }
 
 type QueueOptions = PacketWorkerRunOptions & { maxWaitMs?: number };
+
+export class PacketWorkerQueueWaitError extends Error {
+  constructor() { super("PDF processing queue wait limit exceeded."); this.name = "PacketWorkerQueueWaitError"; }
+}
+export type PacketSessionOptions = PacketWorkerRunOptions & {
+  onProgress?: (progress: PacketSessionProgress) => void;
+  /** Fires before waiting for in-flight checkpoint callbacks to settle. */
+  onFailure?: (error: Error, progress: PacketSessionProgress | undefined) => void;
+};
+export const PACKET_SESSION_MAX_LIFETIME_MS = 15 * 60_000;
+export const PACKET_SESSION_IDLE_MS = 90_000;
 
 /**
  * A priority semaphore. Optional normal-priority work is bounded and
@@ -137,12 +149,12 @@ export function createBoundedWorkerQueue(
           : options.deadlineAt - Date.now();
         const waitMs = Math.min(options.maxWaitMs ?? Number.POSITIVE_INFINITY, deadlineWait);
         if (waitMs <= 0) {
-          reject(new PacketWorkerTimeoutError(0));
+          reject(new PacketWorkerQueueWaitError());
           return;
         }
         if (Number.isFinite(waitMs)) {
           waitTimer = setTimeout(
-            () => cancel(new PacketWorkerTimeoutError(Math.max(0, Math.round(waitMs)))),
+            () => cancel(new PacketWorkerQueueWaitError()),
             waitMs,
           );
           waitTimer.unref?.();
@@ -165,6 +177,112 @@ export function createBoundedWorkerQueue(
 }
 
 const workerQueue = createBoundedWorkerQueue();
+
+/** Command timers are never refreshed by worker progress. */
+export function runPacketSanitizationSession<T>(
+  request: Extract<PacketSessionRequest, { operation: "sessionOpen" }>,
+  callback: (generate: (order: number[]) => Promise<unknown>) => Promise<T>,
+  options: PacketSessionOptions = {},
+): Promise<T> {
+  return workerQueue.run(async () => {
+    const startupAt = Date.now();
+    const worker = spawnPacketWorker();
+    let failure: Error | undefined;
+    let pending: { resolve: (value: unknown) => void; reject: (error: Error) => void } | undefined;
+    let timer: NodeJS.Timeout | undefined;
+    let lifetime: NodeJS.Timeout | undefined;
+    let closed = false;
+    let lastProgress: PacketSessionProgress | undefined;
+    let callbackWork: Promise<T> | undefined;
+    let termination: Promise<number> | undefined;
+    let rejectFatal!: (error: Error) => void;
+    const fatal = new Promise<never>((_, reject) => { rejectFatal = reject; });
+    // Fatal events can occur during open before the callback race is installed.
+    void fatal.catch(() => {});
+    const fail = (error: Error) => {
+      if (failure || closed) return;
+      failure = error;
+      termination = worker.terminate();
+      void termination.catch(() => {});
+      try { options.onFailure?.(error, lastProgress); } catch { /* Preserve original failure. */ }
+      pending?.reject(error);
+      pending = undefined;
+      rejectFatal(error);
+    };
+    const arm = (ms: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fail(new PacketWorkerTimeoutError(ms)), ms);
+      timer.unref?.();
+    };
+    const onAbort = () => fail(new PacketWorkerAbortedError());
+    const onError = (error: Error) => fail(error);
+    const onExit = (code: number) => fail(new PacketWorkerError(`Packet session worker exited (${code}).`));
+    const onMessage = (message: PacketSessionResponse) => {
+      if (closed || failure) return;
+      if ("progress" in message) {
+        if (message.progress.phase === "startup") message.progress.elapsedMs = Date.now() - startupAt;
+        lastProgress = message.progress;
+        try { options.onProgress?.(message.progress); } catch (error) {
+          fail(error instanceof Error ? error : new Error("Session progress callback failed."));
+        }
+        return;
+      }
+      if (!pending) { fail(new PacketWorkerError("Unexpected session response.")); return; }
+      if (!message.ok) { fail(new PacketWorkerError(message.error.message, message.error.code)); return; }
+      const current = pending;
+      pending = undefined;
+      arm(PACKET_SESSION_IDLE_MS);
+      current.resolve(message.result);
+    };
+    worker.on("message", onMessage);
+    worker.on("error", onError);
+    worker.on("exit", onExit);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    const command = (message: PacketSessionRequest, transfer: ArrayBuffer[] = []) => {
+      if (failure || closed) return Promise.reject(failure ?? new PacketWorkerError("Session is closed."));
+      if (pending) {
+        const error = new PacketWorkerError("Session batches must be awaited sequentially.");
+        fail(error);
+        return Promise.reject(error);
+      }
+      arm(PACKET_ENGINE_WORKER_TIMEOUT_MS);
+      return new Promise<unknown>((resolve, reject) => {
+        pending = { resolve, reject };
+        try { worker.postMessage(message, transfer); } catch (error) {
+          fail(error instanceof Error ? error : new Error("Session command failed."));
+        }
+      });
+    };
+    try {
+      const remaining = Math.min(PACKET_SESSION_MAX_LIFETIME_MS, (options.deadlineAt ?? Infinity) - Date.now());
+      if (remaining <= 0) throw new PacketWorkerTimeoutError(0);
+      lifetime = setTimeout(() => fail(new PacketWorkerTimeoutError(remaining)), remaining);
+      lifetime.unref?.();
+      if (options.signal?.aborted) throw new PacketWorkerAbortedError();
+      const bytes = new Uint8Array(request.bytes);
+      await command({ ...request, bytes }, [bytes.buffer]);
+      callbackWork = Promise.resolve().then(() => callback((pageOrder) => command({ operation: "sessionBatch", pageOrder })));
+      return await Promise.race([fatal, callbackWork]);
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error("Packet session callback failed."));
+      throw error;
+    } finally {
+      closed = true;
+      pending?.reject(failure ?? new PacketWorkerError("Session callback completed with an outstanding batch."));
+      clearTimeout(timer);
+      clearTimeout(lifetime);
+      options.signal?.removeEventListener("abort", onAbort);
+      // Keep error/exit listeners until termination has completed.
+      await (termination ?? worker.terminate());
+      // Checkpoint writes cannot be cancelled by worker termination. Do not let
+      // service cleanup race those writes; keep capacity until callback settles.
+      await callbackWork?.catch(() => {});
+      worker.off("message", onMessage);
+      worker.off("error", onError);
+      worker.off("exit", onExit);
+    }
+  }, "high", { ...options, maxWaitMs: PACKET_ENGINE_WORKER_TIMEOUT_MS });
+}
 
 /**
  * Terminates and awaits worker shutdown on every completion path. In
@@ -228,7 +346,9 @@ export function runWorkerWithDeadline(
 function spawnPacketWorker(): Worker {
   return new Worker(new URL("./packets-engine-worker.mjs", import.meta.url), {
     resourceLimits: PACKET_ENGINE_WORKER_RESOURCE_LIMITS,
-    execArgv: process.execArgv.filter((argument) => !argument.startsWith("--input-type")),
+    // Bundled ESM workers need no loaders. Host-injected V8/TLS flags are
+    // rejected by Worker when explicitly copied into execArgv.
+    execArgv: process.execArgv.filter((argument) => argument === "--enable-source-maps"),
   });
 }
 

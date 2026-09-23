@@ -83,6 +83,7 @@ import {
   runPacketEngineInWorker,
 } from "../lib/packets/workerClient";
 import { PreviewSingleflight } from "../lib/packets/previewSingleflight";
+import { withOptionalPacketPreview } from "../lib/packets/previewCapacity";
 import { invalidateApprovalCoverage, invalidateLegacyApproval } from "../lib/scopedApprovals";
 import { changedManifestProductTypes, manifestChanged } from "../lib/packets/manifestScope";
 import {
@@ -752,7 +753,7 @@ router.get(
           previewPath,
           ({ signal, deadlineAt: jobDeadline }) =>
             originalPreviewAdmission.run(
-              async () => {
+              () => withOptionalPacketPreview(async () => {
                 const source = await storage.downloadObjectBytesBounded(
                   packet.sourceObjectPath!,
                   40 * 1024 * 1024,
@@ -774,7 +775,7 @@ router.get(
                 } catch {
                   // Another replica rendered this immutable private preview first.
                 }
-              },
+              }),
               "normal",
               { signal, deadlineAt: jobDeadline },
             ),
@@ -790,7 +791,8 @@ router.get(
         return;
       }
       if (error instanceof PacketWorkerQueueFullError) {
-        res.status(429).json({ error: "Packet preview capacity is busy. Please retry shortly." });
+        res.setHeader("Retry-After", "5");
+        res.status(429).json({ error: "Rendering capacity is reserved for PDF processing. Saved previews remain available; retry this preview shortly." });
         return;
       }
       if (error instanceof PacketWorkerTimeoutError) {

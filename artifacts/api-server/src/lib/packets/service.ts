@@ -17,10 +17,10 @@ import {
 import { ObjectStorageService } from "../objectStorage";
 import { logger } from "../logger";
 import { recordOperationalFailure } from "../operationalSignals";
-import { packetEngine, mergePacketPdfFilesInWorker } from "./engine";
+import { packetEngine, mergePacketPdfFilesInWorker, withPacketSanitizationSession } from "./engine";
 import {
   analysisFingerprint, assertCompleteCheckpoints, assertDocumentBudget,
-  CHECKPOINT_BATCH_SIZE, commitCheckpointBatch, completedCheckpointPages, MAX_CHECKPOINT_BYTES,
+  commitCheckpointBatch, completedCheckpointPages, MAX_CHECKPOINT_BYTES,
   readProcessingState, renderFingerprint, resumeRender,
   type PacketProcessingState,
 } from "./checkpoints";
@@ -30,7 +30,7 @@ import {
   refreshProcessingLease,
   recoveryAction,
 } from "./recovery";
-import { tryAcquirePacketWorkerSlot } from "./packetCapacity";
+import { PACKET_WORKER_LOCK_BASE, tryAcquirePacketWorkerSlot } from "./packetCapacity";
 import type { PacketPageAnalysis, RedactionRect } from "./types";
 import {
   canonicalManufacturer,
@@ -39,7 +39,7 @@ import {
   templateNoActiveMatchFeedback,
 } from "./templates";
 import { pdfCapacityConfiguration } from "./capacity";
-import { PacketWorkerError, PacketWorkerTimeoutError } from "./workerClient";
+import { PacketWorkerError, PacketWorkerQueueWaitError, PacketWorkerTimeoutError } from "./workerClient";
 import {
   assertCheckpointPublication, registerCheckpointManifest, registerCheckpointPaths,
   sweepCheckpointObjects,
@@ -48,7 +48,6 @@ import {
 const storage = new ObjectStorageService();
 const MAX_PROCESSING_ATTEMPTS = 3;
 const MAX_PACKET_BYTES = 40 * 1024 * 1024;
-const PACKET_WORKER_LOCK_BASE = 7_472_657_400;
 const RECOVERY_PAGE_SIZE = 50;
 const RECOVERY_MAX_PAGES = 4;
 const PACKET_SLOT_RETRY_MS = 1_000;
@@ -188,13 +187,16 @@ function renderedPagePath(quoteId: number, packetId: number, pageNumber: number)
   return `/objects/manufacturer-packets/${quoteId}/${packetId}/renders/${randomUUID()}-page-${pageNumber}.png`;
 }
 
-function cleanError(error: unknown) {
+function cleanError(error: unknown, sourcePage?: number) {
+  if (error instanceof PacketWorkerQueueWaitError) {
+    return "PDF processing could not start before the worker queue wait limit. Retry to resume saved progress.";
+  }
   if (error instanceof PacketWorkerTimeoutError) {
-    return "PDF processing timed out. Retry to resume saved progress; if it fails again, split the manufacturer quote into smaller PDFs.";
+    return `PDF processing timed out${sourcePage === undefined ? "" : ` on source page ${sourcePage}`}. Retry to resume saved progress.`;
   }
   if (error instanceof PacketWorkerError) {
     return error.code === "ERR_WORKER_OUT_OF_MEMORY"
-      ? "PDF processing exceeded its memory limit. Split the manufacturer quote into smaller PDFs and upload them separately."
+      ? "PDF processing exceeded its memory limit. Saved progress is retained for retry."
       : `PDF processing worker failed: ${error.message}`;
   }
   const message = error instanceof Error ? error.message : "Unknown packet processing error";
@@ -527,6 +529,8 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
   let newlyWrittenRenderPaths: string[] = [];
   let processingState: PacketProcessingState | null = null;
   let processingStage = "source_download";
+  let activeSourcePage: number | undefined;
+  let sessionFailure: { stage: string; sourcePage?: number } | undefined;
   const persistState = async (): Promise<void> => {
     const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       processingState,
@@ -541,6 +545,14 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     const now = Date.now();
     stageTimings[stage] = now - previousStageAt;
     previousStageAt = now;
+  };
+  const timed = async <T>(name: string, operation: () => Promise<T>): Promise<T> => {
+    const startedAt = Date.now();
+    try {
+      return await operation();
+    } finally {
+      stageTimings[name] = (stageTimings[name] ?? 0) + Date.now() - startedAt;
+    }
   };
 
   try {
@@ -689,16 +701,26 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     let completed = completedCheckpointPages(processingState);
     processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length };
     await persistState();
+    const sanitizeStartedAt = Date.now();
+    logger.info({ packetId: claimed.id, completedPages: completed, totalPages: analysis.pages.length,
+      remainingPages: analysis.pages.length - completed }, "Packet render session starting");
+    // The session holds the worker queue only for unfinished pages. Final merge
+    // must run after it closes, since merge acquires that same queue.
+    processingStage = "worker_queue";
+    if (completed < analysis.pages.length) await withHeartbeats(() => withPacketSanitizationSession({
+      bytes: source,
+      redactionsByPage,
+      pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({ pageNumber, width, height })),
+    }, async (session) => {
     while (completed < analysis.pages.length) {
-      const pageOrder = analysis.pages.slice(completed, completed + CHECKPOINT_BATCH_SIZE).map((page) => page.pageNumber);
+      // One-page commits are valid under the existing two-page maximum and
+      // preserve each finished page before a later slow page can time out.
+      const pageOrder = [analysis.pages[completed]!.pageNumber];
+      activeSourcePage = pageOrder[0];
       processingStage = "rendering";
-      const sanitized = await withHeartbeats(() => packetEngine.generateSanitizedPacket({
-        bytes: source,
-        manufacturer: claimed.manufacturer ?? (detectedProfile === "unknown" ? null : detectedProfile),
-        redactionsByPage,
-        pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({ pageNumber, width, height })),
-        pageOrder,
-      }));
+      const batchStartedAt = Date.now();
+      const timingsBeforeBatch = { ...stageTimings };
+      const sanitized = await timed("batchWorkerMs", () => session.generateBatch(pageOrder));
       if (sanitized.pages.length !== pageOrder.length ||
           sanitized.pages.some((page, index) => page.pageNumber !== index + 1 || !page.pngBytes.length) ||
           !sanitized.pdfBytes.length) {
@@ -708,8 +730,8 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       // Engine pageNumber is local output order, not the source page identity.
       const pagePaths = pageOrder.map((pageNumber) => renderedPagePath(claimed.quoteId, claimed.id, pageNumber));
       const nextState: PacketProcessingState = {
-        ...processingState,
-        batches: [...processingState.batches, {
+        ...processingState!,
+        batches: [...processingState!.batches, {
           pageNumbers: pageOrder, pdfPath, pagePaths,
           pdfSha256: createHash("sha256").update(sanitized.pdfBytes).digest("hex"),
           pdfBytes: sanitized.pdfBytes.length,
@@ -720,25 +742,61 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       // Registration must acknowledge before any storage write. If registration
       // commits but its acknowledgement is lost, no upload occurs and the
       // retained candidate is harmless. Checkpoint cleanup is always durable.
-      await registerCheckpointPaths(db, claimed.id, attemptToken, [pdfPath, ...pagePaths]);
+      processingStage = "checkpoint_registration";
+      await timed("batchRegistrationMs", () =>
+        registerCheckpointPaths(db, claimed.id, attemptToken, [pdfPath, ...pagePaths]));
       newlyWrittenRenderPaths = [];
       // Keep the prior durable state if this commit fails. Failure reporting
       // must not accidentally reference partially persisted output.
       processingStage = "storage";
       processingState = await commitCheckpointBatch(nextState,
-        () => withHeartbeats(async () => {
+        () => timed("batchStorageMs", async () => {
           await storage.saveObjectEntityImmutable(pdfPath, sanitized.pdfBytes, "application/pdf");
           await saveRenderedPages(sanitized.pages, pagePaths, heartbeat);
         }),
-        (state) => updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
-          processingState: state, processingStartedAt: new Date(),
-        }),
+        (state) => {
+          processingStage = "checkpoint_commit";
+          return timed("batchCommitMs", () =>
+            updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
+              processingState: state, processingStartedAt: new Date(),
+            }));
+        },
       );
       newlyWrittenRenderPaths = [];
       completed += pageOrder.length;
+      logger.info({ packetId: claimed.id, sourcePage: activeSourcePage, completedPages: completed,
+        totalPages: analysis.pages.length, batchMs: Date.now() - batchStartedAt,
+        timings: Object.fromEntries(
+          ["batchWorkerMs", "batchRegistrationMs", "batchStorageMs", "batchCommitMs"]
+            .map((key) => [key, (stageTimings[key] ?? 0) - (timingsBeforeBatch[key] ?? 0)])),
+      }, "Packet page checkpoint committed");
+      activeSourcePage = undefined;
       // Batch-local PNG/PDF buffers are released before invoking the next worker.
     }
-    finishStage("sanitizeMs");
+    }, {
+      onProgress(progress) {
+        if (progress.phase !== "idle") {
+          processingStage = `render_${progress.phase}`;
+          if (progress.pageNumber !== undefined) activeSourcePage = progress.pageNumber;
+        }
+        logger.info({ packetId: claimed.id, phase: progress.phase, sourcePage: progress.pageNumber,
+          elapsedMs: progress.elapsedMs, workerRss: progress.rss, completedPages: completed,
+          totalPages: analysis.pages.length }, "Packet render worker progress");
+      },
+      onFailure(error, progress) {
+        // Capture diagnostics immediately, but do not publish a failed state
+        // until the session awaits any in-flight storage/fenced commit.
+        sessionFailure = {
+          stage: error instanceof PacketWorkerQueueWaitError ? "worker_queue" : processingStage,
+          sourcePage: activeSourcePage,
+        };
+        logger.warn({ packetId: claimed.id, stage: sessionFailure.stage,
+          sourcePage: sessionFailure.sourcePage, workerPhase: progress?.phase,
+          completedPages: completed }, "Packet render session failed; awaiting durable checkpoint settlement");
+      },
+    }));
+    stageTimings.sanitizeMs = Date.now() - sanitizeStartedAt;
+    previousStageAt = Date.now();
     assertCompleteCheckpoints(processingState);
     processingStage = "finalizing";
     processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length };
@@ -769,20 +827,22 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
             const page = analysis.pages[pageNumber - 1]!;
             return { width: page.width, height: page.height };
           }));
-        processingStage = "rendering";
-        await mergePacketPdfFilesInWorker(inputPaths, outputPath, expectedBatchPageGeometry);
+        processingStage = "final_merge";
+        await timed("finalMergeWorkerMs", () =>
+          mergePacketPdfFilesInWorker(inputPaths, outputPath, expectedBatchPageGeometry));
         if ((await stat(outputPath)).size > MAX_CHECKPOINT_BYTES) throw new Error("Merged packet exceeds the output limit.");
         const bytes = await readFile(outputPath);
         if (!bytes.length) throw new Error("Merged packet is empty.");
         processingStage = "storage";
-        await storage.saveObjectEntityImmutable(pdfPath, bytes, "application/pdf");
+        await timed("finalStorageMs", () => storage.saveObjectEntityImmutable(pdfPath, bytes, "application/pdf"));
         return createHash("sha256").update(bytes).digest("hex");
       } finally {
         await rm(directory, { recursive: true, force: true });
       }
     });
     finishStage("finalizeMs");
-    const committed = await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
+    processingStage = "final_commit";
+    const committed = await timed("finalCommitMs", () => updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
       status: "ready_for_approval",
       analysis: analysis.pages,
       detectedManufacturer:
@@ -796,7 +856,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       processingState: { ...processingState, batches: [], progress: {
         stage: "complete", completedPages: completed, totalPages: analysis.pages.length,
       } },
-    });
+    }));
     if (!committed) {
       await cleanupUncommittedRenderObjects(
         claimed.id,
@@ -817,11 +877,15 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       "Packet processing stage timings",
     );
   } catch (error) {
+    const failureStage = error instanceof PacketWorkerQueueWaitError
+      ? "worker_queue" : sessionFailure?.stage ?? processingStage;
+    const failureSourcePage = sessionFailure ? sessionFailure.sourcePage : activeSourcePage;
     logger.error(
       {
         err: error,
         packetId: claimed.id,
-        stage: processingStage,
+        stage: failureStage,
+        sourcePage: failureSourcePage,
         totalMs: Date.now() - stageStartedAt,
         unfinishedPhaseMs: Date.now() - previousStageAt,
         stages: stageTimings,
@@ -833,10 +897,10 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       await updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
         status: "failed",
         processingStartedAt: null,
-        failureMessage: cleanError(error),
+        failureMessage: cleanError(error, failureSourcePage),
         ...(processingState ? { processingState: {
           ...processingState,
-          progress: { ...processingState.progress, stage: "failed", errorStage: processingStage },
+          progress: { ...processingState.progress, stage: "failed", errorStage: failureStage },
         } } : {}),
       });
     } catch (updateError) {
