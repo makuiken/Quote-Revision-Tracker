@@ -73,3 +73,9 @@ description: Cross-replica conventions for bounding packet processing and signof
 **Why:** A shared phase variable or global timing delta can attribute the next page's render to the current checkpoint, and summed phase durations can exceed actual wall time when work overlaps.
 
 **How to apply:** Carry page identity and duration with each render result; retain independent persistence and render failure snapshots. Compare full wall-clock completion, not sums of overlapping stages.
+
+**Rule:** Reducing raster calls does not necessarily reduce edit latency when reusable pages require remote integrity reads.
+
+**Why:** An exact-document development comparison reused 30 of 31 pages but took longer than a full render because verification and storage costs dominated.
+
+**How to apply:** Preserve PDF/PNG verification and cleanup fences when optimizing reuse. Measure full-path latency separately from rendered-page counts; do not advertise fewer renders as a measured end-to-end speedup.

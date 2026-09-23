@@ -247,12 +247,13 @@ try {
     manualRedactions: changed, status: "queued", attemptCount: 0,
     sanitizedPdfObjectPath: null, sanitizedPdfSha256: null, sanitizedPageObjectPaths: null,
   });
-  const oldPaths = new Set(createdObjectPaths);
-  const regenerated = await runToReady(pageCount, { forbiddenPaths: oldPaths });
+   const oldPaths = new Set(createdObjectPaths);
+   const regenerated = await runToReady(pageCount);
   assert.equal(analyses, 1);
   assert.equal(state(regenerated).analysisKey, state(ready).analysisKey);
   assert.notEqual(state(regenerated).renderKey, state(ready).renderKey);
-  assert.ok(regenerated.sanitizedPageObjectPaths?.every((path) => !oldPaths.has(path)));
+   assert.notEqual(regenerated.sanitizedPageObjectPaths?.[0], ready.sanitizedPageObjectPaths?.[0]);
+   assert.deepEqual(regenerated.sanitizedPageObjectPaths?.slice(1), ready.sanitizedPageObjectPaths?.slice(1));
   assert.ok(!oldPaths.has(regenerated.sanitizedPdfObjectPath!));
   const changedBytes = await storage.downloadObjectBytesBounded(regenerated.sanitizedPdfObjectPath!, 100 * 1024 * 1024);
   assert.equal((await PDFDocument.load(changedBytes)).getPageCount(), pageCount);
@@ -261,7 +262,7 @@ try {
     assert.deepEqual(await pixels(changedBytes, [30, 110]), [255, 255, 255, 255]);
   }
   evidence("regenerated", { pages: pageCount, analyses, changedRedactionInvalidatedPrefix: true,
-    oldRenderPathsNotReused: true });
+     unchangedPagePathsRetained: true });
 } finally {
   await running?.catch(() => {});
   // All own writers have settled. Capture the durable registry before deleting

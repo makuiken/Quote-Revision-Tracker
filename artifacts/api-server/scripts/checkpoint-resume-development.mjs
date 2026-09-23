@@ -19,7 +19,9 @@ try {
   await symlink(resolve(root, "../../lib/db/node_modules/drizzle-zod"), join(out, "node_modules/drizzle-zod"), "dir");
   await build({
     entryPoints: {
-      harness: join(root, "scripts/checkpoint-resume-development.ts"),
+      harness: join(root, process.argv.includes("--safe-page-reuse-cleanup")
+        ? "scripts/safe-page-reuse-cleanup-development.ts" : process.argv.includes("--safe-page-reuse")
+        ? "scripts/safe-page-reuse-development.ts" : "scripts/checkpoint-resume-development.ts"),
       "packets-engine-worker": join(root, "src/lib/packets/engineWorker.ts"),
     },
     outdir: out,

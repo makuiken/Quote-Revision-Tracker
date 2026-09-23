@@ -918,11 +918,12 @@ router.patch(
         );
       });
       if (invalid) return { kind: "invalid" as const };
-      await registerCheckpointManifest(tx, packet);
+      const nextProcessingState = resetRenderCheckpoints(packet.processingState, true);
+      await registerCheckpointManifest(tx, packet, nextProcessingState);
       const [updated] = await tx.update(manufacturerPacketsTable).set({
         manualRedactions: body.data.redactionsByPage,
         status: "queued",
-        processingState: resetRenderCheckpoints(packet.processingState),
+        processingState: nextProcessingState,
         sanitizedPdfObjectPath: null,
         sanitizedPdfSha256: null,
         sanitizedPageObjectPaths: null,

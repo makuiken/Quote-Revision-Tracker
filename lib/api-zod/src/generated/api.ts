@@ -2954,6 +2954,10 @@ export const listManufacturerPacketsResponseProcessingProgressCompletedPagesMin 
 
 export const listManufacturerPacketsResponseProcessingProgressTotalPagesMin = 0;
 
+export const listManufacturerPacketsResponseProcessingProgressReusedPagesMin = 0;
+
+export const listManufacturerPacketsResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const ListManufacturerPacketsResponseItem = zod.object({
@@ -2997,6 +3001,8 @@ export const ListManufacturerPacketsResponseItem = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(listManufacturerPacketsResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(listManufacturerPacketsResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(listManufacturerPacketsResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(listManufacturerPacketsResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3062,6 +3068,10 @@ export const requestManufacturerPacketUploadResponsePacketProcessingProgressComp
 
 export const requestManufacturerPacketUploadResponsePacketProcessingProgressTotalPagesMin = 0;
 
+export const requestManufacturerPacketUploadResponsePacketProcessingProgressReusedPagesMin = 0;
+
+export const requestManufacturerPacketUploadResponsePacketProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const RequestManufacturerPacketUploadResponse = zod.object({
@@ -3106,6 +3116,8 @@ export const RequestManufacturerPacketUploadResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(requestManufacturerPacketUploadResponsePacketProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(requestManufacturerPacketUploadResponsePacketProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(requestManufacturerPacketUploadResponsePacketProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(requestManufacturerPacketUploadResponsePacketProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3228,6 +3240,10 @@ export const getManufacturerPacketResponseProcessingProgressCompletedPagesMin = 
 
 export const getManufacturerPacketResponseProcessingProgressTotalPagesMin = 0;
 
+export const getManufacturerPacketResponseProcessingProgressReusedPagesMin = 0;
+
+export const getManufacturerPacketResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const GetManufacturerPacketResponse = zod.object({
@@ -3271,6 +3287,8 @@ export const GetManufacturerPacketResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(getManufacturerPacketResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(getManufacturerPacketResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(getManufacturerPacketResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(getManufacturerPacketResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3335,6 +3353,10 @@ export const setManufacturerPacketProductTypeResponseProcessingProgressCompleted
 
 export const setManufacturerPacketProductTypeResponseProcessingProgressTotalPagesMin = 0;
 
+export const setManufacturerPacketProductTypeResponseProcessingProgressReusedPagesMin = 0;
+
+export const setManufacturerPacketProductTypeResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const SetManufacturerPacketProductTypeResponse = zod.object({
@@ -3378,6 +3400,8 @@ export const SetManufacturerPacketProductTypeResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(setManufacturerPacketProductTypeResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(setManufacturerPacketProductTypeResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(setManufacturerPacketProductTypeResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(setManufacturerPacketProductTypeResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3435,6 +3459,10 @@ export const setManufacturerPacketManufacturerResponseProcessingProgressComplete
 
 export const setManufacturerPacketManufacturerResponseProcessingProgressTotalPagesMin = 0;
 
+export const setManufacturerPacketManufacturerResponseProcessingProgressReusedPagesMin = 0;
+
+export const setManufacturerPacketManufacturerResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const SetManufacturerPacketManufacturerResponse = zod.object({
@@ -3478,6 +3506,8 @@ export const SetManufacturerPacketManufacturerResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(setManufacturerPacketManufacturerResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(setManufacturerPacketManufacturerResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(setManufacturerPacketManufacturerResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(setManufacturerPacketManufacturerResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3527,6 +3557,10 @@ export const completeManufacturerPacketUploadResponseProcessingProgressCompleted
 
 export const completeManufacturerPacketUploadResponseProcessingProgressTotalPagesMin = 0;
 
+export const completeManufacturerPacketUploadResponseProcessingProgressReusedPagesMin = 0;
+
+export const completeManufacturerPacketUploadResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const CompleteManufacturerPacketUploadResponse = zod.object({
@@ -3570,6 +3604,8 @@ export const CompleteManufacturerPacketUploadResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(completeManufacturerPacketUploadResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(completeManufacturerPacketUploadResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(completeManufacturerPacketUploadResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(completeManufacturerPacketUploadResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3643,6 +3679,10 @@ export const setManufacturerPacketRedactionsResponseProcessingProgressCompletedP
 
 export const setManufacturerPacketRedactionsResponseProcessingProgressTotalPagesMin = 0;
 
+export const setManufacturerPacketRedactionsResponseProcessingProgressReusedPagesMin = 0;
+
+export const setManufacturerPacketRedactionsResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const SetManufacturerPacketRedactionsResponse = zod.object({
@@ -3686,6 +3726,8 @@ export const SetManufacturerPacketRedactionsResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(setManufacturerPacketRedactionsResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(setManufacturerPacketRedactionsResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(setManufacturerPacketRedactionsResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(setManufacturerPacketRedactionsResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3735,6 +3777,10 @@ export const approveManufacturerPacketResponseProcessingProgressCompletedPagesMi
 
 export const approveManufacturerPacketResponseProcessingProgressTotalPagesMin = 0;
 
+export const approveManufacturerPacketResponseProcessingProgressReusedPagesMin = 0;
+
+export const approveManufacturerPacketResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const ApproveManufacturerPacketResponse = zod.object({
@@ -3778,6 +3824,8 @@ export const ApproveManufacturerPacketResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(approveManufacturerPacketResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(approveManufacturerPacketResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(approveManufacturerPacketResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(approveManufacturerPacketResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),
@@ -3827,6 +3875,10 @@ export const retryManufacturerPacketResponseProcessingProgressCompletedPagesMin 
 
 export const retryManufacturerPacketResponseProcessingProgressTotalPagesMin = 0;
 
+export const retryManufacturerPacketResponseProcessingProgressReusedPagesMin = 0;
+
+export const retryManufacturerPacketResponseProcessingProgressRenderedPagesMin = 0;
+
 
 
 export const RetryManufacturerPacketResponse = zod.object({
@@ -3870,6 +3922,8 @@ export const RetryManufacturerPacketResponse = zod.object({
   "stage": zod.string(),
   "completedPages": zod.int().min(retryManufacturerPacketResponseProcessingProgressCompletedPagesMin),
   "totalPages": zod.int().min(retryManufacturerPacketResponseProcessingProgressTotalPagesMin),
+  "reusedPages": zod.int().min(retryManufacturerPacketResponseProcessingProgressReusedPagesMin).optional(),
+  "renderedPages": zod.int().min(retryManufacturerPacketResponseProcessingProgressRenderedPagesMin).optional(),
   "errorStage": zod.string().nullish()
 }).optional(),
   "createdAt": zod.coerce.date(),

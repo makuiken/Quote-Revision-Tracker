@@ -21,7 +21,8 @@ import {
   analysisFingerprint, assertCompleteCheckpoints, assertDocumentBudget,
   commitCheckpointBatch, completedCheckpointPages, MAX_CHECKPOINT_BYTES,
   readProcessingState, renderFingerprint, resumeRender,
-  type PacketProcessingState,
+  boundedReusablePages, pageFingerprint, selectReusablePages, loadReusablePage,
+  type PacketProcessingState, type ReusablePage,
 } from "./checkpoints";
 import {
   isAbandonedProcessingJob,
@@ -324,6 +325,8 @@ async function cleanupUncommittedRenderObjects(
             sql`${manufacturerPacketsTable.sanitizedPageObjectPaths} @> ${JSON.stringify([path])}::jsonb`,
             sql`${manufacturerPacketsTable.processingState}->'batches' @> ${JSON.stringify([{ pdfPath: path }])}::jsonb`,
             sql`${manufacturerPacketsTable.processingState}->'batches' @> ${JSON.stringify([{ pagePaths: [path] }])}::jsonb`,
+            sql`${manufacturerPacketsTable.processingState}->'reusablePages' @> ${JSON.stringify([{ pdfPath: path }])}::jsonb`,
+            sql`${manufacturerPacketsTable.processingState}->'reusablePages' @> ${JSON.stringify([{ pagePaths: [path] }])}::jsonb`,
           ),
         )
         .limit(1);
@@ -678,9 +681,35 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     // small batch must never become a way around the raster/output budget.
     assertDocumentBudget(analysis.pages);
     processingState = resumeRender(processingState, renderFingerprint(analysisKey, manual));
+    const sourceSha256 = createHash("sha256").update(source).digest("hex");
+    const pageKeys = analysis.pages.map((page) =>
+      pageFingerprint(sourceSha256, page, redactionsByPage[page.pageNumber] ?? []));
+    const verified = new Map<number, ReusablePage>();
+    // Candidates remain durable references throughout I/O. A sweeper cannot
+    // retire them between verification and ordered acknowledgement.
+    await withHeartbeats(async () => {
+      const candidates = selectReusablePages(processingState!, claimed.quoteId, claimed.id, pageKeys);
+      for (const page of candidates) {
+        const index = page.pageNumbers[0]! - 1;
+        try {
+          const pdf = await loadReusablePage(page, (path, limit) => storage.downloadObjectBytesBounded(path, limit));
+          await localCheckpoints.put(page, pdf);
+          verified.set(index, page);
+        } catch (error) {
+          logger.warn({ err: error, packetId: claimed.id, sourcePage: index + 1 },
+            "Cached page unavailable or invalid; regenerating page");
+        }
+      }
+    });
+    // Legacy or unverified prefixes are not trusted. Rebuild a contiguous
+    // acknowledged prefix from verified candidates and freshly rendered pages.
+    processingState = { ...processingState, batches: [], reusablePages: [...verified.values()] };
     processingStage = "rendering";
     let completed = completedCheckpointPages(processingState);
-    processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length };
+    let reusedPages = 0;
+    let renderedPages = 0;
+    processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length,
+      reusedPages, renderedPages };
     await persistState();
     const sanitizeStartedAt = Date.now();
     logger.info({ packetId: claimed.id, completedPages: completed, totalPages: analysis.pages.length,
@@ -688,21 +717,21 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     // The session holds the worker queue only for unfinished pages. Final merge
     // must run after it closes, since merge acquires that same queue.
     processingStage = "worker_queue";
-    if (completed < analysis.pages.length) await withHeartbeats(() => withPacketSanitizationSession({
-      bytes: source,
-      redactionsByPage,
-      pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({ pageNumber, width, height })),
-    }, async (session) => {
+    const processPages = async (session?: { generateBatch: (pages: number[]) => Promise<import("./types").SanitizedPacket> }) => {
     await runPagePipeline({
       start: completed,
       end: analysis.pages.length,
       render: async (index) => {
+        const reused = verified.get(index);
+        if (reused) return { reused, sanitized: undefined, renderStartedAt: Date.now(), workerMs: 0 };
+        if (!session) throw new Error("Missing renderer for changed page.");
         renderSnapshot = { stage: "rendering", sourcePage: analysis.pages[index]!.pageNumber };
         const renderStartedAt = Date.now();
         const sanitized = await timed("batchWorkerMs", () => session.generateBatch([analysis.pages[index]!.pageNumber]));
-        return { sanitized, renderStartedAt, workerMs: Date.now() - renderStartedAt };
+        return { reused: undefined, sanitized, renderStartedAt, workerMs: Date.now() - renderStartedAt };
       },
       admit: ({ sanitized }, index) => {
+        if (!sanitized) return false;
         const pixels = (page: PacketPageAnalysis) =>
           Math.ceil(page.width * 160 / 72) * Math.ceil(page.height * 160 / 72);
         return admitPageOverlap({
@@ -712,8 +741,24 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
           rss: process.memoryUsage().rss,
         });
       },
-      persist: async ({ sanitized, renderStartedAt, workerMs }, index) => {
+      persist: async ({ reused, sanitized, renderStartedAt, workerMs }, index) => {
       try {
+      if (reused) {
+        const nextState: PacketProcessingState = {
+          ...processingState!,
+          batches: [...processingState!.batches, reused],
+          progress: { stage: "rendering", completedPages: completed + 1,
+            totalPages: analysis.pages.length, reusedPages: reusedPages + 1, renderedPages },
+        };
+        processingState = await commitCheckpointBatch(nextState, async () => {}, (state) =>
+          updateProcessingPacketWithRetry(claimed.quoteId, claimed.id, attemptToken, {
+            processingState: state, processingStartedAt: new Date(),
+          }));
+        completed++;
+        reusedPages++;
+        return;
+      }
+      if (!sanitized) throw new Error("Missing sanitized page.");
       // One-page commits are valid under the existing two-page maximum and
       // preserve each finished page before a later slow page can time out.
       const pageOrder = [analysis.pages[index]!.pageNumber];
@@ -728,15 +773,20 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       const pdfPath = renderedPdfPath(claimed.quoteId, claimed.id);
       // Engine pageNumber is local output order, not the source page identity.
       const pagePaths = pageOrder.map((pageNumber) => renderedPagePath(claimed.quoteId, claimed.id, pageNumber));
-      const nextState: PacketProcessingState = {
-        ...processingState!,
-        batches: [...processingState!.batches, {
+      const checkpoint: ReusablePage = {
           pageNumbers: pageOrder, pdfPath, pagePaths,
+          reuseVersion: 1, pageKey: pageKeys[index]!,
+          pngSha256: createHash("sha256").update(sanitized.pages[0]!.pngBytes).digest("hex"),
           pdfSha256: createHash("sha256").update(sanitized.pdfBytes).digest("hex"),
           pdfBytes: sanitized.pdfBytes.length,
           pngBytes: sanitized.pages.reduce((sum, page) => sum + page.pngBytes.length, 0),
-        }],
-        progress: { stage: "rendering", completedPages: completed + pageOrder.length, totalPages: analysis.pages.length },
+      };
+      const nextState: PacketProcessingState = {
+        ...processingState!,
+        batches: [...processingState!.batches, checkpoint],
+        reusablePages: boundedReusablePages([...(processingState!.reusablePages ?? []), checkpoint]),
+        progress: { stage: "rendering", completedPages: completed + pageOrder.length, totalPages: analysis.pages.length,
+          reusedPages, renderedPages: renderedPages + 1 },
       };
       // Registration must acknowledge before any storage write. If registration
       // commits but its acknowledgement is lost, no upload occurs and the
@@ -767,6 +817,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       );
       newlyWrittenRenderPaths = [];
       completed += pageOrder.length;
+      renderedPages++;
       try {
         await localCheckpoints.put(nextState.batches[nextState.batches.length - 1]!, sanitized.pdfBytes);
       } catch (error) {
@@ -790,7 +841,14 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       }
       },
     });
-    }, {
+    };
+    // No-op jobs never acquire a raster session; merge remains a separate
+    // bounded worker operation producing a fresh immutable complete PDF.
+    if (verified.size === analysis.pages.length) await withHeartbeats(() => processPages());
+    else await withHeartbeats(() => withPacketSanitizationSession({
+      bytes: source, redactionsByPage,
+      pageDimensions: analysis.pages.map(({ pageNumber, width, height }) => ({ pageNumber, width, height })),
+    }, processPages, {
       onProgress(progress) {
         if (progress.phase !== "idle") {
           renderSnapshot = { stage: `render_${progress.phase}`,
@@ -817,7 +875,8 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
     previousStageAt = Date.now();
     assertCompleteCheckpoints(processingState);
     processingStage = "finalizing";
-    processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length };
+    processingState.progress = { stage: processingStage, completedPages: completed, totalPages: analysis.pages.length,
+      reusedPages, renderedPages };
     await persistState();
     const pdfPath = renderedPdfPath(claimed.quoteId, claimed.id);
     const pagePaths = processingState.batches.flatMap((batch) => batch.pagePaths);
@@ -865,7 +924,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       processingStartedAt: null,
       failureMessage: null,
       processingState: { ...processingState, batches: [], progress: {
-        stage: "complete", completedPages: completed, totalPages: analysis.pages.length,
+        stage: "complete", completedPages: completed, totalPages: analysis.pages.length, reusedPages, renderedPages,
       } },
     }));
     if (!committed) {

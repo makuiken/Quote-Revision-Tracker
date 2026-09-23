@@ -45,6 +45,10 @@ import {
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { PreviewFetchScheduler, redactionFromDrag } from "@/lib/preview-fetch-scheduler";
+import {
+  packetProcessingProgressText,
+  packetRenderBreakdown,
+} from "@/lib/packet-processing-progress";
 
 type ProductType = QuoteCategoriesItem;
 
@@ -820,7 +824,7 @@ function PacketDetails({ quoteId, packet, hasApprovals, isVisible, progressAdvan
         </h3>
         {packet.processingProgress && (
           <p className="text-sm text-muted-foreground mb-2" data-testid={`status-processing-progress-${packet.id}`} role="status">
-            {packet.processingProgress.stage} — {packet.processingProgress.completedPages} of {packet.processingProgress.totalPages} pages completed
+            {packetProcessingProgressText(packet.processingProgress)}
           </p>
         )}
         <p className="text-sm text-muted-foreground max-w-sm">
@@ -862,7 +866,8 @@ function PacketDetails({ quoteId, packet, hasApprovals, isVisible, progressAdvan
           </p>
           {packet.processingProgress && (
             <p className="text-red-700 text-sm mb-6" data-testid={`status-processing-error-${packet.id}`}>
-              Stopped during {packet.processingProgress.errorStage ?? packet.processingProgress.stage} — {packet.processingProgress.completedPages} of {packet.processingProgress.totalPages} pages completed. No partial document is available for approval.
+              Stopped during {packet.processingProgress.errorStage ?? packet.processingProgress.stage} — {packet.processingProgress.completedPages} of {packet.processingProgress.totalPages} pages completed
+              {packetRenderBreakdown(packet.processingProgress) ? ` (${packetRenderBreakdown(packet.processingProgress)})` : ""}. No partial document is available for approval.
             </p>
           )}
           <Button
@@ -1143,6 +1148,14 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
               </span>
             )}
           </p>
+          {packetRenderBreakdown(packet.processingProgress) && (
+            <p
+              className="text-muted-foreground text-xs mt-1"
+              data-testid={`status-render-summary-${packet.id}`}
+            >
+              Last clean preview: {packetRenderBreakdown(packet.processingProgress)}.
+            </p>
+          )}
           {isAdmin && (
             <Link
               href="/admin/templates"

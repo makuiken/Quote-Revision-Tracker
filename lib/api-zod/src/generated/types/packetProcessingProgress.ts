@@ -12,6 +12,10 @@ export interface PacketProcessingProgress {
   completedPages: number;
   /** @minimum 0 */
   totalPages: number;
+  /** @minimum 0 */
+  reusedPages?: number;
+  /** @minimum 0 */
+  renderedPages?: number;
   /** @nullable */
   errorStage?: string | null;
 }

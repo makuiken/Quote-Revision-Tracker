@@ -5,7 +5,7 @@ import {
 } from "@workspace/db";
 import { ObjectStorageService } from "../objectStorage";
 import { logger } from "../logger";
-import { checkpointObjectPaths } from "./checkpoints";
+import { boundedReusablePages, checkpointObjectPaths, reusablePageValid, type ReusablePage } from "./checkpoints";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const storage = new ObjectStorageService();
@@ -15,8 +15,9 @@ let sweeping = false;
 
 /** Also accepts legacy manifests whose analysis/version is no longer readable. */
 export function legacyCheckpointPaths(value: unknown): string[] {
-  const batches = (value as { batches?: unknown } | null)?.batches;
-  if (!Array.isArray(batches)) return [];
+  const state = value as { batches?: unknown; reusablePages?: unknown } | null;
+  const batches = [...(Array.isArray(state?.batches) ? state.batches : []),
+    ...(Array.isArray(state?.reusablePages) ? state.reusablePages : [])];
   return [...new Set(batches.flatMap((batch) => [
     batch?.pdfPath, ...(Array.isArray(batch?.pagePaths) ? batch.pagePaths : []),
   ]).filter((path): path is string => typeof path === "string" &&
@@ -77,10 +78,15 @@ async function backfillCheckpointManifests(): Promise<void> {
         if (!packet) return;
         // Legacy analysis versions need not be understood to release explicit
         // batch references on an already successfully finalized packet.
-        const state = packet.processingState as { batches?: unknown } | null;
-        const complete = state && Array.isArray(state.batches) && state.batches.length &&
+        const state = packet.processingState as { batches?: unknown; reusablePages?: unknown } | null;
+        const complete = state && (Array.isArray(state.batches) || Array.isArray(state.reusablePages)) &&
           ["ready_for_approval", "approved"].includes(packet.status) && packet.sanitizedPdfObjectPath;
-        const nextState = complete ? { ...state, batches: [] } : packet.processingState;
+        const nextState = complete ? { ...state, batches: [],
+          reusablePages: boundedReusablePages(
+            (Array.isArray(state.reusablePages) ? state.reusablePages : [])
+              .filter((page: ReusablePage) => reusablePageValid(page, packet.quoteId, packet.id)),
+          ),
+        } : packet.processingState;
         await registerCheckpointManifest(tx, packet, nextState);
         if (complete) {
           await tx.update(packets).set({ processingState: nextState }).where(eq(packets.id, packet.id));
@@ -121,6 +127,8 @@ export async function retireCheckpointCandidate(
       sql`${packets.sanitizedPageObjectPaths} @> ${JSON.stringify([objectPath])}::jsonb`,
       sql`${packets.processingState}->'batches' @> ${JSON.stringify([{ pdfPath: objectPath }])}::jsonb`,
       sql`${packets.processingState}->'batches' @> ${JSON.stringify([{ pagePaths: [objectPath] }])}::jsonb`,
+      sql`${packets.processingState}->'reusablePages' @> ${JSON.stringify([{ pdfPath: objectPath }])}::jsonb`,
+      sql`${packets.processingState}->'reusablePages' @> ${JSON.stringify([{ pagePaths: [objectPath] }])}::jsonb`,
     )).limit(1);
     if (reference) return false;
     const [signed] = await tx.select({ id: signoffsTable.id }).from(signoffsTable).where(or(

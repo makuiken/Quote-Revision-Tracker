@@ -2253,6 +2253,8 @@ components:
         stage: { type: string }
         completedPages: { type: integer, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
+        reusedPages: { type: integer, minimum: 0 }
+        renderedPages: { type: integer, minimum: 0 }
         errorStage: { type: ["string", "null"] }
       required: [stage, completedPages, totalPages]
     AppliedManufacturerRedactionTemplate:
