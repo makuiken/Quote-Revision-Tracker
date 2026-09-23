@@ -1223,8 +1223,10 @@ function PacketReview({ quoteId, packet, hasApprovals, isVisible }: { quoteId: n
         </div>
 
         {/* Main Editor / Preview Area */}
-        <div className="flex-1 flex flex-col bg-muted/10 relative overflow-hidden">
-          <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
+        <div className="flex-1 min-w-0 flex flex-col bg-muted/10 relative overflow-hidden">
+          <div className={`flex-1 min-w-0 min-h-0 overflow-auto p-4 ${
+            viewMode === "source" ? "flex items-start justify-center" : ""
+          }`}>
             {currentPage && viewMode === 'source' && !isApproved && (
               <PageRedactionEditor
                 key={`${packet.id}:${currentPage.pageNumber}`}
@@ -1891,14 +1893,17 @@ function SanitizedPagePreviewRequest({ quoteId, packetId, pageNumber, revision }
   }
 
   return (
-    <div className="flex flex-col items-center justify-start overflow-auto w-full h-full pb-8">
-      <div className="flex gap-2 bg-card p-1.5 rounded-lg shadow-sm border border-border my-4 sticky top-4 z-10">
+    <div className="w-full min-h-full pb-8">
+      <div className="flex w-fit gap-2 bg-card p-1.5 rounded-lg shadow-sm border border-border mx-auto my-4 sticky top-4 z-10">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setScale(s => Math.max(0.25, s - 0.25))}><ZoomOut className="w-4 h-4" /></Button>
         <div className="flex items-center justify-center w-12 text-xs font-bold">{Math.round(scale * 100)}%</div>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setScale(s => Math.min(3, s + 0.25))}><ZoomIn className="w-4 h-4" /></Button>
       </div>
-      <div className="bg-card shadow-lg border border-border overflow-hidden transition-transform duration-200 origin-top" style={{ transform: `scale(${scale})` }}>
-        <img src={objectUrl} alt={`Generated preview page ${pageNumber}`} className="max-w-full h-auto block bg-white" />
+      <div
+        className="mx-auto bg-card shadow-lg border border-border overflow-hidden transition-[width] duration-200"
+        style={{ width: `${scale * 100}%` }}
+      >
+        <img src={objectUrl} alt={`Generated preview page ${pageNumber}`} className="w-full h-auto block bg-white" />
       </div>
     </div>
   );
