@@ -16,6 +16,15 @@ const LOCK_TIMEOUT = "5s";
 const STATEMENT_TIMEOUT = "30s";
 
 const RECONCILIATION_STATEMENTS: string[] = [
+  `CREATE TABLE IF NOT EXISTS packet_checkpoint_objects (
+    object_path text PRIMARY KEY,
+    packet_id integer NOT NULL,
+    attempt_token text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    next_check_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS packet_checkpoint_objects_due_idx
+    ON packet_checkpoint_objects (next_check_at, object_path)`,
   // quotes.share_token was added after the initial schema; older databases lack it.
   `ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS quotes_share_token_unique ON quotes (share_token)`,
@@ -400,6 +409,9 @@ const RECONCILIATION_STATEMENTS: string[] = [
  * read-only, and must not accidentally grow a repair path.
  */
 const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
+  packet_checkpoint_objects: [
+    "object_path", "packet_id", "attempt_token", "created_at", "next_check_at",
+  ],
   users: ["id", "clerk_user_id", "name", "email", "role", "status", "created_at"],
   quotes: [
     "id", "quote_number", "customer_name", "project_name", "job_address",
@@ -503,6 +515,11 @@ type RequiredIndex = {
 };
 
 const REQUIRED_INDEXES: readonly RequiredIndex[] = [
+  {
+    table: "packet_checkpoint_objects",
+    columns: ["object_path"],
+    unique: true,
+  },
   // Primary keys and unique constraints/indexes used to enforce identity and
   // idempotency.
   { table: "users", columns: ["id"], unique: true },

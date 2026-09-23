@@ -20,6 +20,12 @@ description: Cross-replica conventions for bounding packet processing and signof
 
 **How to apply:** Heartbeat well inside the stale threshold, abort on lease loss, use bounded all-settled write batches, then perform fresh reference checks before deletion.
 
+**Rule:** A lost processing lease fences database publication, not an already-issued object upload. Keep exact-path cleanup tombstones after successful deletion unless storage can prove that no late upload can recreate the object.
+
+**Why:** An expired worker can finish its immutable upload after cleanup has already observed absence or deleted the file. Dropping the cleanup record at that point leaks the recreated object; retrying publication without a retirement fence can instead expose a deleted checkpoint.
+
+**How to apply:** Durably reserve checkpoint paths before upload, register legacy references transactionally before releasing them, fence new publication against retirement, and retry exact-path deletion without broad prefix cleanup. Small retained metadata is preferable to unsafe tombstone expiry.
+
 **Rule:** Never hold quote or approval row locks while downloading sources, rendering PDFs, or uploading objects.
 
 **Why:** Expensive I/O under row locks serializes unrelated users and raises deadlock/timeout risk. Rendering outside the transaction is safe only if finalization re-locks quote first and revalidates the exact snapshot/version before recording evidence.

@@ -40,6 +40,10 @@ import {
 } from "./templates";
 import { pdfCapacityConfiguration } from "./capacity";
 import { PacketWorkerError, PacketWorkerTimeoutError } from "./workerClient";
+import {
+  assertCheckpointPublication, registerCheckpointManifest, registerCheckpointPaths,
+  sweepCheckpointObjects,
+} from "./checkpointCleanup";
 
 const storage = new ObjectStorageService();
 const MAX_PROCESSING_ATTEMPTS = 3;
@@ -257,6 +261,10 @@ async function updateProcessingPacket(
           errorStage: reportedState?.progress.errorStage ?? durableState.progress.stage,
         },
       } : null };
+    }
+    if ("processingState" in values) {
+      await registerCheckpointManifest(tx, packet, values.processingState);
+      await assertCheckpointPublication(tx, packetId, attemptToken, packet.processingState, values.processingState);
     }
     await tx
       .update(manufacturerPacketsTable)
@@ -709,7 +717,11 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
         }],
         progress: { stage: "rendering", completedPages: completed + pageOrder.length, totalPages: analysis.pages.length },
       };
-      newlyWrittenRenderPaths = [pdfPath, ...pagePaths];
+      // Registration must acknowledge before any storage write. If registration
+      // commits but its acknowledgement is lost, no upload occurs and the
+      // retained candidate is harmless. Checkpoint cleanup is always durable.
+      await registerCheckpointPaths(db, claimed.id, attemptToken, [pdfPath, ...pagePaths]);
+      newlyWrittenRenderPaths = [];
       // Keep the prior durable state if this commit fails. Failure reporting
       // must not accidentally reference partially persisted output.
       processingStage = "storage";
@@ -781,7 +793,7 @@ async function processPacketWithSlot(packetId: number): Promise<void> {
       sanitizedPageObjectPaths: pagePaths,
       processingStartedAt: null,
       failureMessage: null,
-      processingState: { ...processingState, progress: {
+      processingState: { ...processingState, batches: [], progress: {
         stage: "complete", completedPages: completed, totalPages: analysis.pages.length,
       } },
     });
@@ -892,6 +904,7 @@ export async function recoverPacketJobs(
   onQueued: (packetId: number) => void | Promise<void> = kickPacketProcessing,
   maxPages = RECOVERY_MAX_PAGES,
 ): Promise<void> {
+  await sweepCheckpointObjects();
   let cursor = recoveryScanCursor;
   let scanned = 0;
   let queued = 0;

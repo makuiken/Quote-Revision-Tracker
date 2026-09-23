@@ -113,6 +113,7 @@ import { hasMeaningfulSignatureInk } from "../lib/validateSignaturePng";
 import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
 import { createSignedPacketDocument } from "../lib/packets/signoffDocument";
 import { loadApprovedManifest } from "../lib/packets/service";
+import { registerCheckpointManifest } from "../lib/packets/checkpointCleanup";
 import {
   manifestBudgetAllows,
   MAX_SIGNOFF_PACKET_SOURCE_BYTES,
@@ -1389,6 +1390,8 @@ router.delete("/quotes/:id", async (req, res): Promise<void> => {
   }
 
   const outcome = await db.transaction(async (tx) => {
+    // Match worker/collector ordering before locking child packets or uploads.
+    await lockQuoteRow(tx, params.data.id);
     const attachmentRows = await tx
       .select({
         objectPath: attachmentsTable.objectPath,
@@ -1434,6 +1437,12 @@ router.delete("/quotes/:id", async (req, res): Promise<void> => {
         .update(attachmentUploadsTable)
         .set({ status: "delete_pending", updatedAt: new Date() })
         .where(inArray(attachmentUploadsTable.id, uploadIds));
+    }
+    // Keep legacy checkpoint candidates durable before the packet FK cascade.
+    const checkpointPackets = await tx.select().from(manufacturerPacketsTable)
+      .where(eq(manufacturerPacketsTable.quoteId, params.data.id)).for("update");
+    for (const packet of checkpointPackets) {
+      await registerCheckpointManifest(tx, packet);
     }
     const [quote] = await tx
       .delete(quotesTable)

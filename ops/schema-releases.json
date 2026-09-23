@@ -17,6 +17,12 @@
       "summary": "Add source-bound analysis and revision-bound resumable packet processing checkpoints.",
       "contractHash": "3ae91d21fd063fef93138f39e853c3c7b2ecb9805f465727dde0dada2608385d",
       "codeReference": "schema-contract:3ae91d21fd063fef93138f39e853c3c7b2ecb9805f465727dde0dada2608385d"
+    },
+    {
+      "id": "2026-09-23-07cb9b41822d",
+      "summary": "Track exact packet checkpoint objects durably for bounded, lease-aware cleanup.",
+      "contractHash": "07cb9b41822d6280dabee91878bb5b3dc3af307e50a747e56aba1de905d0dec5",
+      "codeReference": "schema-contract:07cb9b41822d6280dabee91878bb5b3dc3af307e50a747e56aba1de905d0dec5"
     }
   ]
 }

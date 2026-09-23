@@ -90,6 +90,7 @@ import {
   expandTemplateOptions,
 } from "../lib/packets/templates";
 import { resetRenderCheckpoints } from "../lib/packets/checkpoints";
+import { registerCheckpointManifest } from "../lib/packets/checkpointCleanup";
 
 const router: IRouter = Router();
 const storage = new ObjectStorageService();
@@ -203,6 +204,7 @@ router.patch(
         return { kind: "notEditable" as const };
       }
       if (requiresReviewReset) {
+        await registerCheckpointManifest(tx, packet);
         // Published manifest membership is mutable projection state. Remove
         // this packet's pages before resetting it for reprocessing; immutable
         // scoped approval snapshots remain untouched.
@@ -291,6 +293,7 @@ router.patch(
       if (packet.status === "queued" || packet.status === "processing" || packet.status === "approved") {
         return { kind: "notEditable" as const };
       }
+      await registerCheckpointManifest(tx, packet);
       const [updated] = await tx
         .update(manufacturerPacketsTable)
         .set(
@@ -667,15 +670,17 @@ router.delete(
         .where(and(eq(manufacturerPacketManifestTable.quoteId, params.id), eq(manufacturerPacketManifestTable.packetId, params.packetId)))
         .limit(1);
       const [packet] = await tx
-        .delete(manufacturerPacketsTable)
+        .select().from(manufacturerPacketsTable)
         .where(
           and(
             eq(manufacturerPacketsTable.id, params.packetId),
             eq(manufacturerPacketsTable.quoteId, params.id),
           ),
         )
-        .returning();
+        .for("update");
       if (!packet) return null;
+      await registerCheckpointManifest(tx, packet);
+      await tx.delete(manufacturerPacketsTable).where(eq(manufacturerPacketsTable.id, packet.id));
        // Cascading manifest removal changes only this packet's category.
        if (priorManifest.length && packet.productType) {
          await invalidateApprovalCoverage(tx, params.id, [packet.productType], "A published manufacturer packet was deleted.");
@@ -911,6 +916,7 @@ router.patch(
         );
       });
       if (invalid) return { kind: "invalid" as const };
+      await registerCheckpointManifest(tx, packet);
       const [updated] = await tx.update(manufacturerPacketsTable).set({
         manualRedactions: body.data.redactionsByPage,
         status: "queued",

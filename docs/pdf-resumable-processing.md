@@ -139,7 +139,63 @@ remaining tests:
 - a post-publish production check of schema reconciliation, private object-store
   checkpoints, stale-lease recovery, and the complete 40-page customer package.
 
-## Reproduce
+## Checkpoint object reclamation
+
+Checkpoint batches (PDF and PNG objects only) now have a durable pre-upload
+registry in `packet_checkpoint_objects`. Final merged PDFs, sources, staging
+uploads and generic attachments are outside this collector's scope. Registration
+must acknowledge before upload; an ambiguous registration acknowledgement leaves
+a harmless candidate without starting the upload. Replacing or deleting an old
+checkpoint manifest registers its explicit paths in the same quote-then-packet
+locked transaction, including legacy manifests that lack readable analysis.
+
+Successful processing clears batch references while retaining progress and final
+PNG references. A bounded, ID-cursor backfill registers older packet manifests
+and releases obsolete batch references on already successful packets. Failed and
+queued checkpoints remain protected for retries, as do checkpoints being read by
+the current processing attempt. Final packet paths, scoped request/approval
+snapshots and signed evidence are checked before retirement.
+
+The collector does not list or delete prefixes. Each recovery tick examines at
+most 25 packets for backfill and 25 due registry objects, ordered by
+`next_check_at, object_path`. Inspected objects move one hour into the future,
+including protected objects and deletion failures. This fixed per-object retry
+backoff prevents a permanently failing/protected head from monopolizing scans.
+Each storage deletion has a three-second deadline. Backfill wraps its cursor;
+malformed rows are logged and retried on a subsequent pass rather than blocking
+later packets.
+
+Eligibility is serialized under quote-then-packet locks. Retirement commits an
+irreversible null attempt-token fence before releasing locks and deleting from
+storage. New checkpoint references require a matching pre-write reservation;
+inserts never revive an existing tombstone. The collector retains registry rows
+indefinitely and repeats idempotent deletion: an expired worker can finish an
+already-started write even after a successful delete, or a storage acknowledgement
+can be lost. A single successful delete is therefore **not** grounds for deleting
+the registry row. This trades growing small database metadata for robust
+late-write reclamation. No rendering/upload/download runs under these locks.
+
+Cleanup is conditional on a running API instance and recovery ticks; Autoscale
+does not wake solely for registry work. Large backlogs can take multiple passes,
+permanent evidence remains retained, and no strict time-to-reclamation is claimed.
+Legacy objects whose manifests were already lost before deployment cannot be
+discovered by this explicit-path-only collector.
+
+Run the isolated real-PostgreSQL lifecycle checks with:
+
+```sh
+NODE_ENV=development node artifacts/api-server/scripts/checkpoint-cleanup-development.mjs
+```
+
+The harness uses a temporary registry and rolled-back synthetic quote/packet
+fixtures. It exercises the production registration, publication and retirement
+adapters, with deterministic late-write/lost-storage-ack interleavings; it does
+not contact object storage or demonstrate deployment wake-up. Coverage includes
+ambiguous durable reference outcomes, token supersession, repeat deletion,
+irreversible retirement, final PNGs, immutable scoped and legacy evidence,
+due-order fairness, legacy manifest extraction and packet-deletion survival.
+
+## Reproduce the batching benchmark
 
 From `artifacts/api-server`, choose the first CPU allowed for the current
 process and run:
